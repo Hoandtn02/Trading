@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
+import requests
 
 from .services import iter_registry_functions
 
@@ -402,12 +403,19 @@ def real_gold_domestic(**params: Any) -> dict[str, Any]:
 
 
 def real_gold_global(**params: Any) -> dict[str, Any]:
-    start_date, end_date = _parse_date_range(params)
     try:
-        from vnstock.explorer.msn.quote import Quote
-        q = Quote(symbol_id="GC=F")
-        df = q.history(start=start_date, end=end_date, interval="1D")
-        return _df_to_payload("Giá vàng thế giới (GC=F)", "table", df)
+        from vnstock.explorer.misc.gold_price import btmc_goldprice
+        import pandas as pd
+        df = btmc_goldprice()
+        # Filter SJC gold rows which have world_price
+        sjc = df[df['name'].str.contains('VÀNG MIẾNG SJC', case=False, na=False)].copy()
+        if sjc.empty:
+            return _payload("Giá vàng thế giới", kind="table", data={"status": "no_data", "message": "Không có dữ liệu."})
+        # Build clean display table
+        display = sjc[['name', 'buy_price', 'sell_price', 'world_price', 'time']].copy()
+        display.columns = ['Loại', 'Giá mua (VND)', 'Giá bán (VND)', 'Giá thế giới (USD/oz)', 'Cập nhật']
+        display = display.drop_duplicates()
+        return _df_to_payload("Giá vàng SJC & thế giới (BTMC)", "table", display)
     except Exception as exc:
         return _payload("Giá vàng thế giới", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
@@ -514,7 +522,7 @@ def real_gov_bonds_listing(**params: Any) -> dict[str, Any]:
 # ─── Crypto ─────────────────────────────────────────────────────────────────
 
 def real_crypto_price(**params: Any) -> dict[str, Any]:
-    symbol_id = params.get("symbol_id", "BTC-USD")
+    symbol_id = params.get("symbol_id", "BTC-USD").upper().strip()
     start_raw = params.get("start_date", "")
     end_raw = params.get("end_date", "")
 
@@ -533,15 +541,38 @@ def real_crypto_price(**params: Any) -> dict[str, Any]:
     if end_str is None:
         end_str = pd.Timestamp.today().strftime("%Y-%m-%d")
 
+    # Map user-friendly symbol to Yahoo Finance format
+    symbol_map = {
+        "BTC": "BTC-USD", "ETH": "ETH-USD", "BNB": "BNB-USD",
+        "XRP": "XRP-USD", "SOL": "SOL-USD", "ADA": "ADA-USD",
+        "DOGE": "DOGE-USD", "DOT": "DOT-USD",
+    }
+    yf_symbol = symbol_map.get(symbol_id, symbol_id if "-" in symbol_id else f"{symbol_id}-USD")
+
     try:
-        from vnstock.explorer.msn.quote import Quote
-        q = Quote(symbol_id=symbol_id)
-        df = q.history(
-            start=start_str,
-            end=end_str,
-            interval="1D"
-        )
-        return _df_to_payload(f"Crypto {symbol_id}", "table", df)
+        import time as _sleep
+        _sleep.sleep(1)  # avoid Yahoo rate limit
+        start_ts = int(pd.Timestamp(start_str).timestamp())
+        end_ts = int(pd.Timestamp(end_str).timestamp())
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_symbol}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        }
+        resp = requests.get(url, params={"period1": start_ts, "period2": end_ts, "interval": "1d"}, headers=headers, timeout=15)
+        if resp.status_code == 429:
+            return _payload(f"Crypto {symbol_id}", kind="table", data={"error": "Rate limit Yahoo. Đợi vài giây rồi thử lại."})
+        if resp.status_code != 200:
+            return _payload(f"Crypto {symbol_id}", kind="table", data={"error": f"HTTP {resp.status_code}: Không lấy được dữ liệu."})
+        json_data = resp.json()
+        result = json_data.get("chart", {}).get("result", [])
+        if not result:
+            return _payload(f"Crypto {symbol_id}", kind="table", data={"error": "Không có dữ liệu cho mã này."})
+        timestamps = result[0]["timestamp"]
+        ohlc = result[0]["indicators"]["quote"][0]
+        df = pd.DataFrame({"time": pd.to_datetime(timestamps, unit="s"), "open": ohlc["open"], "high": ohlc["high"], "low": ohlc["low"], "close": ohlc["close"], "volume": ohlc["volume"]})
+        df = df.dropna()
+        return _df_to_payload(f"Crypto {yf_symbol}", "table", df)
     except Exception as exc:
         return _payload(f"Crypto {symbol_id}", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 

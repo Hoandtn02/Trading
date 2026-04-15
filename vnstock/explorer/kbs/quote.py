@@ -329,10 +329,14 @@ class Quote:
             df['value'] = df['value'].astype('float64')
 
         # Apply floating point precision to OHLC columns
+        # Only divide by 1000 for stock assets (HOSE/HNX prices are in VND thousands)
+        # Index/derivative prices are already in point units - do NOT divide
         ohlc_cols = ['open', 'high', 'low', 'close']
+        should_scale = self.asset_type not in ('index', 'derivative')
         for col in ohlc_cols:
             if col in df.columns:
-                df[col] = df[col] / 1000
+                if should_scale:
+                    df[col] = df[col] / 1000
                 if floating is not None:
                     df[col] = df[col].round(floating)
 
