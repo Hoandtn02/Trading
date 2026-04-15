@@ -327,12 +327,12 @@ def real_index_history(**params: Any) -> dict[str, Any]:
     }
     interval = interval_map.get(resolution.lower(), "1D")
     try:
-        from vnstock.explorer.vci.quote import Quote
+        from vnstock.explorer.kbs.quote import Quote
         q = Quote(symbol=symbol, show_log=False)
         df = q.history(start=start_date, end=end_date, interval=interval)
         return _df_to_payload(f"Chỉ số {symbol} ({resolution})", "table", df)
     except Exception as exc:
-        return _payload(f"Chỉ số {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Chỉ số {symbol}", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 def real_global_indices(**params: Any) -> dict[str, Any]:
@@ -344,7 +344,7 @@ def real_global_indices(**params: Any) -> dict[str, Any]:
         df = q.history(start=start_date, end=end_date, interval="1D")
         return _df_to_payload(f"Chỉ số quốc tế {symbol_id}", "table", df)
     except Exception as exc:
-        return _payload(f"Chỉ số quốc tế {symbol_id}", kind="table", data={"error": str(exc)})
+        return _payload(f"Chỉ số quốc tế {symbol_id}", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 # ─── Chứng quyền ────────────────────────────────────────────────────────────
@@ -377,16 +377,28 @@ def real_cw_price(**params: Any) -> dict[str, Any]:
         return _payload("Giá chứng quyền", kind="table", data={"error": str(exc)})
 
 
+def real_cw_expiry_list(**params: Any) -> dict[str, Any]:
+    source = params.get("source", "vci")
+    try:
+        from vnstock.explorer.vci.listing import Listing
+        listing = Listing(show_log=False)
+        df = listing.all_covered_warrant()
+        if hasattr(df, "to_frame"):
+            df = df.to_frame(name="symbol")
+        return _df_to_payload("Danh sách chứng quyền (tra cứu ngày đáo hạn trong chi tiết từng mã)", "table", df)
+    except Exception as exc:
+        return _payload("Danh sách chứng quyền", kind="table", data={"error": str(exc)})
+
+
 # ─── Kim loại quý ────────────────────────────────────────────────────────────
 
 def real_gold_domestic(**params: Any) -> dict[str, Any]:
-    date = params.get("date", "")
     try:
-        from vnstock.explorer.misc.gold_price import sjc_gold_price
-        df = sjc_gold_price(date=date if date else None)
-        return _df_to_payload("Giá vàng SJC trong nước", "table", df)
+        from vnstock.explorer.misc.gold_price import btmc_goldprice
+        df = btmc_goldprice()
+        return _df_to_payload("Giá vàng trong nước (BTMC)", "table", df)
     except Exception as exc:
-        return _payload("Giá vàng SJC trong nước", kind="table", data={"error": str(exc)})
+        return _payload("Giá vàng trong nước", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 def real_gold_global(**params: Any) -> dict[str, Any]:
@@ -397,13 +409,12 @@ def real_gold_global(**params: Any) -> dict[str, Any]:
         df = q.history(start=start_date, end=end_date, interval="1D")
         return _df_to_payload("Giá vàng thế giới (GC=F)", "table", df)
     except Exception as exc:
-        return _payload("Giá vàng thế giới", kind="table", data={"error": str(exc)})
+        return _payload("Giá vàng thế giới", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 # ─── Phái sinh ───────────────────────────────────────────────────────────────
 
 def real_vn30f_history(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     start_date, end_date = _parse_date_range(params)
     resolution = params.get("resolution", "daily")
     interval_map = {
@@ -412,25 +423,24 @@ def real_vn30f_history(**params: Any) -> dict[str, Any]:
     }
     interval = interval_map.get(resolution.lower(), "1D")
     try:
-        from vnstock.explorer.vci.quote import Quote
+        from vnstock.explorer.kbs.quote import Quote
         q = Quote(symbol="VN30F", show_log=False)
         df = q.history(start=start_date, end=end_date, interval=interval)
         return _df_to_payload(f"VN30F Futures ({resolution})", "table", df)
     except Exception as exc:
-        return _payload("VN30F Futures", kind="table", data={"error": str(exc)})
+        return _payload("VN30F Futures", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 def real_futures_listing(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.listing import Listing
+        from vnstock.explorer.kbs.listing import Listing
         listing = Listing(show_log=False)
-        df = listing.all_future_indices()
-        if hasattr(df, "to_frame"):
+        df = listing.symbols_by_group(group='FU_INDEX')
+        if not hasattr(df, "to_dict"):
             df = df.to_frame(name="symbol")
         return _df_to_payload("Danh sách hợp đồng phái sinh", "table", df)
     except Exception as exc:
-        return _payload("Danh sách hợp đồng phái sinh", kind="table", data={"error": str(exc)})
+        return _payload("Danh sách hợp đồng phái sinh", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 # ─── Quỹ đầu tư ────────────────────────────────────────────────────────────
@@ -474,16 +484,16 @@ def real_fund_nav(**params: Any) -> dict[str, Any]:
 # ─── Tỷ giá ─────────────────────────────────────────────────────────────────
 
 def real_forex_vcb(**params: Any) -> dict[str, Any]:
-    import datetime as dt
     date_val = params.get("date", "")
     try:
         from vnstock.explorer.misc.exchange_rate import vcb_exchange_rate
         if not date_val:
+            import datetime as dt
             date_val = dt.date.today().strftime("%Y-%m-%d")
         df = vcb_exchange_rate(date=date_val)
         return _df_to_payload("Tỷ giá VCB", "table", df)
     except Exception as exc:
-        return _payload("Tỷ giá VCB", kind="table", data={"error": str(exc)})
+        return _payload("Tỷ giá VCB", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 # ─── Trái phiếu ─────────────────────────────────────────────────────────────
@@ -505,32 +515,56 @@ def real_gov_bonds_listing(**params: Any) -> dict[str, Any]:
 
 def real_crypto_price(**params: Any) -> dict[str, Any]:
     symbol_id = params.get("symbol_id", "BTC-USD")
-    today = pd.Timestamp.today().strftime("%Y-%m-%d")
-    default_start = (pd.Timestamp.today() - pd.DateOffset(days=30)).strftime("%Y-%m-%d")
-    start_date = params.get("start_date", default_start)
-    end_date = params.get("end_date", today)
+    start_raw = params.get("start_date", "")
+    end_raw = params.get("end_date", "")
 
     def _to_str(val: Any) -> str:
         if val is None or val == "":
-            return ""
+            return None
         if hasattr(val, "strftime"):
             return val.strftime("%Y-%m-%d")
         return str(val)
 
-    start_str = _to_str(start_date)
-    end_str = _to_str(end_date)
+    start_str = _to_str(start_raw)
+    end_str = _to_str(end_raw)
+
+    if start_str is None:
+        start_str = (pd.Timestamp.today() - pd.DateOffset(days=30)).strftime("%Y-%m-%d")
+    if end_str is None:
+        end_str = pd.Timestamp.today().strftime("%Y-%m-%d")
 
     try:
         from vnstock.explorer.msn.quote import Quote
         q = Quote(symbol_id=symbol_id)
         df = q.history(
-            start=start_str if start_str else default_start,
-            end=end_str if end_str else None,
+            start=start_str,
+            end=end_str,
             interval="1D"
         )
         return _df_to_payload(f"Crypto {symbol_id}", "table", df)
     except Exception as exc:
-        return _payload(f"Crypto {symbol_id}", kind="table", data={"error": str(exc)})
+        return _payload(f"Crypto {symbol_id}", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
+
+
+# ─── Tiện ích ──────────────────────────────────────────────────────────────────
+
+def real_market_events(**params: Any) -> dict[str, Any]:
+    from vnstock.core.utils.market_events import MARKET_EVENTS
+    import pandas as pd
+    year_filter = params.get("year", "")
+    rows = []
+    for date, info in MARKET_EVENTS.items():
+        if year_filter and not date.startswith(str(year_filter)):
+            continue
+        rows.append({"date": date, "event": info.get("event", ""), "type": info.get("type", "")})
+    if not rows:
+        return _payload("Sự kiện thị trường", kind="table", data={"status": "no_data", "message": "Không có dữ liệu cho năm này."})
+    df = pd.DataFrame(rows)
+    return _df_to_payload(f"Sự kiện thị trường Việt Nam {year_filter if year_filter else '(từ 2000-2026)'}", "table", df)
+
+
+def placeholder_disabled_feature(**_: Any) -> dict[str, Any]:
+    return _payload("Bộ lọc cổ phiếu", kind="json", data={"status": "disabled", "message": "Tính năng tạm thời không hoạt động do thay đổi API TCBS."})
 
 
 # ─── Tin tức ─────────────────────────────────────────────────────────────────
@@ -557,13 +591,3 @@ def real_corporate_disclosure(**params: Any) -> dict[str, Any]:
         return _df_to_payload(f"Công bố doanh nghiệp – {symbol}", "table", df)
     except Exception as exc:
         return _payload(f"Công bố doanh nghiệp – {symbol}", kind="table", data={"error": str(exc)})
-
-
-# ─── Placeholder các nhóm chưa nối ──────────────────────────────────────────
-
-def placeholder_disabled_feature(**_: Any) -> dict[str, Any]:
-    return _payload("Bộ lọc cổ phiếu", kind="json", data={"status": "disabled", "message": "Tính năng tạm thời không hoạt động."})
-
-
-def placeholder_planned_feature(**_: Any) -> dict[str, Any]:
-    return _payload("Tính năng dự kiến", kind="json", data={"status": "planned", "message": "Runner chưa triển khai – sẽ bổ sung sau."})

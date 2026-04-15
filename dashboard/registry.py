@@ -205,7 +205,6 @@ FUNCTION_REGISTRY = [
                 "output_type": "table",
                 "param_schema": {
                     "symbol": {"type": "string", "required": False, "default": "VNINDEX"},
-                    "source": {"type": "string", "required": False, "default": "vci"},
                     "start_date": {"type": "date", "required": False, "default": ""},
                     "end_date": {"type": "date", "required": False, "default": ""},
                     "resolution": {"type": "string", "required": False, "default": "daily"},
@@ -220,7 +219,6 @@ FUNCTION_REGISTRY = [
                 "output_type": "table",
                 "param_schema": {
                     "symbol": {"type": "string", "required": False, "default": "HNXINDEX"},
-                    "source": {"type": "string", "required": False, "default": "vci"},
                     "start_date": {"type": "date", "required": False, "default": ""},
                     "end_date": {"type": "date", "required": False, "default": ""},
                     "resolution": {"type": "string", "required": False, "default": "daily"},
@@ -235,7 +233,6 @@ FUNCTION_REGISTRY = [
                 "output_type": "table",
                 "param_schema": {
                     "symbol": {"type": "string", "required": False, "default": "UPCOMINDEX"},
-                    "source": {"type": "string", "required": False, "default": "vci"},
                     "start_date": {"type": "date", "required": False, "default": ""},
                     "end_date": {"type": "date", "required": False, "default": ""},
                     "resolution": {"type": "string", "required": False, "default": "daily"},
@@ -244,8 +241,8 @@ FUNCTION_REGISTRY = [
             {
                 "function_id": "global_indices",
                 "label": "Chỉ số quốc tế",
-                "status": "ready",
-                "description": "Các chỉ số quốc tế phổ biến qua MSN.",
+                "status": "partial",
+                "description": "Các chỉ số quốc tế phổ biến qua MSN (API bên thứ ba - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_global_indices",
                 "output_type": "table",
                 "param_schema": {
@@ -286,8 +283,8 @@ FUNCTION_REGISTRY = [
                 "function_id": "cw_expiry",
                 "label": "Ngày đáo hạn",
                 "status": "ready",
-                "description": "Tra cứu ngày đáo hạn của chứng quyền.",
-                "runner_path": "dashboard.runners.real_cw_listing",
+                "description": "Tra cứu danh sách chứng quyền (xem ngày đáo hạn trong chi tiết từng mã qua Bảng giá).",
+                "runner_path": "dashboard.runners.real_cw_expiry_list",
                 "output_type": "table",
                 "param_schema": {
                     "source": {"type": "string", "required": False, "default": "vci"},
@@ -300,20 +297,18 @@ FUNCTION_REGISTRY = [
         "functions": [
             {
                 "function_id": "gold_domestic",
-                "label": "Giá vàng trong nước (SJC)",
+                "label": "Giá vàng trong nước (BTMC)",
                 "status": "ready",
-                "description": "Giá vàng SJC và các loại vàng trong nước.",
+                "description": "Giá vàng trong nước theo thời gian thực từ Bảo Tín Minh Châu (BTMC).",
                 "runner_path": "dashboard.runners.real_gold_domestic",
                 "output_type": "table",
-                "param_schema": {
-                    "date": {"type": "date", "required": False, "default": ""},
-                },
+                "param_schema": {},
             },
             {
                 "function_id": "gold_global",
                 "label": "Giá vàng thế giới",
-                "status": "ready",
-                "description": "Giá vàng quốc tế qua MSN.",
+                "status": "partial",
+                "description": "Giá vàng quốc tế qua MSN (API bên thứ ba - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_gold_global",
                 "output_type": "table",
                 "param_schema": {
@@ -334,7 +329,6 @@ FUNCTION_REGISTRY = [
                 "runner_path": "dashboard.runners.real_vn30f_history",
                 "output_type": "table",
                 "param_schema": {
-                    "source": {"type": "string", "required": False, "default": "vci"},
                     "start_date": {"type": "date", "required": False, "default": ""},
                     "end_date": {"type": "date", "required": False, "default": ""},
                     "resolution": {"type": "string", "required": False, "default": "daily"},
@@ -354,13 +348,13 @@ FUNCTION_REGISTRY = [
         ],
     },
     {
-        "group": {"name": "Quỹ đầu tư", "slug": "funds", "description": "ETF, quỹ mở, danh mục, hiệu suất và chỉ số liên quan."},
+        "group": {"name": "Quỹ đầu tư", "slug": "funds", "description": "ETF, quỹ mở, danh mục, hiệu suất và chỉ số liên quan (API bên thứ ba - có thể chậm hoặc lỗi)."},
         "functions": [
             {
                 "function_id": "etf_overview",
                 "label": "ETF - Danh sách ETF",
                 "status": "ready",
-                "description": "Thông tin cơ bản về các ETF đang niêm yết.",
+                "description": "Thông tin cơ bản về các ETF đang niêm yết (VCI).",
                 "runner_path": "dashboard.runners.real_fund_etf_listing",
                 "output_type": "table",
                 "param_schema": {
@@ -370,8 +364,8 @@ FUNCTION_REGISTRY = [
             {
                 "function_id": "open_fund",
                 "label": "Quỹ mở",
-                "status": "ready",
-                "description": "Danh sách quỹ mở trên Fmarket.",
+                "status": "partial",
+                "description": "Danh sách quỹ mở trên Fmarket (API bên thứ ba - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_fund_open_listing",
                 "output_type": "table",
                 "param_schema": {
@@ -381,8 +375,8 @@ FUNCTION_REGISTRY = [
             {
                 "function_id": "fund_nav_report",
                 "label": "NAV quỹ mở - Lịch sử",
-                "status": "ready",
-                "description": "Lịch sử NAV của một quỹ mở cụ thể.",
+                "status": "partial",
+                "description": "Lịch sử NAV của một quỹ mở cụ thể (Fmarket API - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_fund_nav",
                 "output_type": "table",
                 "param_schema": {
@@ -393,13 +387,13 @@ FUNCTION_REGISTRY = [
         ],
     },
     {
-        "group": {"name": "Tỷ giá & Ngoại hối", "slug": "forex", "description": "Tỷ giá ngoại tệ và dữ liệu forex."},
+        "group": {"name": "Tỷ giá & Ngoại hối", "slug": "forex", "description": "Tỷ giá ngoại tệ và dữ liệu forex (API bên thứ ba - có thể chậm hoặc lỗi)."},
         "functions": [
             {
                 "function_id": "forex_vcb",
                 "label": "Tỷ giá VCB",
-                "status": "ready",
-                "description": "Tỷ giá ngoại tệ tại Vietcombank.",
+                "status": "partial",
+                "description": "Tỷ giá ngoại tệ tại Vietcombank (API bên thứ ba - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_forex_vcb",
                 "output_type": "table",
                 "param_schema": {
@@ -425,13 +419,13 @@ FUNCTION_REGISTRY = [
         ],
     },
     {
-        "group": {"name": "Crypto", "slug": "crypto", "description": "Giá và biến động thị trường tiền mã hóa."},
+        "group": {"name": "Crypto", "slug": "crypto", "description": "Giá và biến động thị trường tiền mã hóa (API bên thứ ba - có thể chậm hoặc lỗi)."},
         "functions": [
             {
                 "function_id": "crypto_price",
                 "label": "Giá Crypto",
-                "status": "ready",
-                "description": "Giá tiền mã hóa qua MSN.",
+                "status": "partial",
+                "description": "Giá tiền mã hóa qua MSN (API bên thứ ba - có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_crypto_price",
                 "output_type": "table",
                 "param_schema": {
@@ -448,8 +442,8 @@ FUNCTION_REGISTRY = [
             {
                 "function_id": "financial_news",
                 "label": "Tin tức tài chính",
-                "status": "ready",
-                "description": "Tin tức tài chính chứng khoán Việt Nam.",
+                "status": "partial",
+                "description": "Tin tức tài chính chứng khoán Việt Nam (API có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_financial_news",
                 "output_type": "table",
                 "param_schema": {
@@ -460,8 +454,8 @@ FUNCTION_REGISTRY = [
             {
                 "function_id": "corporate_disclosure",
                 "label": "Công bố doanh nghiệp",
-                "status": "ready",
-                "description": "Công bố thông tin doanh nghiệp trên thị trường.",
+                "status": "partial",
+                "description": "Công bố thông tin doanh nghiệp trên thị trường (API có thể chậm hoặc lỗi).",
                 "runner_path": "dashboard.runners.real_corporate_disclosure",
                 "output_type": "table",
                 "param_schema": {
@@ -482,6 +476,22 @@ FUNCTION_REGISTRY = [
                 "runner_path": "dashboard.runners.placeholder_disabled_feature",
                 "output_type": "json",
                 "param_schema": {},
+            },
+        ],
+    },
+    {
+        "group": {"name": "Sự kiện thị trường", "slug": "events", "description": "Lịch nghỉ lễ và sự kiện đặc biệt của thị trường Việt Nam."},
+        "functions": [
+            {
+                "function_id": "market_events",
+                "label": "Lịch nghỉ lễ & sự kiện",
+                "status": "ready",
+                "description": "Lịch nghỉ lễ và sự kiện đặc biệt thị trường Việt Nam (từ 2000 - 2026).",
+                "runner_path": "dashboard.runners.real_market_events",
+                "output_type": "table",
+                "param_schema": {
+                    "year": {"type": "string", "required": False, "default": ""},
+                },
             },
         ],
     },

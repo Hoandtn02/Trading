@@ -259,8 +259,12 @@ def get_asset_type(symbol: str) -> str:
     elif len(symbol) == 8:
         return 'coveredWarr'
     
+    # Bare derivative symbol prefixes (no expiry) - default to nearest expiry
+    elif re.match(r'^(VN30F|VN100F|GB05F|GB10F)$', symbol):
+        return 'derivative'
+    
     else:
-        raise ValueError('Invalid symbol. Your symbol format is not recognized!')
+        raise ValueError(f"Không nhận diện được mã chứng khoán: {symbol}. Vui lòng kiểm tra lại.")
 
 def camel_to_snake(name):
     """

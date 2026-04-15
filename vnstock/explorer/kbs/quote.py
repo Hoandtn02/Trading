@@ -196,9 +196,14 @@ class Quote:
         if end is None:
             end = datetime.now().strftime("%Y-%m-%d")
 
+        # Treat empty string as None (before defaults are calculated)
+        if start == '':
+            start = None
+        if end == '':
+            end = None
+
         # Calculate start if not provided
         if start is None:
-            # Check if length defines bars
             if length is not None:
                 bars_from_len, len_remainder = interpret_lookback_length(length)
                 if bars_from_len is not None:
@@ -220,10 +225,11 @@ class Quote:
                     end_date=end
                 )
             else:
-                raise ValueError(
-                    "Tham số 'start' là bắt buộc nếu không cung cấp "
-                    "'length' hoặc 'count_back'."
-                )
+                # Default to 1 year ago if no start date provided
+                start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+        if end is None:
+            end = datetime.now().strftime("%Y-%m-%d")
 
         # Validate inputs (only if start is provided)
         if start is not None:
