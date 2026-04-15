@@ -1,0 +1,264 @@
+{% load dashboard_extras %}
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vnstock Dashboard</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <style>
+    :root { color-scheme: dark; --bg:#07101f; --panel:#0e1a31; --panel2:#0b1526; --border:#23324d; --text:#e8f0ff; --muted:#8fa5c8; --accent:#60a5fa; --ready:#34d399; --partial:#f59e0b; --disabled:#94a3b8; --planned:#a78bfa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: radial-gradient(circle at top, #163055 0, var(--bg) 50%); color: var(--text); }
+    a { color: var(--accent); text-decoration: none; }
+    .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr) 440px; min-height: 100vh; }
+    .sidebar,.content,.detail { padding: 24px; border-right: 1px solid var(--border); }
+    .detail { border-right: 0; }
+    .hero,.card { background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)); border: 1px solid var(--border); border-radius: 18px; }
+    .hero { padding: 18px; margin-bottom: 16px; background: linear-gradient(135deg, rgba(96,165,250,.18), rgba(167,139,250,.10)); }
+    .hero h1 { margin: 0 0 8px; font-size: 28px; }
+    .hero p,.muted { color: var(--muted); }
+    .card { padding: 16px; margin-bottom: 14px; background: rgba(15,26,48,.92); }
+    .summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+    .summary-card { border:1px solid var(--border); border-radius:16px; padding:14px; background: rgba(8,15,28,.85); }
+    .summary-card strong { display:block; font-size:22px; }
+    .section-title { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+    .stack { display:grid; gap:10px; }
+    input,select { width:100%; border-radius:14px; border:1px solid var(--border); background:#07111f; color:var(--text); padding:11px 14px; }
+    .btn,.btn-secondary,.chip { display:inline-flex; align-items:center; justify-content:center; border-radius:12px; border:1px solid transparent; cursor:pointer; }
+    .btn { padding:10px 14px; background:linear-gradient(135deg,#2563eb,#7c3aed); color:#fff; }
+    .btn-secondary { padding:10px 14px; background:transparent; border-color:var(--border); color:var(--text); }
+    .chip { padding:7px 11px; background:#091224; border-color:var(--border); color:var(--text); }
+    .chip.active { border-color:var(--accent); }
+    .function-link { display:block; padding:12px 14px; border:1px solid var(--border); border-radius:14px; background:var(--panel2); margin-bottom:10px; }
+    .function-link.active { border-color:var(--accent); }
+    .grid-2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .pill { display:inline-flex; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; text-transform:uppercase; }
+    .status-ready { background: rgba(52,211,153,.16); color: var(--ready); }
+    .status-partial { background: rgba(245,158,11,.16); color: var(--partial); }
+    .status-disabled { background: rgba(148,163,184,.16); color: var(--disabled); }
+    .status-planned { background: rgba(167,139,250,.16); color: var(--planned); }
+    .compact { font-size: 13px; }
+    .preview-box { border:1px dashed var(--border); border-radius:16px; padding:16px; background:rgba(8,15,28,.72); }
+    .chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:10px 8px; border-bottom:1px solid #1e2b42; text-align:left; vertical-align:top; }
+    @media (max-width: 1280px) { .layout { grid-template-columns: 280px 1fr; } .detail { grid-column:1/-1; border-top:1px solid var(--border); } }
+    @media (max-width: 860px) { .layout,.summary-grid,.grid-2 { grid-template-columns:1fr; } .sidebar,.content,.detail { border-right:0; border-bottom:1px solid var(--border); } }
+  </style>
+</head>
+<body>
+<main class="layout">
+  <aside class="sidebar">
+    <div class="hero">
+      <h1>Vnstock Dashboard</h1>
+      <p>Khung toàn bộ chức năng dựng theo README, ưu tiên thao tác web trước rồi nối runner sau.</p>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-card"><strong>{{ functions|length }}</strong><span class="muted compact">Chức năng</span></div>
+      <div class="summary-card"><strong>{{ groups|length }}</strong><span class="muted compact">Nhóm</span></div>
+      <div class="summary-card"><strong>4</strong><span class="muted compact">Trạng thái</span></div>
+      <div class="summary-card"><strong>UI</strong><span class="muted compact">Bấm nút</span></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h3 style="margin:0;">Tìm kiếm</h3></div>
+      <form method="get" class="stack">
+        <input type="text" name="q" value="{{ query }}" placeholder="Tìm chức năng, ví dụ: gold, quote, news">
+        <input type="hidden" name="group" value="{{ selected_group|default:'' }}">
+        <input type="hidden" name="status" value="{{ selected_status|default:'' }}">
+        <button class="btn" type="submit">Lọc</button>
+      </form>
+    </div>
+    <div class="card">
+      <div class="section-title"><h3 style="margin:0;">Trạng thái</h3></div>
+      <div class="chip-row">
+        <a class="chip{% if not selected_status %} active{% endif %}" href="?q={{ query }}&group={{ selected_group|default:'' }}">Tất cả</a>
+        <a class="chip{% if selected_status == 'ready' %} active{% endif %}" href="?q={{ query }}&group={{ selected_group|default:'' }}&status=ready">ready</a>
+        <a class="chip{% if selected_status == 'partial' %} active{% endif %}" href="?q={{ query }}&group={{ selected_group|default:'' }}&status=partial">partial</a>
+        <a class="chip{% if selected_status == 'disabled' %} active{% endif %}" href="?q={{ query }}&group={{ selected_group|default:'' }}&status=disabled">disabled</a>
+        <a class="chip{% if selected_status == 'planned' %} active{% endif %}" href="?q={{ query }}&group={{ selected_group|default:'' }}&status=planned">planned</a>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h3 style="margin:0;">Nhóm chức năng</h3></div>
+      <div class="stack">
+        <a class="function-link{% if not selected_group %} active{% endif %}" href="?q={{ query }}&status={{ selected_status|default:'' }}">Tất cả nhóm</a>
+      {% for group in groups %}
+          <a class="function-link{% if selected_group == group.slug %} active{% endif %}" href="?q={{ query }}&group={{ group.slug }}&status={{ selected_status|default:'' }}">
+          <strong>{{ group.name }}</strong>
+            <div class="muted compact">{{ group.description }}</div>
+            <div class="muted compact" style="margin-top:6px;">{{ group.functions.count }} chức năng</div>
+          </a>
+            {% endfor %}
+          </div>
+        </div>
+    <p><a href="{% url 'history' %}">Xem lịch sử chạy đầy đủ</a></p>
+    </aside>
+  <section class="content">
+    <div class="section-title"><h2 style="margin:0;">Registry chức năng</h2><div class="muted compact">Bấm mục để mở form chạy</div></div>
+    <div class="grid-2">
+      {% for function in functions %}
+        <a class="function-link{% if selected_function and function.function_id == selected_function.function_id %} active{% endif %}" href="?function={{ function.function_id }}&q={{ query }}&group={{ selected_group|default:'' }}&status={{ selected_status|default:'' }}">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;"><strong>{{ function.label }}</strong><span class="pill status-{{ function.status|default:'planned' }}">{{ function.status|default:'planned' }}</span></div>
+          <div class="muted compact" style="margin-top:8px;">{{ function.description }}</div>
+          <div class="muted compact" style="margin-top:8px;">Nhóm: {{ function.group.name }}</div>
+          <div class="muted compact">ID: {{ function.function_id }}</div>
+        </a>
+      {% empty %}
+        <div class="card" style="grid-column:1 / -1;">Không có kết quả phù hợp.</div>
+      {% endfor %}
+    </div>
+    </section>
+  <section class="detail">
+    <div class="section-title"><h2 style="margin:0;">Chạy chức năng</h2><a class="btn-secondary" href="{% url 'home' %}">Reset</a></div>
+      {% if selected_function %}
+        <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+          <div><h3 style="margin:0 0 6px;">{{ selected_function.label }}</h3><div class="muted">{{ selected_function.description }}</div></div>
+          <span class="pill status-{{ selected_function.status|default:'planned' }}">{{ selected_function.status|default:'planned' }}</span>
+        </div>
+        <div class="muted compact" style="margin-top:12px;">Output: {{ selected_function.output_type }}</div>
+      </div>
+      <form class="card" hx-post="{% url 'run_function' selected_function.function_id %}" hx-target="#result-panel" hx-swap="innerHTML" method="post">
+          {% csrf_token %}
+        <div class="section-title"><h3 style="margin:0;">Tham số</h3><div class="muted compact">UI preset / export / chart sẽ nối sau</div></div>
+        {% if form %}
+          {% for field in form %}
+            <div class="stack" style="margin-bottom:12px;">
+              <label for="{{ field.id_for_label }}">{{ field.label|default:field.name }}</label>
+              {{ field }}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="preview-box muted">Chức năng này chưa có tham số.</div>
+        {% endif %}
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;">
+          <button type="submit" class="btn">Chạy</button>
+          <button type="button" class="btn-secondary" onclick="document.getElementById('preset-modal').removeAttribute('hidden')">Lưu preset</button>
+          <button type="button" class="btn-secondary" onclick="exportResult('csv')">Export CSV</button>
+          <button type="button" class="btn-secondary" onclick="exportResult('xlsx')">Export Excel</button>
+          <button type="button" class="btn-secondary" onclick="openChart()">Mở chart</button>
+        </div>
+      </form>
+      <div id="preset-modal" hidden class="card" style="margin-top:12px;">
+        <div class="section-title"><h3 style="margin:0;">Lưu preset mới</h3><button type="button" class="btn-secondary" onclick="document.getElementById('preset-modal').setAttribute('hidden','')" style="padding:6px 12px;">Đóng</button></div>
+        <form hx-post="{% url 'save_preset' %}" hx-target="#preset-save-msg" hx-swap="innerHTML" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="function_id" value="{{ selected_function.function_id }}">
+          <input type="hidden" name="params" id="preset-params">
+          <div class="stack" style="margin-bottom:12px;">
+            <label>Tên preset</label>
+            <input type="text" name="name" placeholder="Ví dụ: FPT daily, VCB weekly" required>
+          </div>
+          <button type="submit" class="btn" onclick="document.getElementById('preset-params').value=JSON.stringify(getFormData())">Lưu</button>
+          <span id="preset-save-msg"></span>
+        </form>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <div class="section-title"><h3 style="margin:0;">Preset đã lưu</h3><button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;" hx-get="{% url 'load_presets' selected_function.function_id %}" hx-target="#preset-list" hx-swap="innerHTML">Tải lại</button></div>
+        <div id="preset-list">
+          <p class="muted compact">Bấm "Tải lại" để xem preset đã lưu cho chức năng này.</p>
+        </div>
+      </div>
+      <div id="result-panel" class="card"><h3 style="margin-top:0;">Kết quả</h3><p class="muted">Kết quả chạy sẽ xuất hiện ở đây.</p></div>
+      <script>
+      function getFormData() {
+        var data = {};
+        var form = document.querySelector('form[hx-post*="run_function"]');
+        if (!form) return data;
+        var inputs = form.querySelectorAll('input, select');
+        inputs.forEach(function(el) {
+          if (el.name && !['csrfmiddlewaretoken'].includes(el.name)) data[el.name] = el.value;
+        });
+        return data;
+      }
+      function loadPreset(params) {
+        var form = document.querySelector('form[hx-post*="run_function"]');
+        if (!form) return;
+        Object.keys(params).forEach(function(key) {
+          var el = form.querySelector('[name="'+key+'"]');
+          if (el) el.value = params[key];
+        });
+      }
+      function exportResult(fmt) {
+        var panel = document.getElementById('result-panel');
+        var table = panel.querySelector('table');
+        if (!table) { alert('Chưa có bảng dữ liệu để export.'); return; }
+        var rows = [[]];
+        table.querySelectorAll('th').forEach(function(th) { rows[0].push(th.textContent.trim()); });
+        table.querySelectorAll('tbody tr, tr').forEach(function(tr) {
+          if (tr.querySelector('th')) return;
+          var row = [];
+          tr.querySelectorAll('td').forEach(function(td) { row.push(td.textContent.trim()); });
+          if (row.length) rows.push(row);
+        });
+        if (fmt === 'csv') {
+          var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+          downloadFile(csv, 'result.csv', 'text/csv');
+        } else {
+          var xls = 'xmlversion="1.0"?><?xml-stylesheettype="text/xsl"?><Workbookxmlns="urn:schemas-microsoft-com:office:spreadsheet"xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><WorksheetName="Result"><Table>';
+          rows.forEach(function(r) {
+            xls += '<Row>';
+            r.forEach(function(c) { xls += '<Cell><DataType="String"><![CDATA[' + c + ']]></Data></Cell>'; });
+            xls += '</Row>';
+          });
+          xls += '</Table></Worksheet></Workbook>';
+          downloadFile(xls, 'result.xls', 'application/vnd.ms-excel');
+        }
+      }
+      function downloadFile(content, filename, mime) {
+        var a = document.createElement('a');
+        a.href = 'data:' + mime + ';charset=utf-8,' + encodeURIComponent(content);
+        a.download = filename;
+        a.click();
+      }
+      function openChart() {
+        var panel = document.getElementById('result-panel');
+        var table = panel.querySelector('table');
+        if (!table) { alert('Chưa có bảng dữ liệu để vẽ chart.'); return; }
+        var headers = [], rows = [];
+        table.querySelectorAll('th').forEach(function(th) { headers.push(th.textContent.trim()); });
+        table.querySelectorAll('tbody tr, tr').forEach(function(tr) {
+          if (tr.querySelector('th')) return;
+          var cells = []; tr.querySelectorAll('td').forEach(function(td) { cells.push(td.textContent.trim()); });
+          if (cells.length) rows.push(cells);
+        });
+        var dateCol = headers.findIndex(function(h) { return /date|time/i.test(h); });
+        var numericCol = headers.findIndex(function(h) { return h !== headers[dateCol]; });
+        if (dateCol < 0 || numericCol < 0) { alert('Không tìm được cột ngày hoặc số để vẽ chart.'); return; }
+        if (window.echarts) {
+          var chartDom = document.getElementById('chart-area') || createChartArea();
+          var myChart = echarts.init(chartDom);
+          myChart.setOption({
+            title: { text: headers[numericCol] + ' theo thời gian', left: 'center', textStyle: { color: '#e8f0ff' } },
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: rows.map(function(r) { return r[dateCol]; }), axisLabel: { color: '#8fa5c8' } },
+            yAxis: { type: 'value', axisLabel: { color: '#8fa5c8' } },
+            series: [{ data: rows.map(function(r) { return isNaN(parseFloat(r[numericCol])) ? r[numericCol] : parseFloat(r[numericCol]); }), type: 'line', smooth: true, areaStyle: { opacity: 0.3 } }],
+            backgroundColor: 'transparent',
+          });
+        } else {
+          alert('ECharts chưa được tải. Đang mở bảng dữ liệu thay thế.');
+          window.open('about:blank').document.write('<html><body><table border="1">' +
+            '<tr>' + headers.map(function(h){return '<th>'+h+'</th>';}).join('') + '</tr>' +
+            rows.map(function(r){return '<tr>' + r.map(function(c){return '<td>'+c+'</td>';}).join('') + '</tr>';}).join('') +
+            '</table></body></html>');
+        }
+      }
+      function createChartArea() {
+        var div = document.createElement('div');
+        div.id = 'chart-area';
+        div.style = 'width:100%;height:320px;margin-top:16px;border:1px solid #23324d;border-radius:16px;padding:8px;background:rgba(8,15,28,.85);';
+        var panel = document.getElementById('result-panel');
+        panel.parentNode.insertBefore(div, panel.nextSibling);
+        return div;
+      }
+      </script>
+      {% else %}
+      <div class="card"><p class="muted">Chọn một chức năng bên trái để mở form chạy.</p></div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

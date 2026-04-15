@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lịch sử chạy - Vnstock</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07101f; --panel:#0e1a31; --border:#23324d; --text:#e8f0ff; --muted:#8fa5c8; --accent:#60a5fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: radial-gradient(circle at top, #163055 0, var(--bg) 55%); color: var(--text); }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    a { color: var(--accent); text-decoration: none; }
+    .card { background: rgba(15,26,48,.92); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-top: 16px; overflow-x: auto; }
+    .muted { color: var(--muted); }
+    .toolbar { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:12px; margin-top:16px; }
+    input, select { width:100%; border-radius:14px; border:1px solid var(--border); background:#07111f; color:var(--text); padding:11px 14px; }
+    .btn { display:inline-flex; padding:10px 14px; border-radius:12px; background:linear-gradient(135deg,#2563eb,#7c3aed); color:#fff; border:0; cursor:pointer; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; }
+    .chip { padding:7px 11px; border-radius:999px; border:1px solid var(--border); background:#091224; color:var(--text); }
+    .chip.active { border-color: var(--accent); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { border-bottom:1px solid #1e2b42; padding:10px 8px; text-align:left; vertical-align:top; }
+    .ok { color:#86efac; }
+    .err { color:#fca5a5; }
+    .badge { display:inline-flex; padding:4px 10px; border-radius:999px; background:rgba(96,165,250,.16); }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
+    @media (max-width: 960px) { .toolbar { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p><a href="{% url 'home' %}">← Quay lại dashboard</a></p>
+    <h1>Lịch sử chạy</h1>
+    <p class="muted">Dễ lọc hơn bằng function, nhóm, trạng thái và từ khóa.</p>
+
+    <form method="get" class="card">
+      <div class="toolbar">
+        <input type="text" name="q" value="{{ q|default:'' }}" placeholder="Tìm theo tên function hoặc tham số">
+        <select name="group">
+          <option value="">Tất cả nhóm</option>
+          {% for group in groups %}
+            <option value="{{ group.slug }}" {% if group.slug == selected_group %}selected{% endif %}>{{ group.name }}</option>
+          {% endfor %}
+        </select>
+        <select name="status">
+          <option value="">Tất cả trạng thái</option>
+          <option value="success" {% if selected_status == 'success' %}selected{% endif %}>success</option>
+          <option value="error" {% if selected_status == 'error' %}selected{% endif %}>error</option>
+        </select>
+        <button class="btn" type="submit">Lọc</button>
+      </div>
+      <div class="chips">
+        <a class="chip{% if not selected_group %} active{% endif %}" href="?q={{ q|default:'' }}&status={{ selected_status|default:'' }}">Tất cả</a>
+        {% for group in groups %}
+          <a class="chip{% if selected_group == group.slug %} active{% endif %}" href="?q={{ q|default:'' }}&group={{ group.slug }}&status={{ selected_status|default:'' }}">{{ group.name }}</a>
+        {% endfor %}
+      </div>
+    </form>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Thời gian</th>
+            <th>Function</th>
+            <th>Nhóm</th>
+            <th>Params</th>
+            <th>Trạng thái</th>
+            <th>Kết quả</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for execution in executions %}
+            <tr>
+              <td>{{ execution.created_at }}</td>
+              <td>{{ execution.function.label }}</td>
+              <td><span class="badge">{{ execution.function.group.name }}</span></td>
+              <td><pre>{{ execution.params }}</pre></td>
+              <td class="{% if execution.status == 'success' %}ok{% else %}err{% endif %}">{{ execution.status }}</td>
+              <td><pre>{{ execution.result_payload }}</pre></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6">Chưa có lịch sử chạy nào.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
