@@ -128,111 +128,130 @@ def placeholder_registry_overview(**_: Any) -> dict[str, Any]:
     return _df_to_payload("Registry overview", "table", df)
 
 
-# ─── Danh sách mã ────────────────────────────────────────────────────────────
+# ─── Danh sách mã (Unified UI - vnstock_data) ─────────────────────────────────
 
 def real_listing_all_symbols(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.listing import Listing
-        listing = Listing(show_log=False)
-        df = listing.all_symbols()
+        from vnstock_data import Reference
+        ref = Reference()
+        df = ref.equity.list()
         return _df_to_payload("Danh sách mã niêm yết", "table", df)
     except Exception as exc:
         return _payload("Danh sách mã niêm yết", kind="table", data={"error": str(exc)})
 
 
 def real_listing_by_exchange(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.listing import Listing
-        listing = Listing(show_log=False)
-        df = listing.symbols_by_exchange(lang="vi")
+        from vnstock_data import Reference
+        ref = Reference()
+        df = ref.equity.list_by_exchange()
         return _df_to_payload("Danh sách mã theo sàn", "table", df)
     except Exception as exc:
         return _payload("Danh sách mã theo sàn", kind="table", data={"error": str(exc)})
 
 
 def real_listing_by_group(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     group = params.get("group", "VN30")
     try:
-        from vnstock.explorer.vci.listing import Listing
-        listing = Listing(show_log=False)
-        df = listing.symbols_by_group(group=group)
-        if hasattr(df, "to_frame"):
-            df = df.to_frame(name="symbol")
+        from vnstock_data import Reference
+        ref = Reference()
+        result = ref.equity.list_by_group(group=group)
+        # Unified UI tra ve Series, can chuyen thanh DataFrame
+        if isinstance(result, pd.Series):
+            df = result.to_frame(name="symbol")
+        else:
+            df = result
         return _df_to_payload(f"Danh sách nhóm {group}", "table", df)
     except Exception as exc:
         return _payload(f"Danh sách nhóm {group}", kind="table", data={"error": str(exc)})
 
 
 def real_listing_all_indices(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.listing import Listing
-        listing = Listing(show_log=False)
-        df = listing.all_indices()
+        from vnstock_data import Reference
+        ref = Reference()
+        df = ref.index.groups()
         return _df_to_payload("Danh sách chỉ số", "table", df)
     except Exception as exc:
         return _payload("Danh sách chỉ số", kind="table", data={"error": str(exc)})
 
 
-# ─── Bảng giá ────────────────────────────────────────────────────────────────
+# ─── Bảng giá (Unified UI) ───────────────────────────────────────────────────
 
 def real_price_board(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "kbs")
     symbols_str = params.get("symbols", "ACB,VNM,HPG,FPT")
     symbols_list = [s.strip() for s in symbols_str.split(",") if s.strip()]
     if not symbols_list:
         symbols_list = ["ACB"]
     try:
-        from vnstock.explorer.kbs.trading import Trading
-        trading = Trading(show_log=False)
-        df = trading.price_board(symbols_list=symbols_list, get_all=False)
-        return _df_to_payload(f"Bảng giá realtime - {', '.join(symbols_list)}", "table", df)
+        from vnstock_data import Market
+        mkt = Market()
+        # Lay gia cuoi cua tung ma
+        data = []
+        for sym in symbols_list:
+            try:
+                df = mkt.equity(sym).ohlcv(
+                    start=(pd.Timestamp.today() - pd.DateOffset(days=5)).strftime("%Y-%m-%d"),
+                    end=pd.Timestamp.today().strftime("%Y-%m-%d")
+                )
+                if df is not None and len(df) > 0:
+                    last = df.iloc[-1]
+                    data.append({
+                        "symbol": sym,
+                        "close": last.get("close"),
+                        "change": last.get("close") - df.iloc[0].get("close") if len(df) > 1 else 0,
+                        "volume": last.get("volume"),
+                    })
+            except Exception:
+                continue
+        result_df = pd.DataFrame(data)
+        if result_df.empty:
+            return _payload("Bảng giá", kind="table", data={"error": "Khong lay duoc du lieu"})
+        return _df_to_payload(f"Bang gia - {', '.join(symbols_list)}", "table", result_df)
     except Exception as exc:
-        return _payload("Bảng giá realtime", kind="table", data={"error": str(exc)})
+        return _payload("Bang gia", kind="table", data={"error": str(exc)})
 
 
-# ─── Cổ phiếu – giá realtime ─────────────────────────────────────────────────
+# ─── Cổ phiếu – giá realtime (Unified UI) ──────────────────────────────────
 
 def real_stock_quote_realtime(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "ACB")
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.quote import Quote
+        from vnstock_data import Market
+        mkt = Market()
         end = pd.Timestamp.today().strftime("%Y-%m-%d")
         start = (pd.Timestamp.today() - pd.DateOffset(days=7)).strftime("%Y-%m-%d")
-        q = Quote(symbol=symbol, show_log=False)
-        df = q.history(start=start, end=end, interval="1D")
+        df = mkt.equity(symbol).ohlcv(start=start, end=end, interval="1D")
         if df is None or (hasattr(df, "empty") and df.empty):
-            return _payload(f"Giá realtime – {symbol}", kind="json", data={"error": "Không lấy được dữ liệu realtime"})
+            return _payload(f"Gia realtime - {symbol}", kind="json", data={"error": "Khong lay duoc du lieu realtime"})
         last = df.tail(1).reset_index(drop=True)
-        return _df_to_payload(f"Giá realtime – {symbol}", "json", last)
+        return _df_to_payload(f"Gia realtime - {symbol}", "json", last)
     except Exception as exc:
-        return _payload(f"Giá realtime – {symbol}", kind="json", data={"error": str(exc)})
+        return _payload(f"Gia realtime - {symbol}", kind="json", data={"error": str(exc)})
 
 
 # ─── Cổ phiếu – intraday ────────────────────────────────────────────────────
 
 def real_stock_intraday(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "ACB")
-    source = params.get("source", "vci")
     page_size = int(params.get("page_size", 100))
     try:
+        from vnstock_data import Market
+        mkt = Market()
+        # Unified UI chi ho tro 1D, 1W, 1M - khong co intraday
+        # Neu can intraday, su dung vnstock cu
         from vnstock.explorer.vci.quote import Quote
         q = Quote(symbol=symbol, show_log=False)
         df = q.intraday(page_size=page_size)
-        return _df_to_payload(f"Intraday – {symbol}", "table", df)
+        return _df_to_payload(f"Intraday - {symbol}", "table", df)
     except Exception as exc:
-        return _payload(f"Intraday – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Intraday - {symbol}", kind="table", data={"error": str(exc)})
 
 
-# ─── Cổ phiếu – giá lịch sử ─────────────────────────────────────────────────
+# ─── Cổ phiếu – giá lịch sử (Unified UI) ────────────────────────────────────
 
 def real_stock_historical(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "ACB")
-    source = params.get("source", "vci")
     start_date, end_date = _parse_date_range(params)
     resolution = params.get("resolution", "daily")
     interval_map = {
@@ -242,83 +261,100 @@ def real_stock_historical(**params: Any) -> dict[str, Any]:
     }
     interval = interval_map.get(resolution.lower(), "1D")
     try:
-        from vnstock.explorer.vci.quote import Quote
-        q = Quote(symbol=symbol, show_log=False)
-        df = q.history(start=start_date, end=end_date, interval=interval)
-        return _df_to_payload(f"Giá lịch sử – {symbol} ({resolution})", "table", df)
+        from vnstock_data import Market
+        mkt = Market()
+        df = mkt.equity(symbol).ohlcv(start=start_date, end=end_date, interval=interval)
+        return _df_to_payload(f"Gia lich su - {symbol} ({resolution})", "table", df)
     except Exception as exc:
-        return _payload(f"Giá lịch sử – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Gia lich su - {symbol}", kind="table", data={"error": str(exc)})
 
 
-# ─── Cổ phiếu – báo cáo tài chính ──────────────────────────────────────────
+# ─── Cổ phiếu – báo cáo tài chính (Unified UI) ──────────────────────────────
 
 def real_stock_financial_reports(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "FPT")
-    source = params.get("source", "vci")
     report_type = params.get("report_type", "balance_sheet")
     period = params.get("period", "quarter")
-    lang = params.get("lang", "vi")
     try:
-        from vnstock.explorer.vci.financial import Finance
-        f = Finance(symbol=symbol, show_log=False)
+        from vnstock_data import Fundamental
+        fun = Fundamental()
         method_map = {
-            "balance_sheet": lambda: f.balance_sheet(period=period, lang=lang, dropna=True),
-            "income_statement": lambda: f.income_statement(lang=lang, dropna=True),
-            "cash_flow": lambda: f.cash_flow(),
+            "balance_sheet": lambda: fun.equity(symbol).balance_sheet(period=period),
+            "income_statement": lambda: fun.equity(symbol).income_statement(),
+            "cash_flow": lambda: fun.equity(symbol).cash_flow(),
         }
-        method = method_map.get(report_type, f.balance_sheet)
+        method = method_map.get(report_type, fun.equity(symbol).balance_sheet)
         df = method()
-        return _df_to_payload(f"Báo cáo {report_type} – {symbol}", "table", df)
+        return _df_to_payload(f"Bao cao {report_type} - {symbol}", "table", df)
     except Exception as exc:
-        return _payload(f"Báo cáo tài chính – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Bao cao tai chinh - {symbol}", kind="table", data={"error": str(exc)})
 
 
 def real_stock_financial_ratios(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "FPT")
-    source = params.get("source", "vci")
     period = params.get("period", "quarter")
     try:
-        from vnstock.explorer.vci.financial import Finance
-        f = Finance(symbol=symbol, show_log=False)
-        df = f.ratio(flatten_columns=True, separator=" – ")
-        return _df_to_payload(f"Chỉ số tài chính – {symbol}", "table", df)
+        from vnstock_data import Fundamental
+        fun = Fundamental()
+        df = fun.equity(symbol).ratio(period=period)
+        return _df_to_payload(f"Chi so tai chinh - {symbol}", "table", df)
     except Exception as exc:
-        return _payload(f"Chỉ số tài chính – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Chi so tai chinh - {symbol}", kind="table", data={"error": str(exc)})
 
 
-# ─── Cổ phiếu – thông tin doanh nghiệp ─────────────────────────────────────
+# ─── Cổ phiếu – thông tin doanh nghiệp (Unified UI) ─────────────────────────
 
 def real_company_profile(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "FPT")
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.company import Company
-        c = Company(symbol=symbol, show_log=False)
-        df = c.overview()
-        return _df_to_payload(f"Thông tin doanh nghiệp – {symbol}", "json", df)
+        from vnstock_data import Reference
+        ref = Reference()
+        # Lay thong tin co ban tu list
+        df = ref.equity.list()
+        company = df[df['symbol'] == symbol]
+        if company.empty:
+            return _payload(f"Thong tin doanh nghiep - {symbol}", kind="json", data={"error": "Khong tim thay ma nay"})
+        return _df_to_payload(f"Thong tin doanh nghiep - {symbol}", "json", company)
     except Exception as exc:
-        return _payload(f"Thông tin doanh nghiệp – {symbol}", kind="json", data={"error": str(exc)})
+        return _payload(f"Thong tin doanh nghiep - {symbol}", kind="json", data={"error": str(exc)})
 
 
-# ─── Cổ phiếu – tin tức ────────────────────────────────────────────────────
+# ─── Tin tức (vnstock_news EnhancedNewsCrawler) ──────────────────────────────
 
 def real_stock_news(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "FPT")
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.company import Company
-        c = Company(symbol=symbol, show_log=False)
-        df = c.news()
-        return _df_to_payload(f"Tin tức – {symbol}", "table", df)
+        from vnstock_news import EnhancedNewsCrawler
+        import asyncio
+        
+        crawler = EnhancedNewsCrawler(cache_enabled=False)
+        
+        # Lay tin tu cac nguon
+        df = asyncio.run(crawler.fetch_articles_async(
+            sources=['https://cafef.vn/latest-news-sitemap.xml'],
+            site_name='cafef',
+            max_articles=20,
+            time_frame='7d'
+        ))
+        
+        # Loc tin theo symbol neu co
+        if df is not None and len(df) > 0:
+            if symbol:
+                mask = df['title'].str.contains(symbol, case=False, na=False) | \
+                       df['short_description'].str.contains(symbol, case=False, na=False)
+                df = df[mask]
+            if len(df) == 0:
+                return _payload(f"Tin tuc - {symbol}", kind="table", data={"status": "no_data", "message": f"Khong co tin cho {symbol}"})
+        
+        return _df_to_payload(f"Tin tuc - {symbol}", "table", df)
     except Exception as exc:
-        return _payload(f"Tin tức – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Tin tuc - {symbol}", kind="table", data={"error": str(exc)})
 
 
-# ─── Chỉ số thị trường ──────────────────────────────────────────────────────
+# ─── Chỉ số thị trường (Unified UI) ────────────────────────────────────────
 
 def real_index_history(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "VNINDEX")
-    source = params.get("source", "vci")
     start_date, end_date = _parse_date_range(params)
     resolution = params.get("resolution", "daily")
     interval_map = {
@@ -328,12 +364,12 @@ def real_index_history(**params: Any) -> dict[str, Any]:
     }
     interval = interval_map.get(resolution.lower(), "1D")
     try:
-        from vnstock.explorer.kbs.quote import Quote
-        q = Quote(symbol=symbol, show_log=False)
-        df = q.history(start=start_date, end=end_date, interval=interval)
-        return _df_to_payload(f"Chỉ số {symbol} ({resolution})", "table", df)
+        from vnstock_data import Market
+        mkt = Market()
+        df = mkt.equity(symbol).ohlcv(start=start_date, end=end_date, interval=interval)
+        return _df_to_payload(f"Chi so {symbol} ({resolution})", "table", df)
     except Exception as exc:
-        return _payload(f"Chỉ số {symbol}", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
+        return _payload(f"Chi so {symbol}", kind="table", data={"error": str(exc)})
 
 
 def real_global_indices(**params: Any) -> dict[str, Any]:
@@ -451,19 +487,16 @@ def real_futures_listing(**params: Any) -> dict[str, Any]:
         return _payload("Danh sách hợp đồng phái sinh", kind="table", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
-# ─── Quỹ đầu tư ────────────────────────────────────────────────────────────
+# ─── Quỹ đầu tư (Unified UI) ────────────────────────────────────────────────
 
 def real_fund_etf_listing(**params: Any) -> dict[str, Any]:
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.listing import Listing
-        listing = Listing(show_log=False)
-        df = listing.symbols_by_group(group="ETF")
-        if hasattr(df, "to_frame"):
-            df = df.to_frame(name="symbol")
-        return _df_to_payload("Danh sách ETF", "table", df)
+        from vnstock_data import Reference
+        ref = Reference()
+        df = ref.etf.list()
+        return _df_to_payload("Danh sach ETF", "table", df)
     except Exception as exc:
-        return _payload("Danh sách ETF", kind="table", data={"error": str(exc)})
+        return _payload("Danh sach ETF", kind="table", data={"error": str(exc)})
 
 
 def real_fund_open_listing(**params: Any) -> dict[str, Any]:
@@ -598,27 +631,60 @@ def placeholder_disabled_feature(**_: Any) -> dict[str, Any]:
     return _payload("Bộ lọc cổ phiếu", kind="json", data={"status": "disabled", "message": "Tính năng tạm thời không hoạt động do thay đổi API TCBS."})
 
 
-# ─── Tin tức ─────────────────────────────────────────────────────────────────
+# ─── Tin tức tài chính ─────────────────────────────────────────────────────────
 
 def real_financial_news(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "FPT")
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.company import Company
-        c = Company(symbol=symbol, show_log=False)
-        df = c.news()
-        return _df_to_payload(f"Tin tức thị trường", "table", df)
+        from vnstock_news import EnhancedNewsCrawler
+        import asyncio
+        
+        crawler = EnhancedNewsCrawler(cache_enabled=False)
+        
+        # Lay tin tu nhieu nguon tai chinh
+        sources = [
+            'https://cafef.vn/latest-news-sitemap.xml',
+            'https://vietnamnet.vn/rss/kinh-doanh.rss',
+        ]
+        df = asyncio.run(crawler.fetch_articles_async(
+            sources=sources,
+            max_articles=30,
+            time_frame='7d'
+        ))
+        
+        if df is not None and len(df) > 0:
+            if symbol:
+                mask = df['title'].str.contains(symbol, case=False, na=False) | \
+                       df['short_description'].str.contains(symbol, case=False, na=False)
+                df = df[mask]
+        
+        return _df_to_payload("Tin tuc thi truong", "table", df)
     except Exception as exc:
-        return _payload("Tin tức thị trường", kind="table", data={"error": str(exc)})
+        return _payload("Tin tuc thi truong", kind="table", data={"error": str(exc)})
 
 
 def real_corporate_disclosure(**params: Any) -> dict[str, Any]:
     symbol = params.get("symbol", "ACB")
-    source = params.get("source", "vci")
     try:
-        from vnstock.explorer.vci.company import Company
-        c = Company(symbol=symbol, show_log=False)
-        df = c.news()
-        return _df_to_payload(f"Công bố doanh nghiệp – {symbol}", "table", df)
+        from vnstock_news import EnhancedNewsCrawler
+        import asyncio
+        
+        crawler = EnhancedNewsCrawler(cache_enabled=False)
+        
+        # Lay tin tu nguon cong bo
+        df = asyncio.run(crawler.fetch_articles_async(
+            sources=['https://cafef.vn/latest-news-sitemap.xml'],
+            site_name='cafef',
+            max_articles=50,
+            time_frame='30d'
+        ))
+        
+        if df is not None and len(df) > 0:
+            if symbol:
+                mask = df['title'].str.contains(symbol, case=False, na=False) | \
+                       df['short_description'].str.contains(symbol, case=False, na=False)
+                df = df[mask]
+        
+        return _df_to_payload(f"Cong bo doanh nghiep - {symbol}", "table", df)
     except Exception as exc:
-        return _payload(f"Công bố doanh nghiệp – {symbol}", kind="table", data={"error": str(exc)})
+        return _payload(f"Cong bo doanh nghiep - {symbol}", kind="table", data={"error": str(exc)})

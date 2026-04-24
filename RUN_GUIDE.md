@@ -5,10 +5,29 @@
 - Python 3.10 trở lên
 - Windows / macOS / Linux
 - Mạng internet (để lấy dữ liệu chứng khoán từ API)
+- **Gói thành viên Silver/Golden** (để sử dụng đầy đủ tính năng)
 
 ---
 
-## 1. Tạo virtual environment (khuyến nghị)
+## 1. Môi trường Python
+
+Dashboard sử dụng **Unified UI** (`vnstock_data`) cần **gói Silver trở lên**.
+
+### Cách 1: Dùng môi trường có sẵn (Khuyến nghị)
+
+Nếu bạn đã cài qua `vnstock-installer`, môi trường đã có đủ thư viện:
+
+```powershell
+# Windows PowerShell
+& "$env:USERPROFILE\.venv\Scripts\python.exe" manage.py runserver
+```
+
+```bash
+# macOS / Linux
+~/.venv/bin/python manage.py runserver
+```
+
+### Cách 2: Tạo môi trường mới
 
 ```bash
 # Tạo môi trường ảo
@@ -20,19 +39,15 @@ python -m venv .venv
 
 # macOS / Linux:
 source .venv/bin/activate
+
+# Cài đặt thư viện (yêu cầu gói Silver+)
+pip install django django-htmx pandas
+pip install --index-url https://vnstocks.com/api/simple vnstock_data
 ```
 
 ---
 
-## 2. Cài đặt thư viện
-
-```bash
-pip install django django-htmx pandas vnstock
-```
-
----
-
-## 3. Chạy migration (tạo database)
+## 2. Chạy migration (tạo database)
 
 ```bash
 python manage.py migrate
@@ -42,10 +57,16 @@ Thao tác này tạo file `db.sqlite3` và các bảng cần thiết cho dashboa
 
 ---
 
-## 4. Khởi động server
+## 3. Khởi động server
+
+```powershell
+# Windows PowerShell - Dùng môi trường ~/.venv
+& "$env:USERPROFILE\.venv\Scripts\python.exe" manage.py runserver
+```
 
 ```bash
-python manage.py runserver
+# macOS / Linux
+~/.venv/bin/python manage.py runserver
 ```
 
 Mở trình duyệt và truy cập:
@@ -53,6 +74,18 @@ Mở trình duyệt và truy cập:
 ```
 http://127.0.0.1:8000/
 ```
+
+---
+
+## 4. Kiểm tra môi trường
+
+Để xác nhận `vnstock_data` hoạt động:
+
+```bash
+python -c "from vnstock_data import Market; print('OK')"
+```
+
+Nếu lỗi `No module named 'vnstock_data'`, đảm bảo đang dùng Python từ `~/.venv`.
 
 ---
 
@@ -168,7 +201,7 @@ pip install vnstock
 | Tương tác | HTMX (AJAX không cần viết JS) |
 | Biểu đồ | ECharts 5 |
 | Database | SQLite 3 (`db.sqlite3`) |
-| Dữ liệu | `vnstock` library (vci/kbs source) |
+| Dữ liệu | `vnstock_data` Unified UI (gói Silver+) |
 
 ---
 

@@ -1,0 +1,42 @@
+{
+    "$schema": "https://context7.com/schema/context7.json",
+    "projectTitle": "VnStock Agent Guide",
+    "description": "Comprehensive documentation and guides for AI agents to effectively use VnStock Sponsored libraries - covering data retrieval, analysis, and automation for Vietnamese stock market",
+    "branch": "main",
+    "excludeFolders": [
+        ".devcontainer",
+        ".github",
+        "build",
+        "dev",
+        "packages",
+        "tests",
+        "vnstock.egg-info",
+        "__pycache__",
+        ".pytest_cache",
+        ".git",
+        ".vscode",
+        ".idea"
+    ],
+    "excludeFiles": [
+        ".DS_Store",
+        ".coverage",
+        "pytest.ini",
+        "*.pyc",
+        "*.pyo",
+        "*.pyd",
+        ".Python",
+        "env",
+        "venv",
+        "ENV",
+        "env.bak",
+        "venv.bak",
+        "Pipfile.lock",
+        "*.log",
+        "*.tmp",
+        "*.swp",
+        "*.swo",
+        "*~",
+        "Thumbs.db",
+        "desktop.ini"
+    ]
+}
