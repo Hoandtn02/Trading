@@ -495,4 +495,25 @@ FUNCTION_REGISTRY = [
             },
         ],
     },
+    {
+        "group": {
+            "name": "Phân tích đầu tư",
+            "slug": "analysis",
+            "description": "Phân tích kỹ thuật và cơ bản toàn diện cho cổ phiếu với chỉ báo chuyên sâu (vnstock_ta + vnstock_data)."
+        },
+        "functions": [
+            {
+                "function_id": "stock_analysis",
+                "label": "Phân tích cổ phiếu toàn diện",
+                "status": "ready",
+                "description": "Phân tích kỹ thuật (RSI, MACD, ADX, SuperTrend, CMF, MFI, Bollinger, VWAP) và cơ bản (F-Score, P/E, P/B, ROE) kết hợp AI recommendation.",
+                "runner_path": "dashboard.runners.real_stock_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": True, "default": "VCB"},
+                    "include_sentiment": {"type": "boolean", "required": False, "default": False},
+                },
+            },
+        ],
+    },
 ]

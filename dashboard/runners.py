@@ -688,3 +688,193 @@ def real_corporate_disclosure(**params: Any) -> dict[str, Any]:
         return _df_to_payload(f"Cong bo doanh nghiep - {symbol}", "table", df)
     except Exception as exc:
         return _payload(f"Cong bo doanh nghiep - {symbol}", kind="table", data={"error": str(exc)})
+
+
+# ─── Stock Analysis (Comprehensive Technical + Fundamental) ───────────────────
+
+def real_stock_analysis(**params: Any) -> dict[str, Any]:
+    """
+    Comprehensive stock analysis combining technical indicators and fundamental data.
+    
+    This function provides:
+    - Technical Analysis: RSI, MACD, ADX, SuperTrend, SMA, CMF, MFI, Bollinger, VWAP
+    - Fundamental Analysis: F-Score, P/E, P/B, ROE, EPS, Profit Growth
+    - AI Recommendation: Master Score, BUY/SELL/HOLD signal, entry/exit levels
+    
+    Parameters:
+        symbol: Stock symbol (e.g., "VCB", "ACB", "FPT")
+        include_sentiment: Include news sentiment analysis (default: False)
+    
+    Returns:
+        Dictionary with analysis results including:
+        - price: current price and change
+        - technical: all technical indicators
+        - fundamental: financial metrics and F-Score
+        - recommendation: AI-generated trading signal
+    """
+    symbol = params.get("symbol", "ACB").upper().strip()
+    include_sentiment = params.get("include_sentiment", False)
+    
+    try:
+        from dashboard.analyzers import StockAnalyzer
+        
+        analyzer = StockAnalyzer(period_ta=90)
+        result = analyzer.analyze(symbol, include_sentiment=include_sentiment)
+        
+        if result.recommendation.action == "ERROR":
+            return _payload(
+                f"Phân tích {symbol}",
+                kind="json",
+                data={
+                    "status": "error",
+                    "symbol": symbol,
+                    "error": result.recommendation.reasons_negative[0] if result.recommendation.reasons_negative else "Unknown error"
+                }
+            )
+        
+        # Return structured JSON response
+        return {
+            "kind": "json",
+            "title": f"Phân tích kỹ thuật & cơ bản - {symbol}",
+            "summary": f"Master Score: {result.recommendation.master_score}/100 | Signal: {result.recommendation.action}",
+            "data": {
+                "status": "success",
+                "symbol": result.symbol,
+                "name": result.name,
+                "exchange": result.exchange,
+                "timestamp": result.timestamp.isoformat(),
+                "price": {
+                    "current": result.technical.current_price,
+                    "change_percent": result.technical.change_percent,
+                    "volume": result.technical.volume,
+                },
+                "technical": {
+                    "momentum": {
+                        "rsi": {
+                            "value": result.technical.rsi,
+                            "status": result.technical.rsi_status,
+                            "zone": "QUÁ MUA" if result.technical.rsi >= 70 else "QUÁ BÁN" if result.technical.rsi <= 30 else "TRUNG LẬP"
+                        },
+                        "macd": {
+                            "value": result.technical.macd,
+                            "signal": result.technical.macd_signal,
+                            "status": "TĂNG" if result.technical.macd > 0 else "GIẢM"
+                        }
+                    },
+                    "trend": {
+                        "adx": {
+                            "value": result.technical.adx,
+                            "status": result.technical.adx_status,
+                            "description": f"Xu hướng {result.technical.adx_status.replace('_', ' ').title()}"
+                        },
+                        "sma": {
+                            "sma_20": result.technical.sma_20,
+                            "sma_50": result.technical.sma_50,
+                            "trend": result.technical.trend_status,
+                            "position": "TRÊN" if result.technical.current_price > result.technical.sma_20 else "DƯỚI"
+                        },
+                        "supertrend": {
+                            "signal": result.technical.supertrend_signal,
+                            "stop": result.technical.supertrend_stop
+                        }
+                    },
+                    "money_flow": {
+                        "cmf": {
+                            "value": result.technical.cmf,
+                            "status": result.technical.cmf_status,
+                            "direction": "TIỀN CHẢY VÀO" if result.technical.cmf > 0 else "TIỀN CHẢY RA"
+                        },
+                        "mfi": {
+                            "value": result.technical.mfi,
+                            "status": result.technical.mfi_status
+                        }
+                    },
+                    "volatility": {
+                        "atr": {
+                            "value": result.technical.atr,
+                            "status": result.technical.atr_status
+                        },
+                        "bollinger": {
+                            "upper": result.technical.bollinger_upper,
+                            "lower": result.technical.bollinger_lower,
+                            "middle": result.technical.bollinger_middle,
+                            "position": result.technical.bollinger_position
+                        }
+                    },
+                    "value": {
+                        "vwap": {
+                            "value": result.technical.vwap,
+                            "status": result.technical.vwap_status,
+                            "position": "TRÊN" if "above" in result.technical.vwap_status else "DƯỚI"
+                        }
+                    }
+                },
+                "fundamental": {
+                    "f_score": {
+                        "value": result.fundamental.f_score,
+                        "max": result.fundamental.f_score_max,
+                        "grade": result.fundamental.f_score_grade,
+                        "description": f"F-Score {result.fundamental.f_score}/9 (Grade {result.fundamental.f_score_grade})"
+                    },
+                    "valuation": {
+                        "pe": result.fundamental.pe,
+                        "pb": result.fundamental.pb,
+                        "roe": result.fundamental.roe,
+                        "eps": result.fundamental.eps
+                    },
+                    "growth": {
+                        "profit_growth": result.fundamental.profit_growth,
+                        "profit_growth_yoy": result.fundamental.profit_growth_yoy,
+                        "margin": result.fundamental.margin
+                    }
+                },
+                "sentiment": {
+                    "news_count": result.sentiment.news_count,
+                    "score": result.sentiment.score,
+                    "sentiment": result.sentiment.sentiment,
+                    "keywords": result.sentiment.keywords,
+                    "summary": result.sentiment.summary
+                } if result.sentiment.news_count > 0 else None,
+                "recommendation": {
+                    "action": result.recommendation.action,
+                    "master_score": result.recommendation.master_score,
+                    "score_stars": result.recommendation.score_stars,
+                    "reasons_positive": result.recommendation.reasons_positive,
+                    "reasons_negative": result.recommendation.reasons_negative,
+                    "support": result.recommendation.support,
+                    "resistance": result.recommendation.resistance,
+                    "entry_target": result.recommendation.entry_target,
+                    "stop_loss": result.recommendation.stop_loss,
+                    "profit_target": result.recommendation.profit_target,
+                    "timeframe": result.recommendation.timeframe,
+                    "risk_level": result.recommendation.risk_level,
+                    "action_items": {
+                        "if_holding": f"GIỮ - Chốt lời quanh {result.recommendation.resistance:,.0f}" if result.recommendation.action == "HOLD" else f"TIẾP TỤC NẮM GIỮ",
+                        "if_not_holding": f"CHỜ - Mua quanh {result.recommendation.entry_target:,.0f}" if result.recommendation.action in ["BUY", "HOLD"] else "CHỜ XUỐNG",
+                        "stop_loss": f"Cắt lỗ: {result.recommendation.stop_loss:,.0f} ({(result.recommendation.stop_loss/result.technical.current_price-1)*100:.1f}%)",
+                        "target": f"Mục tiêu: {result.recommendation.profit_target:,.0f} (+{(result.recommendation.profit_target/result.technical.current_price-1)*100:.1f}%)"
+                    }
+                }
+            }
+        }
+        
+    except ImportError as exc:
+        return _payload(
+            f"Phân tích {symbol}",
+            kind="json",
+            data={
+                "status": "error",
+                "symbol": symbol,
+                "error": f"Module not found. Please ensure vnstock_ta and vnstock_data are installed. {str(exc)}"
+            }
+        )
+    except Exception as exc:
+        return _payload(
+            f"Phân tích {symbol}",
+            kind="json",
+            data={
+                "status": "error",
+                "symbol": symbol,
+                "error": f"{type(exc).__name__}: {str(exc)}"
+            }
+        )

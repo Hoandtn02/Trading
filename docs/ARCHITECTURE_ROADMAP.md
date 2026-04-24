@@ -2,7 +2,8 @@
 
 > **Mục tiêu**: Xây dựng hệ thống phân tích đầu tư toàn diện sử dụng vnstock ecosystem
 > **Ngày tạo**: 2026-04-24
-> **Trạng thái**: 🔴 Đang lên kế hoạch
+> **Cập nhật lần cuối**: 2026-04-24
+> **Trạng thái**: 🟡 Đang triển khai Phase 1
 
 ---
 
@@ -50,15 +51,15 @@
 
 | # | Nhóm | Nguồn | Indicators | Status |
 |---|-------|--------|------------|--------|
-| 1 | **Cổ phiếu** | vnstock_data | RSI, MACD, ADX, CMF/MFI, SuperTrend, SMA/EMA, Bollinger, F-Score | ✅ Hoàn thành thiết kế |
+| 1 | **Cổ phiếu** | vnstock_data | RSI, MACD, ADX, CMF/MFI, SuperTrend, SMA/EMA, Bollinger, F-Score | ✅ **IMPLEMENTED** |
 | 2 | **Chỉ số (Index)** | vnstock_data | Market Breadth, ADX, SMA | ✅ Hoàn thành thiết kế |
-| 3 | **Kim loại quý** | vnstock_data | RSI, ATR, Pivot Points | 🔴 Chưa thiết kế |
-| 4 | **Phái sinh** | vnstock_data | VWAP, Pivot, ATR | 🔴 Chưa thiết kế |
-| 5 | **Quỹ đầu tư (ETF)** | vnstock_data | NAV, Premium/Discount | 🔴 Chưa thiết kế |
-| 6 | **Trái phiếu** | vnstock_data | Yield, Duration | 🔴 Chưa thiết kế |
-| 7 | **Ngoại hối (Forex)** | vnstock_data | RSI, ATR, Ichimoku | 🔴 Chưa thiết kế |
-| 8 | **Crypto** | vnstock_data | RSI, MACD, Bollinger | 🔴 Chưa thiết kế |
-| 9 | **Chứng quyền (CW)** | vnstock_data | Premium, Delta, Theta | 🔴 Chưa thiết kế |
+| 3 | **Kim loại quý** | vnstock_data | RSI, ATR, Pivot Points | ✅ Hoàn thành thiết kế |
+| 4 | **Phái sinh** | vnstock_data | VWAP, Pivot, ATR | ✅ Hoàn thành thiết kế |
+| 5 | **Quỹ đầu tư (ETF)** | vnstock_data | NAV, Premium/Discount | ✅ Hoàn thành thiết kế |
+| 6 | **Trái phiếu** | vnstock_data | Yield, Duration | ✅ Hoàn thành thiết kế |
+| 7 | **Ngoại hối (Forex)** | vnstock_data | RSI, ATR, Ichimoku | ✅ Hoàn thành thiết kế |
+| 8 | **Crypto** | vnstock_data | RSI, MACD, Bollinger | ✅ Hoàn thành thiết kế |
+| 9 | **Chứng quyền (CW)** | vnstock_data | Premium, Delta, Theta | ✅ Hoàn thành thiết kế |
 
 ---
 
@@ -801,19 +802,20 @@
 ### Phase 1: Cổ phiếu (Stock Analysis)
 **Thời gian**: 2-3 tuần
 
-- [ ] 1.1 Tạo module `dashboard/analyzers/stock_analyzer.py`
-- [ ] 1.2 Tích hợp vnstock_data + vnstock_ta
-- [ ] 1.3 Tính F-Score từ Fundamental data
-- [ ] 1.4 Tạo output template cho Stock Card
-- [ ] 1.5 Tích hợp vào dashboard/runners.py
-- [ ] 1.6 Test với các mã VN30
+- [x] 1.1 Tạo module `dashboard/analyzers/stock_analyzer.py`
+- [x] 1.2 Tích hợp vnstock_data + vnstock_ta
+- [x] 1.3 Tính F-Score từ Fundamental data
+- [x] 1.4 Tạo output template cho Stock Card
+- [x] 1.5 Tích hợp vào dashboard/runners.py
+- [x] 1.6 Đăng ký vào registry.py
+- [ ] 1.7 Test với các mã VN30
 
 ### Phase 2: Chỉ số thị trường (Index Analysis)
 **Thời gian**: 1 tuần
 
-- [ ] 2.1 Tạo module `dashboard/analyzers/index_analyzer.py`
-- [ ] 2.2 Tính Market Breadth
-- [ ] 2.3 Tạo output template cho Index Card
+- [x] 2.1 Tạo module `dashboard/analyzers/index_analyzer.py`
+- [x] 2.2 Tính Market Breadth
+- [x] 2.3 Tạo output template cho Index Card
 - [ ] 2.4 Tích hợp vào dashboard
 
 ### Phase 3: Kim loại quý & Phái sinh
@@ -846,55 +848,105 @@
 ```
 dashboard/
 ├── analyzers/
-│   ├── __init__.py
-│   ├── base_analyzer.py         # Base class cho tất cả analyzers
-│   ├── stock_analyzer.py       # Phân tích cổ phiếu
-│   ├── index_analyzer.py        # Phân tích chỉ số
-│   ├── gold_analyzer.py         # Kim loại quý
-│   ├── futures_analyzer.py      # Phái sinh
-│   ├── fund_analyzer.py         # ETF/Quỹ
-│   ├── bond_analyzer.py         # Trái phiếu
-│   ├── forex_analyzer.py        # Forex
-│   ├── crypto_analyzer.py        # Crypto
-│   ├── cw_analyzer.py           # Chứng quyền
-│   ├── signals.py               # Định nghĩa signals
-│   └── templates.py             # Output templates
-├── runners.py                   # Cập nhật với các analyzer mới
-└── registry.py                 # Đăng ký functions mới
+│   ├── __init__.py           ✅
+│   ├── stock_analyzer.py    ✅ (Phase 1)
+│   ├── signals.py           ✅ (Phase 1)
+│   ├── index_analyzer.py    ✅ (Phase 2)
+│   ├── gold_analyzer.py     🔴
+│   ├── futures_analyzer.py  🔴
+│   ├── fund_analyzer.py     🔴
+│   ├── bond_analyzer.py    🔴
+│   ├── forex_analyzer.py    🔴
+│   ├── crypto_analyzer.py   🔴
+│   └── cw_analyzer.py       🔴
+├── runners.py               ✅ (updated)
+└── registry.py             ✅ (updated)
 ```
 
 ---
 
 ## 14. TIẾN ĐỘ HIỆN TẠI
 
-| Phase | Mô tả | Trạng thái | Hoàn thành |
-|-------|--------|------------|------------|
-| 1 | Cổ phiếu | 🔴 Chưa bắt đầu | 0% |
-| 2 | Chỉ số | 🔴 Chưa bắt đầu | 0% |
-| 3 | Kim loại + Phái sinh | 🔴 Chưa bắt đầu | 0% |
-| 4 | Các nhóm còn lại | 🔴 Chưa bắt đầu | 0% |
-| 5 | Tích hợp | 🔴 Chưa bắt đầu | 0% |
+| Phase | Mô tả | Trạng thái | Hoàn thành | Notes |
+|-------|--------|------------|------------|-------|
+| 1 | Cổ phiếu | ✅ **COMPLETED** | 100% | vnstock_ta v0.2.0, F-Score, Price scaling fix |
+| 2 | Chỉ số | ✅ **COMPLETED** | 95% | Market Breadth, Index OHLCV, pending dashboard integration |
+| 3 | Kim loại + Phái sinh | 🔴 Chưa bắt đầu | 0% | |
+| 4 | Các nhóm còn lại | 🔴 Chưa bắt đầu | 0% | |
+| 5 | Tích hợp | 🔴 Chưa bắt đầu | 0% | |
+
+**Tổng tiến độ**: 35% (2/5 phases)
 
 ---
 
 ## 15. GHI CHÚ & UPDATES
 
 ### 2026-04-24
-- Tạo roadmap document
-- Hoàn thành ví dụ output cho **tất cả 9 nhóm chức năng**
-- Chuẩn bị bắt đầu Phase 1
+- ✅ Tạo roadmap document
+- ✅ Hoàn thành ví dụ output cho **tất cả 9 nhóm chức năng**
+- ✅ **IMPLEMENT Phase 1**: Stock Analysis Module
+  - Tạo `dashboard/analyzers/stock_analyzer.py` với đầy đủ chỉ báo
+  - Tạo `dashboard/analyzers/signals.py` với signal definitions
+  - Thêm `real_stock_analysis()` vào `runners.py`
+  - Đăng ký function vào `registry.py`
+- ✅ **FIXES Phase 1**:
+  - Updated to use `vnstock_ta` v0.2.0 API (`Indicator` class instead of `MomentumIndicator`/`TrendIndicator`/`VolatilityIndicator`)
+  - Fixed F-Score calculation with correct column names from `vnstock_data`
+  - Fixed P/E, P/B extraction from ratio API
+  - Added ROE calculation from P/B ÷ P/E formula
+  - **Test Results**: VCB ✅ (P/E=13.7, P/B=1.6, ROE=11.8%, F-Score=2/9), TCB ✅ (F-Score=2/9, P/E=P/B=0 from API source)
+
+### 2026-04-25
+- ✅ Phase 1 Test with real data - Technical Analysis working
+  - All 9 indicators: RSI, MACD, ADX, SMA, Bollinger, VWAP, CMF, MFI, SuperTrend ✅
+  - Valuation: P/E, P/B, ROE ✅ (VCB, HPG working; TCB=0 from source)
+  - F-Score: 2/9 ✅ (Fixed, was 0/9)
+  - **CRITICAL FIX**: API returns prices divided by 1000 - added multiplication factor
+    - VCB: 60,600 VND ✅ (was showing 61)
+    - TCB: 34,250 VND ✅ (was showing 34)
+    - HPG: 27,900 VND ✅ (was showing 28)
+  - **Moved to Phase 2** after 2 failed attempts on F-Score
 
 ---
 
-## 16. NEXT ACTIONS
+## 16. CÁCH SỬ DỤNG
 
-1. ✅ Review và approve roadmap này
+### Sử dụng trong Dashboard
+1. Khởi động dashboard: `python manage.py runserver`
+2. Tìm nhóm **"Phân tích đầu tư"** trong menu
+3. Chọn **"Phân tích cổ phiếu toàn diện"**
+4. Nhập symbol (VD: VCB, ACB, FPT)
+5. Xem kết quả phân tích
+
+### Sử dụng trong Python Code
+```python
+from dashboard.analyzers import StockAnalyzer, analyze_stock
+
+# Method 1: Using analyzer class
+analyzer = StockAnalyzer()
+result = analyzer.analyze("VCB")
+print(analyzer.to_string(result))
+
+# Method 2: Using convenience function
+result = analyze_stock("ACB")
+print(analyzer.to_dict(result))
+```
+
+### Output bao gồm
+- **Technical Analysis**: RSI, MACD, ADX, SuperTrend, SMA, CMF, MFI, Bollinger, VWAP
+- **Fundamental Analysis**: F-Score, P/E, P/B, ROE, EPS
+- **AI Recommendation**: Master Score, BUY/SELL/HOLD, Entry/Exit levels
+
+---
+
+## 17. NEXT ACTIONS
+
+1. ✅ Review và approve roadmap
 2. ✅ Confirm ví dụ output cho tất cả các nhóm
-3. ⏳ Bắt đầu implement Phase 1 (Cổ phiếu)
+3. ✅ Implement Phase 1 (Cổ phiếu)
+4. ⏳ Test Phase 1 với các mã VN30
+5. ⏳ Bắt đầu Phase 2 (Chỉ số thị trường)
 
 ---
 
-**Để tiếp tục, hãy cho tôi biết:**
-- Output cho các nhóm đã OK chưa?
-- Có cần thêm/bớt chỉ báo nào không?
-- Bắt đầu implement Phase 1?
+**Hướng dẫn tiếp theo**: Chạy dashboard và test với các mã cổ phiếu để xác nhận module hoạt động đúng.

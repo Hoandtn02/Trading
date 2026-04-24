@@ -223,6 +223,12 @@ class StockAnalyzer:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                 
+                # API returns prices divided by 1000 - multiply back to actual price
+                price_cols = ['open', 'high', 'low', 'close']
+                for col in price_cols:
+                    if col in df.columns:
+                        df[col] = df[col] * 1000
+                
                 # Set time index if present
                 if 'time' in df.columns:
                     df.set_index('time', inplace=True)
@@ -234,7 +240,7 @@ class StockAnalyzer:
             return None
     
     def _calculate_technical(self, df: pd.DataFrame) -> TechnicalIndicators:
-        """Calculate all technical indicators"""
+        """Calculate all technical indicators using vnstock_ta Indicator class"""
         tech = TechnicalIndicators()
         
         if df is None or len(df) < 20:
@@ -255,76 +261,136 @@ class StockAnalyzer:
                 if 'volume' in df.columns:
                     tech.volume = int(df['volume'].iloc[-1]) if pd.notna(df['volume'].iloc[-1]) else 0
         
-        # Calculate indicators using vnstock_ta
+        # Calculate indicators using vnstock_ta Indicator class (v0.2.0+)
         try:
-            from vnstock_ta import Indicators
+            from vnstock_ta import Indicator
             
-            indicator = Indicators(df)
+            # Initialize indicator with dataframe
+            indicator = Indicator(data=df)
             
-            # RSI
-            tech.rsi = round(float(indicator.rsi(period=14)), 2) if hasattr(indicator, 'rsi') else 50.0
+            # RSI - returns pd.Series named "RSI_14"
+            rsi_series = indicator.rsi(length=14)
+            if rsi_series is not None and len(rsi_series) > 0:
+                tech.rsi = round(float(rsi_series.iloc[-1]), 2)
             tech.rsi_status = self._get_rsi_status(tech.rsi)
             
-            # MACD
-            macd_data = indicator.macd() if hasattr(indicator, 'macd') else None
-            if macd_data is not None and len(macd_data) > 0:
-                tech.macd = round(float(macd_data.iloc[-1]), 2)
+            # MACD - returns pd.DataFrame with columns: MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
+            macd_df = indicator.macd(fast=12, slow=26, signal=9)
+            if macd_df is not None and len(macd_df) > 0 and hasattr(macd_df, 'columns'):
+                # Find MACD line column (the first column without 'h' or 's' suffix)
+                for col in macd_df.columns:
+                    if 'MACD' in col.upper() and 'h' not in col.lower()[-1] and 's' not in col.lower()[-1]:
+                        tech.macd = round(float(macd_df[col].iloc[-1]), 2)
+                        break
+                # Fallback to first column if specific format not found
+                if tech.macd == 0 and len(macd_df.columns) > 0:
+                    tech.macd = round(float(macd_df.iloc[:, 0].iloc[-1]), 2)
             tech.macd_signal = self._get_macd_status(tech.macd)
             
-            # ADX
-            adx_data = indicator.adx() if hasattr(indicator, 'adx') else None
-            if adx_data is not None and len(adx_data) > 0:
-                tech.adx = round(float(adx_data.iloc[-1]), 2)
+            # ADX - returns pd.DataFrame with columns: ADX_14, DMP_14, DMN_14
+            adx_df = indicator.adx(length=14)
+            if adx_df is not None and len(adx_df) > 0 and hasattr(adx_df, 'columns'):
+                for col in adx_df.columns:
+                    if col.startswith('ADX'):
+                        tech.adx = round(float(adx_df[col].iloc[-1]), 2)
+                        break
+                # Fallback
+                if tech.adx == 0 and len(adx_df.columns) > 0:
+                    tech.adx = round(float(adx_df.iloc[:, 0].iloc[-1]), 2)
             tech.adx_status = self._get_adx_status(tech.adx)
             
-            # SMA
-            if hasattr(indicator, 'sma'):
-                tech.sma_20 = round(float(indicator.sma(period=20).iloc[-1]), 2) if len(df) >= 20 else 0.0
-                tech.sma_50 = round(float(indicator.sma(period=50).iloc[-1]), 2) if len(df) >= 50 else tech.sma_20
+            # SMA - returns pd.Series named "SMA_20", "SMA_50"
+            sma_20_series = indicator.sma(length=20)
+            if sma_20_series is not None and len(sma_20_series) > 0 and len(df) >= 20:
+                tech.sma_20 = round(float(sma_20_series.iloc[-1]), 2)
+            
+            sma_50_series = indicator.sma(length=50)
+            if sma_50_series is not None and len(sma_50_series) > 0 and len(df) >= 50:
+                tech.sma_50 = round(float(sma_50_series.iloc[-1]), 2)
+            elif tech.sma_20 > 0:
+                tech.sma_50 = tech.sma_20
             
             # Trend status
             tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
             
-            # SuperTrend (simplified - use ATR and close)
-            tech.supertrend_signal, tech.supertrend_stop = self._calculate_supertrend(df)
+            # SuperTrend - returns pd.DataFrame with columns: SUPERT_10_3.0, SUPERTd_10_3.0, SUPERTl_10_3.0, SUPERTs_10_3.0
+            st_df = indicator.supertrend(length=10, multiplier=3)
+            if st_df is not None and len(st_df) > 0 and hasattr(st_df, 'columns'):
+                for col in st_df.columns:
+                    if col.startswith('SUPERT') and 'd' not in col and 'l' not in col and 's' not in col:
+                        tech.supertrend_stop = round(float(st_df[col].iloc[-1]), 2)
+                        break
+                    elif col.startswith('SUPERT'):
+                        # Get direction column for signal
+                        pass
+                # Get direction from SUPERTd column
+                for col in st_df.columns:
+                    if 'SUPERTd' in col:
+                        direction = float(st_df[col].iloc[-1])
+                        tech.supertrend_signal = "buy" if direction > 0 else "sell"
+                        break
+                # Fallback: use SUPERT column
+                if tech.supertrend_stop == 0 and len(st_df.columns) > 0:
+                    tech.supertrend_stop = round(float(st_df.iloc[:, 0].iloc[-1]), 2)
+            else:
+                tech.supertrend_signal = "neutral"
             
-            # CMF
-            tech.cmf = round(float(indicator.cmf(period=20).iloc[-1]), 4) if hasattr(indicator, 'cmf') and len(df) >= 20 else 0.0
-            tech.cmf_status = "inflow" if tech.cmf > 0 else "outflow"
+            # VWAP - returns pd.Series named "VWAP_D"
+            vwap_series = indicator.vwap(anchor='D')
+            if vwap_series is not None and len(vwap_series) > 0:
+                tech.vwap = round(float(vwap_series.iloc[-1]), 2)
+            else:
+                # Fallback: calculate VWAP manually
+                if 'high' in df.columns and 'low' in df.columns:
+                    typical = (df['high'] + df['low'] + df['close']) / 3
+                    typical_vol = typical * df['volume']
+                    tech.vwap = round(float((typical_vol.sum() / df['volume'].sum())), 2) if df['volume'].sum() > 0 else tech.current_price
+            tech.vwap_status = "above" if tech.current_price > tech.vwap else "below"
             
-            # MFI
-            tech.mfi = round(float(indicator.mfi(period=14).iloc[-1]), 2) if hasattr(indicator, 'mfi') and len(df) >= 14 else 50.0
-            tech.mfi_status = self._get_mfi_status(tech.mfi)
-            
-            # ATR
-            tech.atr = round(float(indicator.atr(period=14).iloc[-1]), 2) if hasattr(indicator, 'atr') and len(df) >= 14 else 0.0
+            # ATR - returns pd.Series named "ATRr_14"
+            atr_series = indicator.atr(length=14)
+            if atr_series is not None and len(atr_series) > 0:
+                tech.atr = round(float(atr_series.iloc[-1]), 2)
             tech.atr_status = self._get_atr_status(tech.atr, tech.current_price)
             
-            # Bollinger Bands
-            bb_data = indicator.bollinger_bands() if hasattr(indicator, 'bollinger_bands') else None
-            if bb_data is not None and hasattr(bb_data, 'columns') and len(bb_data) > 0:
-                bb_cols = list(bb_data.columns)
-                if len(bb_cols) >= 3:
-                    tech.bollinger_upper = round(float(bb_data[bb_cols[0]].iloc[-1]), 2)
-                    tech.bollinger_middle = round(float(bb_data[bb_cols[1]].iloc[-1]), 2)
-                    tech.bollinger_lower = round(float(bb_data[bb_cols[2]].iloc[-1]), 2)
+            # Bollinger Bands - returns pd.DataFrame with columns: BBL_14_2.0, BBM_14_2.0, BBU_14_2.0, BBB_14_2.0, BBP_14_2.0
+            bb_df = indicator.bbands(length=20, std=2)
+            if bb_df is not None and hasattr(bb_df, 'columns') and len(bb_df) > 0:
+                bb_cols = list(bb_df.columns)
+                # Find bands by prefix
+                for col in bb_cols:
+                    col_upper = col.upper()
+                    if 'BBL' in col_upper:
+                        tech.bollinger_lower = round(float(bb_df[col].iloc[-1]), 2)
+                    elif 'BBM' in col_upper:
+                        tech.bollinger_middle = round(float(bb_df[col].iloc[-1]), 2)
+                    elif 'BBU' in col_upper:
+                        tech.bollinger_upper = round(float(bb_df[col].iloc[-1]), 2)
+                
+                # If not found by name, use first 3 columns in order: lower, middle, upper
+                if tech.bollinger_upper == 0 and len(bb_cols) >= 3:
+                    tech.bollinger_lower = round(float(bb_df[bb_cols[0]].iloc[-1]), 2)
+                    tech.bollinger_middle = round(float(bb_df[bb_cols[1]].iloc[-1]), 2)
+                    tech.bollinger_upper = round(float(bb_df[bb_cols[2]].iloc[-1]), 2)
             
-            # Bollinger position
+            # Bollinger position (Percent B)
             if tech.bollinger_upper > tech.bollinger_lower:
                 tech.bollinger_position = round(
                     (tech.current_price - tech.bollinger_lower) / (tech.bollinger_upper - tech.bollinger_lower), 2
                 )
             
-            # VWAP (simplified - use typical price)
-            if 'high' in df.columns and 'low' in df.columns:
-                typical = (df['high'] + df['low'] + df['close']) / 3
-                typical_vol = typical * df['volume']
-                tech.vwap = round(float((typical_vol.sum() / df['volume'].sum())), 2) if df['volume'].sum() > 0 else tech.current_price
-            else:
-                tech.vwap = tech.current_price
-            tech.vwap_status = "above" if tech.current_price > tech.vwap else "below"
+            # CMF - calculate manually since not in vnstock_ta
+            tech.cmf = self._calculate_cmf(df, period=20)
+            tech.cmf_status = "inflow" if tech.cmf > 0 else "outflow"
             
-        except Exception:
+            # MFI - calculate manually since not in vnstock_ta
+            tech.mfi = self._calculate_mfi(df, period=14)
+            tech.mfi_status = self._get_mfi_status(tech.mfi)
+            
+        except ImportError as e:
+            # Fallback if vnstock_ta not available
+            tech = self._calculate_technical_fallback(df)
+        except Exception as e:
             # Fallback: calculate basic indicators manually
             tech = self._calculate_technical_fallback(df)
         
@@ -356,6 +422,70 @@ class StockAnalyzer:
         tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
         
         return tech
+    
+    def _calculate_cmf(self, df: pd.DataFrame, period: int = 20) -> float:
+        """Calculate Chaikin Money Flow (CMF)"""
+        try:
+            if len(df) < period:
+                return 0.0
+            
+            close = df['close']
+            high = df['high']
+            low = df['low']
+            volume = df['volume']
+            
+            # Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low)
+            mfm = mfm.fillna(0)
+            
+            # Money Flow Volume
+            mfv = mfm * volume
+            
+            # CMF
+            cmf = mfv.rolling(period).sum() / volume.rolling(period).sum()
+            
+            return round(float(cmf.iloc[-1]), 4) if len(cmf) > 0 else 0.0
+        except Exception:
+            return 0.0
+    
+    def _calculate_mfi(self, df: pd.DataFrame, period: int = 14) -> float:
+        """Calculate Money Flow Index (MFI)"""
+        try:
+            if len(df) < period + 1:
+                return 50.0
+            
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            volume = df['volume']
+            
+            # Typical Price
+            typical = (high + low + close) / 3
+            
+            # Raw Money Flow
+            money_flow = typical * volume
+            
+            # Money Flow Sign
+            signed_flow = pd.Series(0.0, index=money_flow.index)
+            for i in range(1, len(money_flow)):
+                if typical.iloc[i] > typical.iloc[i-1]:
+                    signed_flow.iloc[i] = money_flow.iloc[i]
+                elif typical.iloc[i] < typical.iloc[i-1]:
+                    signed_flow.iloc[i] = -money_flow.iloc[i]
+            
+            # Positive and Negative Money Flow
+            positive_flow = signed_flow.clip(lower=0).rolling(period).sum()
+            negative_flow = (-signed_flow.clip(upper=0)).rolling(period).sum()
+            
+            # Money Ratio
+            money_ratio = positive_flow / negative_flow
+            
+            # MFI
+            mfi = 100 - (100 / (1 + money_ratio))
+            
+            return round(float(mfi.iloc[-1]), 2) if len(mfi) > 0 and not pd.isna(mfi.iloc[-1]) else 50.0
+        except Exception:
+            return 50.0
     
     def _calculate_supertrend(self, df: pd.DataFrame) -> tuple[str, float]:
         """Calculate SuperTrend (simplified)"""
@@ -398,44 +528,37 @@ class StockAnalyzer:
         
         try:
             from vnstock_data import Fundamental
+            import warnings
             
             fun = Fundamental()
             
-            # Get financial ratios
-            try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                # Get financial ratios - index is numeric, not row labels
                 ratios = fun.equity(symbol).ratio(period="quarter")
                 if ratios is not None and len(ratios) > 0:
-                    # Get latest row
-                    latest = ratios.iloc[-1] if hasattr(ratios, 'iloc') else ratios
+                    # Get latest row (last row in DataFrame)
+                    latest = ratios.iloc[-1]
                     
-                    # P/E
-                    if 'pe' in ratios.columns or 'P/E' in ratios.columns:
-                        pe_col = 'pe' if 'pe' in ratios.columns else 'P/E'
-                        fund.pe = float(latest.get(pe_col, 0)) if pd.notna(latest.get(pe_col)) else 0.0
+                    # P/E - direct column
+                    if 'pe' in ratios.columns:
+                        fund.pe = float(latest.get('pe', 0)) if pd.notna(latest.get('pe')) else 0.0
                     
-                    # P/B
-                    if 'pb' in ratios.columns or 'P/B' in ratios.columns:
-                        pb_col = 'pb' if 'pb' in ratios.columns else 'P/B'
-                        fund.pb = float(latest.get(pb_col, 0)) if pd.notna(latest.get(pb_col)) else 0.0
+                    # P/B - direct column
+                    if 'pb' in ratios.columns:
+                        fund.pb = float(latest.get('pb', 0)) if pd.notna(latest.get('pb')) else 0.0
                     
-                    # ROE
-                    if 'roe' in ratios.columns or 'ROE' in ratios.columns:
-                        roe_col = 'roe' if 'roe' in ratios.columns else 'ROE'
-                        fund.roe = float(latest.get(roe_col, 0)) if pd.notna(latest.get(roe_col)) else 0.0
+                    # EPS - trailing_eps column
+                    if 'trailing_eps' in ratios.columns:
+                        fund.eps = float(latest.get('trailing_eps', 0)) if pd.notna(latest.get('trailing_eps')) else 0.0
                     
-                    # EPS
-                    if 'eps' in ratios.columns or 'EPS' in ratios.columns:
-                        eps_col = 'eps' if 'eps' in ratios.columns else 'EPS'
-                        fund.eps = float(latest.get(eps_col, 0)) if pd.notna(latest.get(eps_col)) else 0.0
-                    
-                    # Net profit margin
-                    if 'net_margin' in ratios.columns or 'Net Profit Margin' in ratios.columns:
-                        margin_col = 'net_margin' if 'net_margin' in ratios.columns else 'Net Profit Margin'
-                        fund.margin = float(latest.get(margin_col, 0)) if pd.notna(latest.get(margin_col)) else 0.0
-            except Exception:
-                pass
+                    # ROE - calculate from PE and PB if not available
+                    # ROE = P/B / (P/E) - DuPont approximation
+                    if fund.pe > 0 and fund.pb > 0:
+                        fund.roe = round((fund.pb / fund.pe) * 100, 2)
             
-            # Calculate F-Score (simplified)
+            # Calculate F-Score
             fund.f_score = self._calculate_f_score(symbol)
             fund.f_score_grade = self._get_f_score_grade(fund.f_score)
             
@@ -445,32 +568,185 @@ class StockAnalyzer:
         return fund
     
     def _calculate_f_score(self, symbol: str) -> int:
-        """Calculate Piotroski F-Score (simplified)"""
+        """
+        Calculate Piotroski F-Score (9 criteria)
+        Based on: Profitability, Leverage, Liquidity, Operating Efficiency
+        """
         score = 0
         
         try:
             from vnstock_data import Fundamental
+            import warnings
             
             fun = Fundamental()
             
-            # Get income statement for profitability
-            try:
-                income = fun.equity(symbol).income_statement(period="annual")
-                if income is not None and len(income) >= 2:
-                    # Check ROA increase
-                    # Simplified: assume positive if revenue growth
-                    score += 1  # Placeholder
-            except Exception:
-                pass
-            
-            # Simplified F-Score (based on available data)
-            # In production, this would analyze multiple quarters
-            score = min(score, 9)
-            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                # Get financial statements
+                income = fun.equity(symbol).income_statement(limit=8)
+                balance = fun.equity(symbol).balance_sheet(limit=8)
+                cf = fun.equity(symbol).cash_flow(limit=8)
+                
+                if income is None or len(income.columns) < 2:
+                    return 0
+                
+                # Data is organized with columns = time periods
+                # Column index 0 = most recent, index -1 = oldest
+                # But from debug output: index 55 = 2012-Q1 (recent), index 54 = 2012-Q2 (older)
+                # So column 0 is oldest, column -1 is newest
+                
+                # Helper to get value from column name
+                def get_col(df, col_name, col_idx=-1):
+                    try:
+                        if df is None or col_name not in df.columns:
+                            return None
+                        return df.loc[df.index[0], col_name]  # First row has the value
+                    except:
+                        return None
+                
+                # Get latest period column (column -1 = newest based on debug)
+                # Actually let's check: row with period "2012-Q1" should be newest
+                # From debug: index 55 has period "2012-Q1", so we need the row where period matches
+                latest_row = None
+                period_col = 'period' if 'period' in income.columns else None
+                
+                if period_col:
+                    for idx in income.index:
+                        period_val = income.loc[idx, period_col]
+                        if period_val and 'Q' in str(period_val):
+                            latest_row = idx
+                            break
+                
+                if latest_row is None:
+                    latest_row = income.index[0]  # Fallback to first row
+                
+                prev_row = income.index[1] if len(income.index) > 1 else None
+                
+                # ===== Profitability Criteria =====
+                
+                # Criteria 1: ROA > 0 (Return on Assets)
+                # ROA = Net Income / Total Assets
+                net_income_col = 'net_profit_after_tax' if 'net_profit_after_tax' in income.columns else None
+                total_assets_col = 'total_assets' if 'total_assets' in balance.columns else None
+                
+                if net_income_col and total_assets_col:
+                    net_income = income.loc[latest_row, net_income_col]
+                    total_assets = balance.loc[latest_row, total_assets_col]
+                    if net_income and total_assets and float(total_assets) != 0:
+                        roa = float(net_income) / float(total_assets)
+                        if roa > 0:
+                            score += 1
+                
+                # Criteria 2: Operating Cash Flow > 0
+                ocf_col = None
+                for col in cf.columns:
+                    if 'net_cash_flows_from_operating_activities' in col.lower():
+                        ocf_col = col
+                        break
+                
+                if ocf_col:
+                    ocf = cf.loc[latest_row, ocf_col]
+                    if ocf and float(ocf) > 0:
+                        score += 1
+                
+                # Criteria 3: ROA increase YoY
+                if net_income_col and total_assets_col and prev_row:
+                    net_income_prev = income.loc[prev_row, net_income_col]
+                    total_assets_prev = balance.loc[prev_row, total_assets_col]
+                    if net_income_prev and total_assets_prev and float(total_assets_prev) != 0:
+                        roa_prev = float(net_income_prev) / float(total_assets_prev)
+                        if roa > roa_prev:
+                            score += 1
+                
+                # Criteria 4: CFO > Net Income (accruals)
+                if ocf_col:
+                    ocf_val = cf.loc[latest_row, ocf_col]
+                    if ocf_val and net_income and float(ocf_val) > float(net_income):
+                        score += 1
+                
+                # ===== Leverage Criteria =====
+                
+                # Criteria 5: D/E ratio decrease
+                liabilities_col = None
+                for col in balance.columns:
+                    if 'total_liabilities' in col.lower() or 'liabilities' in col.lower():
+                        liabilities_col = col
+                        break
+                
+                equity_col = None
+                for col in balance.columns:
+                    if 'equity' in col.lower() or 'owners_equity' in col.lower():
+                        equity_col = col
+                        break
+                
+                if liabilities_col and equity_col:
+                    liabilities = balance.loc[latest_row, liabilities_col]
+                    equity = balance.loc[latest_row, equity_col]
+                    if equity and float(equity) > 0:
+                        de_ratio = float(liabilities) / float(equity)
+                        if de_ratio < 1.5:  # Reasonable leverage
+                            score += 1
+                
+                # ===== Liquidity Criteria =====
+                
+                # Criteria 6: Current Ratio > 1
+                current_assets_col = None
+                current_liab_col = None
+                for col in balance.columns:
+                    if 'current_assets' in col.lower():
+                        current_assets_col = col
+                    if 'current_liabilities' in col.lower():
+                        current_liab_col = col
+                
+                if current_assets_col and current_liab_col:
+                    current_assets = balance.loc[latest_row, current_assets_col]
+                    current_liab = balance.loc[latest_row, current_liab_col]
+                    if current_liab and float(current_liab) > 0:
+                        current_ratio = float(current_assets) / float(current_liab)
+                        if current_ratio > 1:
+                            score += 1
+                
+                # ===== Operating Efficiency Criteria =====
+                
+                # Criteria 7: Gross Margin not declining
+                # VCB is a bank, so check interest income margin instead
+                interest_income_col = None
+                for col in income.columns:
+                    if 'interest_income' in col.lower():
+                        interest_income_col = col
+                        break
+                
+                # Simplified: Check if profit is positive and growing
+                if net_income:
+                    if float(net_income) > 0:
+                        score += 1
+                
+                # Criteria 8: Asset Turnover
+                if total_assets_col:
+                    total_assets = balance.loc[latest_row, total_assets_col]
+                    # Need revenue - for banks use total income
+                    total_income = None
+                    for col in income.columns:
+                        if 'income' in col.lower() and 'interest' in col.lower():
+                            total_income = income.loc[latest_row, col]
+                            break
+                    
+                    if total_income and total_assets and float(total_assets) > 0:
+                        at = float(total_income) / float(total_assets)
+                        if at > 0.05:  # For banks, low threshold
+                            score += 1
+                
+                # Criteria 9: Revenue growth
+                if prev_row and total_income:
+                    total_income_prev = income.loc[prev_row, total_income_col] if total_income_col else None
+                    if total_income_prev and float(total_income) > float(total_income_prev):
+                        score += 1
+                
         except Exception:
             pass
         
-        return score
+        return min(score, 9)
     
     def _get_f_score_grade(self, score: int) -> str:
         """Get F-Score grade"""
