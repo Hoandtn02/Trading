@@ -13,7 +13,8 @@ class FuturesData:
     """Data structure for futures information"""
     symbol: str = ""
     name: str = ""
-    current_price: float = 0.0
+    current_price: float = 0.0  # Futures price
+    spot_price: float = 0.0  # VN30 index price
     change_value: float = 0.0
     change_percent: float = 0.0
     high: float = 0.0
@@ -23,6 +24,16 @@ class FuturesData:
     basis: float = 0.0  # Chênh lệch với VN30
     trend: str = "NEUTRAL"
     technical_status: str = "NEUTRAL"
+    rsi: float = 50.0
+    adx: float = 25.0
+    atr: float = 0.0
+    recommendation: str = "WATCH"
+    sma_20: float = 0.0
+    sma_50: float = 0.0
+
+    @property
+    def futures_price(self):
+        return self.current_price
 
 
 class FuturesAnalyzer:
@@ -65,21 +76,26 @@ class FuturesAnalyzer:
             # Try common contract codes
             for contract in ["VN30F1M", "VN30F", "VN30F2506"]:
                 try:
+                    # Use correct interval: 1D instead of 1d
                     df = mkt.futures(contract).ohlcv(
-                        interval="1d",
+                        interval="1D",
                         length=self.period_ta
                     )
                     if df is not None and len(df) > 0:
                         data.symbol = contract
                         self._extract_data(data, df)
                         return
-                except:
+                except Exception as inner_e:
+                    print(f"[FuturesAnalyzer] Try {contract} failed: {inner_e}")
                     continue
             
             # If no futures data, try index as proxy
-            df = mkt.index("VN30").ohlcv(interval="1d", length=self.period_ta)
-            if df is not None and len(df) > 0:
-                self._extract_data(data, df, is_index=True)
+            try:
+                df = mkt.index("VN30").ohlcv(interval="1D", length=self.period_ta)
+                if df is not None and len(df) > 0:
+                    self._extract_data(data, df, is_index=True)
+            except Exception as e:
+                print(f"[FuturesAnalyzer] Index fallback failed: {e}")
                 
         except Exception as e:
             print(f"[FuturesAnalyzer] Error: {e}")
@@ -119,25 +135,14 @@ class FuturesAnalyzer:
             from vnstock_data import Market
             
             mkt = Market()
-            index = mkt.index("VN30").quote()
+            index_df = mkt.index("VN30").ohlcv(
+                start="2026-04-23",
+                end="2026-04-24"
+            )
             
-            if index is not None and len(index) > 0:
-                # Get underlying index value
-                index_value = 0
-                for col in index.columns:
-                    if 'index' in str(col).lower() or 'value' in str(col).lower():
-                        if pd.notna(index.iloc[0][col]):
-                            index_value = float(index.iloc[0][col])
-                            break
-                
-                # Or get close price
-                if index_value == 0:
-                    for col in index.columns:
-                        if pd.notna(index.iloc[0][col]):
-                            val = float(index.iloc[0][col])
-                            if 1000 < val < 10000:  # Reasonable VN30 range
-                                index_value = val
-                                break
+            if index_df is not None and len(index_df) > 0:
+                # Get underlying index value from OHLCV
+                index_value = float(index_df.iloc[-1].get('close', 0))
                 
                 if index_value > 0 and data.current_price > 0:
                     # Basis = Futures - Index

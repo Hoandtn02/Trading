@@ -197,10 +197,30 @@ FUNCTION_REGISTRY = [
         "group": {"name": "Chỉ số thị trường", "slug": "indices", "description": "VNIndex, HNXIndex, UPCOM và các index quốc tế."},
         "functions": [
             {
-                "function_id": "vnindex",
-                "label": "VNIndex",
+                "function_id": "index_analysis",
+                "label": "Phân tích chỉ số (Full)",
                 "status": "ready",
-                "description": "Chỉ số VNIndex - biến động toàn bộ thị trường HOSE.",
+                "description": "Phân tích toàn diện VNIndex, VN30 với Market Breadth, ADX, SMA và AI insights.",
+                "runner_path": "dashboard.runners.real_index_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": False, "default": "VNINDEX"},
+                },
+            },
+            {
+                "function_id": "market_breadth",
+                "label": "Market Breadth",
+                "status": "ready",
+                "description": "Số mã tăng/giảm trên thị trường.",
+                "runner_path": "dashboard.runners.real_market_breadth",
+                "output_type": "table",
+                "param_schema": {},
+            },
+            {
+                "function_id": "vnindex",
+                "label": "VNIndex (Historical)",
+                "status": "ready",
+                "description": "Dữ liệu lịch sử VNIndex.",
                 "runner_path": "dashboard.runners.real_index_history",
                 "output_type": "table",
                 "param_schema": {
@@ -296,6 +316,15 @@ FUNCTION_REGISTRY = [
         "group": {"name": "Kim loại quý", "slug": "metals", "description": "Giá vàng trong nước và thế giới."},
         "functions": [
             {
+                "function_id": "gold_analysis",
+                "label": "Phân tích vàng (Full)",
+                "status": "ready",
+                "description": "Phân tích vàng SJC với RSI, MACD, Bollinger, ADX, Pivot Points và AI insights.",
+                "runner_path": "dashboard.runners.real_gold_analysis",
+                "output_type": "json",
+                "param_schema": {},
+            },
+            {
                 "function_id": "gold_domestic",
                 "label": "Giá vàng trong nước (BTMC)",
                 "status": "ready",
@@ -321,6 +350,15 @@ FUNCTION_REGISTRY = [
     {
         "group": {"name": "Phái sinh", "slug": "derivatives", "description": "Hợp đồng tương lai VN30F và dữ liệu hợp đồng theo kỳ hạn."},
         "functions": [
+            {
+                "function_id": "futures_analysis",
+                "label": "Phân tích VN30F (Full)",
+                "status": "ready",
+                "description": "Phân tích phái sinh VN30F với Basis, Term Structure, ATR, VWAP, RSI và AI insights.",
+                "runner_path": "dashboard.runners.real_futures_analysis",
+                "output_type": "json",
+                "param_schema": {},
+            },
             {
                 "function_id": "vn30f_quote",
                 "label": "VN30F - Giá phái sinh",
@@ -350,6 +388,17 @@ FUNCTION_REGISTRY = [
     {
         "group": {"name": "Quỹ đầu tư", "slug": "funds", "description": "ETF, quỹ mở, danh mục, hiệu suất và chỉ số liên quan (API bên thứ ba - có thể chậm hoặc lỗi)."},
         "functions": [
+            {
+                "function_id": "etf_analysis",
+                "label": "Phân tích ETF (Full)",
+                "status": "ready",
+                "description": "Phân tích ETF với NAV, Premium/Discount, Tracking Error, Beta và AI insights.",
+                "runner_path": "dashboard.runners.real_etf_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": False, "default": "E1VFVN30"},
+                },
+            },
             {
                 "function_id": "etf_overview",
                 "label": "ETF - Danh sách ETF",
@@ -390,10 +439,21 @@ FUNCTION_REGISTRY = [
         "group": {"name": "Tỷ giá & Ngoại hối", "slug": "forex", "description": "Tỷ giá ngoại tệ và dữ liệu forex (API bên thứ ba - có thể chậm hoặc lỗi)."},
         "functions": [
             {
+                "function_id": "forex_analysis",
+                "label": "Phân tích Forex (Full)",
+                "status": "ready",
+                "description": "Phân tích tỷ giá với RSI, ATR, Ichimoku và AI insights.",
+                "runner_path": "dashboard.runners.real_forex_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": False, "default": "USDVND"},
+                },
+            },
+            {
                 "function_id": "forex_vcb",
                 "label": "Tỷ giá VCB",
-                "status": "partial",
-                "description": "Tỷ giá ngoại tệ tại Vietcombank (API bên thứ ba - có thể chậm hoặc lỗi).",
+                "status": "ready",
+                "description": "Tỷ giá ngoại tệ tại Vietcombank.",
                 "runner_path": "dashboard.runners.real_forex_vcb",
                 "output_type": "table",
                 "param_schema": {
@@ -403,8 +463,46 @@ FUNCTION_REGISTRY = [
         ],
     },
     {
+        "group": {"name": "Crypto", "slug": "crypto", "description": "Giá và biến động thị trường tiền mã hóa (API bên thứ ba - có thể chậm hoặc lỗi)."},
+        "functions": [
+            {
+                "function_id": "crypto_analysis",
+                "label": "Phân tích Crypto (Full)",
+                "status": "ready",
+                "description": "Phân tích crypto với RSI, MACD, Bollinger và AI insights.",
+                "runner_path": "dashboard.runners.real_crypto_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": False, "default": "BTCUSDT"},
+                },
+            },
+            {
+                "function_id": "crypto_price",
+                "label": "Giá Crypto",
+                "status": "ready",
+                "description": "Giá tiền mã hóa qua Yahoo Finance.",
+                "runner_path": "dashboard.runners.real_crypto_price",
+                "output_type": "table",
+                "param_schema": {
+                    "symbol_id": {"type": "string", "required": False, "default": "BTC-USD"},
+                    "start_date": {"type": "date", "required": False, "default": ""},
+                    "end_date": {"type": "date", "required": False, "default": ""},
+                },
+            },
+        ],
+    },
+    {
         "group": {"name": "Trái phiếu", "slug": "bonds", "description": "Trái phiếu chính phủ và doanh nghiệp."},
         "functions": [
+            {
+                "function_id": "bond_analysis",
+                "label": "Phân tích Trái phiếu (Full)",
+                "status": "ready",
+                "description": "Phân tích trái phiếu chính phủ với Yield Curve, Duration, AI insights.",
+                "runner_path": "dashboard.runners.real_bond_analysis",
+                "output_type": "json",
+                "param_schema": {},
+            },
             {
                 "function_id": "gov_bonds",
                 "label": "Danh sách trái phiếu chính phủ",
@@ -414,24 +512,6 @@ FUNCTION_REGISTRY = [
                 "output_type": "table",
                 "param_schema": {
                     "source": {"type": "string", "required": False, "default": "vci"},
-                },
-            },
-        ],
-    },
-    {
-        "group": {"name": "Crypto", "slug": "crypto", "description": "Giá và biến động thị trường tiền mã hóa (API bên thứ ba - có thể chậm hoặc lỗi)."},
-        "functions": [
-            {
-                "function_id": "crypto_price",
-                "label": "Giá Crypto",
-                "status": "partial",
-                "description": "Giá tiền mã hóa qua MSN (API bên thứ ba - có thể chậm hoặc lỗi).",
-                "runner_path": "dashboard.runners.real_crypto_price",
-                "output_type": "table",
-                "param_schema": {
-                    "symbol_id": {"type": "string", "required": False, "default": "BTC-USD"},
-                    "start_date": {"type": "date", "required": False, "default": ""},
-                    "end_date": {"type": "date", "required": False, "default": ""},
                 },
             },
         ],

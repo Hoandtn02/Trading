@@ -1,0 +1,975 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Overview - Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .header h1 { font-size: 24px; color: #fff; }
+        .header .nav-links {
+            display: flex;
+            gap: 12px;
+        }
+        .header .nav-links a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #1e293b;
+            transition: all 0.2s;
+        }
+        .header .nav-links a:hover { background: #334155; color: #fff; }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        
+        @media (max-width: 900px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid #334155;
+            transition: all 0.3s;
+        }
+        .card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #334155;
+        }
+        .card-title { font-size: 16px; font-weight: 600; color: #fff; }
+        .card-badge {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #3b82f6;
+            color: #fff;
+        }
+        
+        .price-display {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .price-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .price-change {
+            font-size: 18px;
+            margin-top: 8px;
+        }
+        .price-change.up { color: #22c55e; }
+        .price-change.down { color: #ef4444; }
+        
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        .indicator {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .indicator-label { font-size: 11px; color: #64748b !important; margin-bottom: 4px; }
+        .indicator-value { font-size: 18px; font-weight: 600; color: #fff !important; }
+        .indicator-value.good { color: #22c55e !important; }
+        .indicator-value.bad { color: #ef4444 !important; }
+        .indicator-value.neutral { color: #f59e0b !important; }
+        
+        .placeholder-text {
+            color: #64748b;
+            text-align: center;
+            padding: 40px 20px;
+            font-size: 14px;
+        }
+        
+        .analysis-card {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #334155;
+        }
+        .analysis-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .analysis-badge {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #3b82f6;
+            color: #fff;
+        }
+        
+        .section-title {
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin: 16px 0 8px 0;
+            padding-left: 8px;
+            border-left: 3px solid #3b82f6;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #0f172a;
+            border-radius: 6px;
+            margin-bottom: 6px;
+        }
+        .info-label {
+            color: #64748b;
+            font-size: 13px;
+        }
+        .info-value {
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .score-card {
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #3b82f6;
+            text-align: center;
+        }
+        .score-value {
+            font-size: 48px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .score-label { color: #94a3b8; font-size: 12px; }
+        .signal-badge {
+            display: inline-block;
+            padding: 8px 24px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+        .signal-buy { background: #22c55e; color: #fff; }
+        .signal-sell { background: #ef4444; color: #fff; }
+        .signal-hold { background: #f59e0b; color: #fff; }
+        
+        .refresh-btn {
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover { background: #2563eb; }
+        
+        .loading { text-align: center; padding: 40px; color: #64748b !important; }
+        
+        /* Phase tabs */
+        .phase-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .phase-tab {
+            padding: 10px 20px;
+            border-radius: 8px;
+            background: #1e293b;
+            color: #94a3b8;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        .phase-tab.active {
+            background: #3b82f6;
+            color: #fff;
+            border-color: #3b82f6;
+        }
+        .phase-tab:hover { background: #334155; }
+        
+        .phase-content {
+            display: none;
+        }
+        .phase-content.active { display: block; }
+        
+        /* Backtest section */
+        .backtest-section {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #334155;
+        }
+        .backtest-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid #f59e0b;
+        }
+        .backtest-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .backtest-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f59e0b;
+        }
+        .form-group {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .form-input {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #fff;
+            font-size: 14px;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .btn-primary:hover { background: #2563eb; }
+        
+        /* Summary row */
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            text-align: center;
+        }
+        .summary-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .summary-label {
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .summary-change {
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        /* Analysis output styling - make text visible */
+        .analysis-output {
+            font-size: 13px;
+            line-height: 1.4;
+            color: #e2e8f0 !important;
+            background: #0f172a;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+            white-space: pre-wrap;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .analysis-output * {
+            color: #e2e8f0 !important;
+        }
+
+        .analysis-output pre {
+            color: #22c55e !important;
+            background: transparent;
+        }
+
+        .analysis-output .error {
+            color: #ef4444 !important;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Market Overview Dashboard</h1>
+        <div class="nav-links">
+            <a href="/">← Quay lại Dashboard</a>
+            <a href="/overview/">Tổng quan</a>
+            <a href="/history/">Lịch sử</a>
+        </div>
+    </div>
+    
+    {# Summary Row #}
+    <div class="summary-row" id="summaryRow">
+        <div class="summary-card">
+            <div class="summary-value" id="summaryVN">...</div>
+            <div class="summary-label">VNINDEX</div>
+            <div class="summary-change" id="summaryVNChange">-</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value" id="summaryGold">...</div>
+            <div class="summary-label">Vàng SJC</div>
+            <div class="summary-change" id="summaryGoldChange">-</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value" id="summaryBTC">...</div>
+            <div class="summary-label">Bitcoin</div>
+            <div class="summary-change" id="summaryBTCChange">-</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value" id="summaryVN30F">...</div>
+            <div class="summary-label">VN30F</div>
+            <div class="summary-change" id="summaryVN30FChange">-</div>
+        </div>
+    </div>
+    
+    {# Phase Tabs #}
+    <div class="phase-tabs">
+        <div class="phase-tab active" data-phase="stocks" onclick="showPhase('stocks')">📈 Phase 1: Cổ phiếu</div>
+        <div class="phase-tab" data-phase="indices" onclick="showPhase('indices')">📊 Phase 2: Chỉ số</div>
+        <div class="phase-tab" data-phase="commodities" onclick="showPhase('commodities')">🥇 Phase 3: Vàng & Phái sinh</div>
+        <div class="phase-tab" data-phase="alternatives" onclick="showPhase('alternatives')">💹 Phase 4: ETF, Forex, Crypto</div>
+        <div class="phase-tab" data-phase="bonds" onclick="showPhase('bonds')">🏦 Phase 5: Trái phiếu</div>
+        <div class="phase-tab" data-phase="backtest" onclick="showPhase('backtest')">🔮 Backtest</div>
+    </div>
+    
+    {# Phase 1: Stocks #}
+    <div class="phase-content active" id="phase-stocks">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🏦 Phân tích cổ phiếu</span>
+                    <span class="card-badge">Phase 1</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Nhập mã cổ phiếu:</label>
+                    <input type="text" id="stockSymbol" class="form-input" placeholder="VD: VCB, ACB, FPT" value="VCB" style="width: 100%; text-transform: uppercase;">
+                </div>
+                <button onclick="analyzeStock()" class="btn-primary" style="width: 100%;">🔍 Phân tích</button>
+                <div id="stockResult" class="analysis-output">
+                    <div class="placeholder-text">Nhập mã cổ phiếu và nhấn "Phân tích" để xem kết quả</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">⭐ Watchlist</span>
+                    <button onclick="loadWatchlist()" class="refresh-btn">↻</button>
+                </div>
+                <div id="watchlistResult">
+                    <div style="display: grid; gap: 8px;">
+                        {% for symbol in watchlist %}
+                        <div style="display: flex; justify-content: space-between; padding: 10px 12px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b;">
+                            <span style="font-weight:600;color:#fff;">{{ symbol }}</span>
+                            <span class="price-change" id="price-{{ symbol }}" style="color:#64748b;">-</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Phase 2: Indices #}
+    <div class="phase-content" id="phase-indices">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📊 Phân tích Chỉ số</span>
+                    <span class="card-badge">Phase 2</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn chỉ số:</label>
+                    <select id="indexSymbol" class="form-input" style="width: 100%;">
+                        <option value="VNINDEX">VNINDEX - Toàn thị trường</option>
+                        <option value="VN30">VN30 - Top 30 cổ phiếu lớn</option>
+                        <option value="HNXIndex">HNX - Sàn HNX</option>
+                        <option value="UPCOM">UPCOM - Sàn UPCOM</option>
+                    </select>
+                </div>
+                <button onclick="loadIndices()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích</button>
+                <div id="indicesResult" class="analysis-output">
+                    <div class="placeholder-text">Chọn chỉ số và nhấn "Phân tích" để xem kết quả</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📈 Market Breadth</span>
+                    <button onclick="loadMarketBreadth()" class="refresh-btn">↻</button>
+                </div>
+                <div id="breadthResult">
+                    <div class="indicator-grid">
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Mã tăng</div>
+                            <div class="indicator-value" id="breadthUp" style="color:#22c55e;">-</div>
+                        </div>
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Mã giảm</div>
+                            <div class="indicator-value" id="breadthDown" style="color:#ef4444;">-</div>
+                        </div>
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Tỷ lệ</div>
+                            <div class="indicator-value" id="breadthRatio" style="color:#f59e0b;">-</div>
+                        </div>
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Trạng thái</div>
+                            <div class="indicator-value" id="breadthStatus" style="color:#fff;">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:16px;padding:12px;background:#0f172a;border-radius:8px;">
+                    <div style="color:#64748b;font-size:11px;margin-bottom:4px;">Nhận định</div>
+                    <div id="breadthInsight" style="color:#e2e8f0;font-size:13px;">Đang cập nhật...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Phase 3: Gold & Futures #}
+    <div class="phase-content" id="phase-commodities">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🥇 Vàng SJC</span>
+                    <span class="card-badge">Phase 3</span>
+                </div>
+                <button onclick="loadGold()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích Vàng</button>
+                <div id="goldResult" class="analysis-output">
+                    <div class="placeholder-text">Nhấn "Phân tích Vàng" để xem kết quả</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📊 VN30F Phái sinh</span>
+                    <span class="card-badge">Phase 3</span>
+                </div>
+                <button onclick="loadFutures()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích Phái sinh</button>
+                <div id="futuresResult" class="analysis-output">
+                    <div class="placeholder-text">Nhấn "Phân tích Phái sinh" để xem kết quả</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Phase 4: ETF, Forex, Crypto #}
+    <div class="phase-content" id="phase-alternatives">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">💹 ETF Analysis</span>
+                    <span class="card-badge">Phase 4</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn ETF:</label>
+                    <select id="etfSymbol" class="form-input" style="width: 100%;">
+                        <option value="E1VFVN30">E1VFVN30 - SSIAM VN30</option>
+                        <option value="VFMVN30">VFMVN30 - VFM VN30</option>
+                        <option value="E1VFVN50">E1VFVN50 - SSIAM VN50</option>
+                    </select>
+                </div>
+                <button onclick="loadETF()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích ETF</button>
+                <div id="etfResult" class="analysis-output">
+                    <div class="placeholder-text">Chọn ETF và nhấn "Phân tích" để xem kết quả</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">₿ Crypto Analysis</span>
+                    <span class="card-badge">Phase 4</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn đồng tiền:</label>
+                    <select id="cryptoSymbol" class="form-input" style="width: 100%;">
+                        <option value="BTCUSDT">BTC/USDT - Bitcoin</option>
+                        <option value="ETHUSDT">ETH/USDT - Ethereum</option>
+                        <option value="BNBUSDT">BNB/USDT - Binance Coin</option>
+                        <option value="SOLUSDT">SOL/USDT - Solana</option>
+                        <option value="XRPUSDT">XRP/USDT - Ripple</option>
+                    </select>
+                </div>
+                <button onclick="loadCrypto()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích Crypto</button>
+                <div id="cryptoResult" class="analysis-output">
+                    <div class="placeholder-text">Chọn đồng tiền và nhấn "Phân tích" để xem kết quả</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">💱 Forex Analysis</span>
+                    <span class="card-badge">Phase 4</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn cặp tiền:</label>
+                    <select id="forexSymbol" class="form-input" style="width: 100%;">
+                        <option value="USDVND">USD/VND - US Dollar / Vietnam Dong</option>
+                        <option value="EURUSD">EUR/USD - Euro / US Dollar</option>
+                        <option value="GBPUSD">GBP/USD - British Pound / US Dollar</option>
+                        <option value="USDJPY">USD/JPY - US Dollar / Japanese Yen</option>
+                        <option value="AUDUSD">AUD/USD - Australian Dollar / US Dollar</option>
+                    </select>
+                </div>
+                <button onclick="loadForex()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích Forex</button>
+                <div id="forexResult" class="analysis-output">
+                    <div class="placeholder-text">Chọn cặp tiền và nhấn "Phân tích" để xem kết quả</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Phase 5: Bonds #}
+    <div class="phase-content" id="phase-bonds">
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🏦 Trái phiếu Chính phủ</span>
+                    <span class="card-badge">Phase 5</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn loại trái phiếu:</label>
+                    <select id="bondType" class="form-input" style="width: 100%;" onchange="loadBonds()">
+                        <option value="GOVT">Trái phiếu Chính phủ</option>
+                        <option value="5Y">Trái phiếu 5 năm</option>
+                        <option value="10Y">Trái phiếu 10 năm</option>
+                        <option value="15Y">Trái phiếu 15 năm</option>
+                        <option value="CORP">Trái phiếu Doanh nghiệp</option>
+                    </select>
+                </div>
+                <button onclick="loadBonds()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Cập nhật Trái phiếu</button>
+                <div id="bondsResult">
+                    <div class="indicator-grid">
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Số lượng</div>
+                            <div class="indicator-value" id="bondCount" style="color:#fff;">-</div>
+                        </div>
+                        <div class="indicator">
+                            <div class="indicator-label" style="color:#64748b;">Loại</div>
+                            <div class="indicator-value" id="bondTypeDisplay" style="color:#f59e0b;">Government</div>
+                        </div>
+                    </div>
+                    <div id="bondsList" style="margin-top: 16px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {# Backtest Section #}
+    <div class="phase-content" id="phase-backtest">
+        <div class="backtest-card">
+            <div class="backtest-header">
+                <span class="backtest-title">🔮 Backtesting - Kiểm tra độ chính xác dự đoán</span>
+            </div>
+            <p style="color: #94a3b8; margin-bottom: 16px;">
+                Kiểm tra tính đúng đắn của dự đoán bằng cách so sánh với dữ liệu lịch sử.
+                Chọn khoảng thời gian và mã cổ phiếu để bắt đầu.
+            </p>
+            <div class="form-group">
+                <input type="text" id="backtestSymbol" class="form-input" placeholder="Mã cổ phiếu" value="VCB">
+                <input type="date" id="backtestStart" class="form-input" placeholder="Ngày bắt đầu">
+                <input type="date" id="backtestEnd" class="form-input" placeholder="Ngày kết thúc">
+            </div>
+            <div class="form-group">
+                <select id="backtestStrategy" class="form-input">
+                    <option value="ma_cross">MA Crossover (SMA 20/50)</option>
+                    <option value="rsi">RSI (Overbought/Oversold)</option>
+                    <option value="macd">MACD Crossover</option>
+                    <option value="combined">Combined Score</option>
+                </select>
+            </div>
+            <button onclick="runBacktest()" class="btn-primary">🚀 Chạy Backtest</button>
+            
+            <div id="backtestResult" class="loading" style="margin-top: 20px;">
+                Kết quả backtest sẽ hiển thị ở đây...
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Helper function for safe DOM updates
+        function safeSetHTML(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function safeSetText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        // CSRF token helper for Django
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Fetch wrapper with CSRF
+        async function fetchWithCsrf(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'include',
+            };
+            return fetch(url, { ...defaultOptions, ...options });
+        }
+
+        // Phase tabs - safe version - NO AUTO LOAD
+        function showPhase(phase) {
+            const tabs = document.querySelectorAll('.phase-tab');
+            const contents = document.querySelectorAll('.phase-content');
+
+            tabs.forEach(t => t?.classList?.remove('active'));
+            contents.forEach(c => c?.classList?.remove('active'));
+
+            const selectedTab = document.querySelector(`.phase-tab[data-phase="${phase}"]`);
+            const selectedContent = document.getElementById(`phase-${phase}`);
+
+            selectedTab?.classList?.add('active');
+            selectedContent?.classList?.add('active');
+            
+            // NO AUTO LOAD - User must click the analyze button
+            // This ensures user selects options first before analysis runs
+        }
+
+        // Load indices data - Full Analysis
+        async function loadIndices() {
+            const symbol = document.getElementById('indexSymbol')?.value || 'VNINDEX';
+            safeSetHTML('indicesResult', '<div class="loading">Dang tai phan tich...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+
+                const response = await fetchWithCsrf('/run/index_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('indicesResult', html);
+            } catch (e) {
+                safeSetHTML('indicesResult', `<div style="color:#ef4444;">Loi: ${e.message}</div>`);
+            }
+        }
+
+        // Load Market Breadth
+        async function loadMarketBreadth() {
+            try {
+                const response = await fetchWithCsrf('/run/market_breadth/', { method: 'POST' });
+                const html = await response.text();
+                safeSetHTML('breadthResult', html);
+            } catch (e) {
+                // Silently fail
+            }
+        }
+
+        // Load Gold - Full Analysis
+        async function loadGold() {
+            safeSetHTML('goldResult', '<div class="loading" style="color:#64748b;">Đang phân tích...</div>');
+            try {
+                const response = await fetchWithCsrf('/run/gold_analysis/', { method: 'POST' });
+                const html = await response.text();
+                safeSetHTML('goldResult', html);
+            } catch (e) {
+                safeSetHTML('goldResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load Futures - Full Analysis
+        async function loadFutures() {
+            safeSetHTML('futuresResult', '<div class="loading" style="color:#64748b;">Đang phân tích...</div>');
+            try {
+                const response = await fetchWithCsrf('/run/futures_analysis/', { method: 'POST' });
+                const html = await response.text();
+                safeSetHTML('futuresResult', html);
+            } catch (e) {
+                safeSetHTML('futuresResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load ETF - Full Analysis
+        async function loadETF() {
+            const symbol = document.getElementById('etfSymbol')?.value || 'E1VFVN30';
+            safeSetHTML('etfResult', '<div class="loading" style="color:#64748b;">Đang phân tích ETF...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+
+                const response = await fetchWithCsrf('/run/etf_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('etfResult', html);
+            } catch (e) {
+                safeSetHTML('etfResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load Crypto - Full Analysis
+        async function loadCrypto() {
+            const symbol = document.getElementById('cryptoSymbol')?.value || 'BTCUSDT';
+            safeSetHTML('cryptoResult', '<div class="loading" style="color:#64748b;">Đang phân tích Crypto...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+
+                const response = await fetchWithCsrf('/run/crypto_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('cryptoResult', html);
+            } catch (e) {
+                safeSetHTML('cryptoResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load Forex - Full Analysis
+        async function loadForex() {
+            const symbol = document.getElementById('forexSymbol')?.value || 'USDVND';
+            safeSetHTML('forexResult', '<div class="loading" style="color:#64748b;">Đang phân tích Forex...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+
+                const response = await fetchWithCsrf('/run/forex_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('forexResult', html);
+            } catch (e) {
+                safeSetHTML('forexResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load Bonds - Full Analysis
+        async function loadBonds() {
+            const bondType = document.getElementById('bondType')?.value || 'GOVT';
+            safeSetHTML('bondsResult', '<div class="loading" style="color:#64748b;">Đang cập nhật trái phiếu...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('bond_type', bondType);
+
+                const response = await fetchWithCsrf('/run/bond_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('bondsResult', html);
+            } catch (e) {
+                safeSetHTML('bondsResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Stock analysis
+        async function analyzeStock() {
+            const symbolInput = document.getElementById('stockSymbol');
+            if (!symbolInput) return;
+            const symbol = symbolInput.value.toUpperCase().trim();
+            if (!symbol) {
+                safeSetHTML('stockResult', '<div style="color:#f59e0b;">Vui lòng nhập mã cổ phiếu</div>');
+                return;
+            }
+            safeSetHTML('stockResult', '<div class="loading">Đang phân tích...</div>');
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+                const response = await fetchWithCsrf('/run/stock_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                safeSetHTML('stockResult', html);
+            } catch (e) {
+                safeSetHTML('stockResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load watchlist
+        async function loadWatchlist() {
+            const symbols = ['VCB', 'ACB', 'FPT', 'HPG', 'VNM'];
+            for (const sym of symbols) {
+                try {
+                    const formData = new FormData();
+                    formData.append('symbol', sym);
+                    const response = await fetchWithCsrf('/run/stock_quote_realtime/', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const text = await response.text();
+                    const match = text.match(/"close"\s*:\s*([\d.]+)/);
+                    if (match && match[1]) {
+                        const priceEl = document.getElementById(`price-${sym}`);
+                        if (priceEl) {
+                            const price = parseFloat(match[1]);
+                            priceEl.textContent = price.toLocaleString('vi-VN');
+                        }
+                    }
+                } catch (e) {
+                    // Silently fail for individual items
+                }
+            }
+        }
+
+        // Run Backtest
+        async function runBacktest() {
+            const symbol = document.getElementById('backtestSymbol')?.value || 'VCB';
+            const startDate = document.getElementById('backtestStart')?.value || '';
+            const endDate = document.getElementById('backtestEnd')?.value || '';
+            const strategy = document.getElementById('backtestStrategy')?.value || 'ma_cross';
+
+            safeSetHTML('backtestResult', '<div class="loading">Đang chạy backtest...</div>');
+
+            try {
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+                formData.append('start_date', startDate);
+                formData.append('end_date', endDate);
+                formData.append('strategy', strategy);
+                formData.append('capital', '10000000');
+
+                const response = await fetchWithCsrf('/backtest/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.status === 'error') {
+                    safeSetHTML('backtestResult', `<div style="color:#ef4444;">Lỗi: ${result.error || 'Unknown error'}</div>`);
+                    return;
+                }
+
+                const winRate = result.win_rate ?? 0;
+                const totalTrades = result.total_trades ?? 0;
+                const avgReturn = result.avg_return ?? 0;
+                const profitFactor = result.profit_factor ?? 0;
+
+                let html = `
+                    <div style="background: #0f172a; padding: 20px; border-radius: 12px; margin-top: 16px;">
+                        <h3 style="color: #fff; margin-bottom: 16px;">📊 Kết quả Backtest: ${symbol}</h3>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 24px; font-weight: bold; color: ${winRate >= 50 ? '#22c55e' : '#ef4444'};">${winRate.toFixed(1)}%</div>
+                                <div style="color: #64748b; font-size: 12px;">Win Rate</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 24px; font-weight: bold; color: #fff;">${totalTrades}</div>
+                                <div style="color: #64748b; font-size: 12px;">Tổng trades</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 24px; font-weight: bold; color: ${avgReturn >= 0 ? '#22c55e' : '#ef4444'};">${avgReturn.toFixed(2)}%</div>
+                                <div style="color: #64748b; font-size: 12px;">Return TB</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 24px; font-weight: bold; color: ${profitFactor >= 1 ? '#22c55e' : '#ef4444'};">${profitFactor.toFixed(2)}</div>
+                                <div style="color: #64748b; font-size: 12px;">Profit Factor</div>
+                            </div>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 13px;">
+                            <p><strong>Chiến lược:</strong> ${strategy}</p>
+                            <p><strong>Thời gian:</strong> ${startDate || 'N/A'} → ${endDate || 'N/A'}</p>
+                        </div>
+                    </div>
+                `;
+                safeSetHTML('backtestResult', html);
+            } catch (e) {
+                safeSetHTML('backtestResult', `<div style="color:#ef4444;">Lỗi: ${e.message}</div>`);
+            }
+        }
+
+        // Load summary on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load only watchlist on initial page load
+            loadWatchlist();
+
+            // Set default dates for backtest
+            const today = new Date();
+            const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+            const endDateInput = document.getElementById('backtestEnd');
+            const startDateInput = document.getElementById('backtestStart');
+            if (endDateInput) endDateInput.value = today.toISOString().split('T')[0];
+            if (startDateInput) startDateInput.value = lastMonth.toISOString().split('T')[0];
+        });
+    </script>
+</body>
+</html>

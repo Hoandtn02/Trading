@@ -1,46 +1,328 @@
 {% load dashboard_extras %}
+<style>
+    .result-partial-wrapper {
+        color: #e2e8f0 !important;
+        background: transparent;
+        width: 100%;
+    }
+    .result-partial-wrapper * {
+        color: #e2e8f0 !important;
+        box-sizing: border-box;
+    }
+    .result-partial-wrapper pre {
+        color: #22c55e !important;
+        background: #07111f !important;
+    }
+    .analysis-text {
+        background: #07111f;
+        border: 1px solid #23324d;
+        border-radius: 8px;
+        padding: 14px;
+        font-family: Consolas, Monaco, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 350px;
+        overflow: auto;
+        color: #22c55e;
+    }
+</style>
+<div class="result-partial-wrapper">
 {% if error %}
-  <div class="card" style="border-color:#ef4444;margin-top:12px;">
-    <strong style="color:#fca5a5;">Lỗi</strong>
-    <div class="muted" style="color:#fca5a5;margin-top:6px;">{{ error }}</div>
+  <div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;border-radius:12px;padding:16px;">
+    <strong style="color:#ef4444 !important;">Lỗi</strong>
+    <div style="color:#fca5a5 !important;margin-top:6px;">{{ error }}</div>
   </div>
 {% elif result %}
-  <div class="card" style="margin-top:12px;">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;">
-      <div><strong>{{ result.title }}</strong>{% if result.summary %}<div class="muted compact" style="margin-top:4px;">{{ result.summary }}</div>{% endif %}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button type="button" class="btn-secondary" onclick="window.parent.exportResult ? window.parent.exportResult('csv') : exportResult('csv')" style="padding:6px 10px;font-size:12px;">Export CSV</button>
-        <button type="button" class="btn-secondary" onclick="window.parent.exportResult ? window.parent.exportResult('xlsx') : exportResult('xlsx')" style="padding:6px 10px;font-size:12px;">Export Excel</button>
-        <button type="button" class="btn-secondary" onclick="window.parent.openChart ? window.parent.openChart() : openChart()" style="padding:6px 10px;font-size:12px;">Mở chart</button>
+  
+  {# ================================================================ #}
+  {# PHASE 1: STOCK ANALYSIS - Check for price.current structure #}
+  {# ================================================================ #}
+  {% if result.data.price %}
+  {# Stock Analysis Full Display #}
+  <div style="display:grid;gap:12px;">
+    
+    {# Header Card #}
+    <div style="background:linear-gradient(135deg,#0e1a31 0%,#1a2744 100%);padding:20px;border-radius:16px;border:1px solid #334155;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span style="font-size:28px;font-weight:bold;color:#fff;">{{ result.data.symbol }}</span>
+          {% if result.data.name and result.data.name != result.data.symbol %}
+          <span style="margin-left:12px;color:#94a3b8;font-size:16px;">{{ result.data.name }}</span>
+          {% endif %}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:32px;font-weight:bold;color:#fff;">
+            {{ result.data.price.current|floatformat:0 }} <span style="font-size:16px;color:#94a3b8;">VND</span>
+          </div>
+          {% with cp=result.data.price.change_percent %}
+          {% if cp %}
+          <div style="font-size:18px;font-weight:600;color:{% if cp >= 0 %}22c55e{% else %}ef4444{% endif %};">
+            {% if cp >= 0 %}+{% endif %}{{ cp|floatformat:2 }}%
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
       </div>
     </div>
-    {% if result.data.error %}
-      <div style="color:#fca5a5;padding:12px;border:1px solid #ef4444;border-radius:12px;background:rgba(239,68,68,.08);">{{ result.data.error }}</div>
-    {% elif result.rows %}
-      <div style="overflow-x:auto;max-height:500px;overflow-y:auto;border:1px solid #23324d;border-radius:12px;">
-        <table style="font-size:13px;white-space:nowrap;">
-          <thead style="position:sticky;top:0;background:#0e1a31;z-index:1;">
-            <tr>
-              {% for column in result.columns %}
-                <th>{{ column }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in result.rows %}
-              <tr>
-                {% for column in result.columns %}
-                  <td>{{ row|get_item:column }}</td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    
+    {# Technical Indicators Grid #}
+    {% if result.data.technical %}
+    <div style="background:#0f172a;padding:16px;border-radius:12px;border:1px solid #334155;">
+      <div style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1e293b;">📊 Technical Indicators</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
+        
+        {% if result.data.technical.momentum.rsi %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">RSI(14)</div>
+          <div style="font-size:22px;font-weight:bold;color:{% if result.data.technical.momentum.rsi.zone == 'QUÁ MUA' %}#ef4444{% elif result.data.technical.momentum.rsi.zone == 'QUÁ BÁN' %}#22c55e{% else %}#f59e0b{% endif %};">
+            {{ result.data.technical.momentum.rsi.value|floatformat:1 }}
+          </div>
+          <div style="color:#64748b;font-size:10px;margin-top:2px;">{{ result.data.technical.momentum.rsi.zone }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.technical.momentum.macd %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">MACD</div>
+          <div style="font-size:22px;font-weight:bold;color:{% if result.data.technical.momentum.macd.status == 'TĂNG' %}#22c55e{% else %}#ef4444{% endif %};">
+            {{ result.data.technical.momentum.macd.value|floatformat:1 }}
+          </div>
+          <div style="color:#64748b;font-size:10px;margin-top:2px;">{{ result.data.technical.momentum.macd.status }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.technical.trend.adx %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">ADX</div>
+          <div style="font-size:22px;font-weight:bold;color:#3b82f6;">{{ result.data.technical.trend.adx.value|floatformat:1 }}</div>
+          <div style="color:#64748b;font-size:10px;margin-top:2px;">{{ result.data.technical.trend.adx.status }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.technical.trend.sma %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">SMA(20)</div>
+          <div style="font-size:22px;font-weight:bold;color:#fff;">{{ result.data.technical.trend.sma.sma_20|floatformat:0 }}</div>
+        </div>
+        {% endif %}
+        
       </div>
-    {% elif result.data %}
-      <pre style="white-space:pre-wrap;word-break:break-word;background:#07111f;padding:14px;border-radius:12px;border:1px solid #23324d;font-size:13px;max-height:400px;overflow:auto;">{{ result.data|json_dumps }}</pre>
-    {% else %}
-      <div class="muted" style="padding:16px;text-align:center;border:1px dashed #23324d;border-radius:12px;">Không có dữ liệu.</div>
+    </div>
     {% endif %}
+    
+    {# Fundamental #}
+    {% if result.data.fundamental %}
+    <div style="background:#0f172a;padding:16px;border-radius:12px;border:1px solid #334155;">
+      <div style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1e293b;">📋 Fundamental</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:10px;">
+        
+        {% if result.data.fundamental.f_score %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">F-Score</div>
+          <div style="font-size:22px;font-weight:bold;color:{% if result.data.fundamental.f_score.value >= 6 %}#22c55e{% elif result.data.fundamental.f_score.value >= 4 %}#f59e0b{% else %}#ef4444{% endif %};">
+            {{ result.data.fundamental.f_score.value }}/{{ result.data.fundamental.f_score.max }}
+          </div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.fundamental.valuation.pe %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">P/E</div>
+          <div style="font-size:22px;font-weight:bold;color:#fff;">{{ result.data.fundamental.valuation.pe|floatformat:1 }}x</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.fundamental.valuation.pb %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">P/B</div>
+          <div style="font-size:22px;font-weight:bold;color:#fff;">{{ result.data.fundamental.valuation.pb|floatformat:2 }}x</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.fundamental.valuation.roe %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">ROE</div>
+          <div style="font-size:22px;font-weight:bold;color:#22c55e;">{{ result.data.fundamental.valuation.roe|floatformat:1 }}%</div>
+        </div>
+        {% endif %}
+        
+      </div>
+    </div>
+    {% endif %}
+    
+    {# Recommendation #}
+    {% if result.data.recommendation %}
+    <div style="background:linear-gradient(135deg,#1a2744 0%,#0f172a 100%);padding:16px;border-radius:12px;border:1px solid #f59e0b;">
+      <div style="color:#f59e0b;font-size:12px;font-weight:600;margin-bottom:12px;">🎯 Recommendation</div>
+      
+      {% if result.data.recommendation.master_score %}
+      <div style="display:flex;justify-content:center;margin-bottom:12px;">
+        <div style="text-align:center;">
+          <div style="font-size:48px;font-weight:bold;color:#3b82f6;">{{ result.data.recommendation.master_score }}</div>
+          <div style="color:#64748b;font-size:11px;">/100</div>
+        </div>
+      </div>
+      {% endif %}
+      
+      {% if result.data.recommendation.action %}
+      <div style="text-align:center;margin-bottom:12px;">
+        <span style="display:inline-block;background:{% if result.data.recommendation.action == 'BUY' %}#22c55e{% elif result.data.recommendation.action == 'SELL' %}#ef4444{% else %}#f59e0b{% endif %};color:#fff;padding:8px 24px;border-radius:8px;font-size:16px;font-weight:bold;">
+          {{ result.data.recommendation.action }}
+        </span>
+      </div>
+      {% endif %}
+      
+      {% if result.data.recommendation.reasons_positive %}
+      <div style="margin-bottom:8px;">
+        <div style="color:#22c55e;font-size:11px;font-weight:600;margin-bottom:4px;">✅ Ưu điểm:</div>
+        {% for r in result.data.recommendation.reasons_positive %}
+        <div style="color:#94a3b8;font-size:12px;padding-left:8px;margin-bottom:2px;">• {{ r }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      
+      {% if result.data.recommendation.reasons_negative %}
+      <div style="margin-bottom:8px;">
+        <div style="color:#ef4444;font-size:11px;font-weight:600;margin-bottom:4px;">⚠️ Nhược điểm:</div>
+        {% for r in result.data.recommendation.reasons_negative %}
+        <div style="color:#94a3b8;font-size:12px;padding-left:8px;margin-bottom:2px;">• {{ r }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    
+    {# Full Analysis Text #}
+    {% if result.data.analysis %}
+    <div style="background:#0f172a;padding:16px;border-radius:12px;border:1px solid #334155;">
+      <div style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1e293b;">📊 Full Analysis</div>
+      <pre class="analysis-text" style="color:#22c55e;">{{ result.data.analysis }}</pre>
+    </div>
+    {% endif %}
+    
   </div>
+  
+  {% else %}
+  {# ================================================================ #}
+  {# PHASE 2-5: GENERIC ANALYSIS - Other analyses #}
+  {# ================================================================ #}
+  <div style="display:grid;gap:12px;">
+    
+    {# Header Card #}
+    <div style="background:linear-gradient(135deg,#0e1a31 0%,#1a2744 100%);padding:20px;border-radius:16px;border:1px solid #334155;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span style="font-size:28px;font-weight:bold;color:#fff;">{{ result.data.symbol|default:result.title }}</span>
+          {% if result.data.name and result.data.name != result.data.symbol %}
+          <span style="margin-left:12px;color:#94a3b8;font-size:16px;">{{ result.data.name }}</span>
+          {% endif %}
+        </div>
+        <div style="text-align:right;">
+          {% if result.data.current_value %}
+          <div style="font-size:32px;font-weight:bold;color:#fff;">{{ result.data.current_value|floatformat:2 }}</div>
+          {% elif result.data.current_price %}
+          <div style="font-size:32px;font-weight:bold;color:#fff;">{{ result.data.current_price|floatformat:2 }}</div>
+          {% endif %}
+          {% if result.data.change_percent %}
+          <div style="font-size:18px;font-weight:600;color:{% if result.data.change_percent >= 0 %}#22c55e{% else %}#ef4444{% endif %};">
+            {% if result.data.change_percent >= 0 %}+{% endif %}{{ result.data.change_percent|floatformat:2 }}%
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    
+    {# Trend & Status Grid #}
+    {% if result.data.trend or result.data.technical_status %}
+    <div style="display:grid;grid-template-columns:{% if result.data.trend %}1fr{% endif %}{% if result.data.technical_status %} 1fr{% endif %};gap:10px;">
+      {% if result.data.trend %}
+      <div style="background:#1e293b;padding:16px;border-radius:12px;text-align:center;">
+        <div style="color:#64748b;font-size:11px;margin-bottom:4px;">Xu hướng</div>
+        <div style="font-size:24px;font-weight:bold;color:#f59e0b;">{{ result.data.trend }}</div>
+      </div>
+      {% endif %}
+      {% if result.data.technical_status %}
+      <div style="background:#1e293b;padding:16px;border-radius:12px;text-align:center;">
+        <div style="color:#64748b;font-size:11px;margin-bottom:4px;">Trạng thái</div>
+        <div style="font-size:24px;font-weight:bold;color:#fff;">{{ result.data.technical_status }}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    
+    {# Full Analysis Text #}
+    {% if result.data.analysis %}
+    <div style="background:#0f172a;padding:16px;border-radius:12px;border:1px solid #334155;">
+      <div style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1e293b;">📊 Kết quả phân tích</div>
+      <pre class="analysis-text">{{ result.data.analysis }}</pre>
+    </div>
+    {% endif %}
+    
+    {# Additional Metrics #}
+    {% if result.data.buy_price or result.data.sell_price or result.data.futures_price or result.data.basis or result.data.volume or result.data.master_score or result.data.recommendation %}
+    <div style="background:#0f172a;padding:16px;border-radius:12px;border:1px solid #334155;">
+      <div style="color:#94a3b8;font-size:12px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #1e293b;">📈 Chỉ số kỹ thuật</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
+        
+        {% if result.data.buy_price %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Giá mua</div>
+          <div style="font-size:20px;font-weight:bold;color:#fff;">{{ result.data.buy_price|floatformat:0 }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.sell_price %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Giá bán</div>
+          <div style="font-size:20px;font-weight:bold;color:#fff;">{{ result.data.sell_price|floatformat:0 }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.futures_price %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">VN30F</div>
+          <div style="font-size:20px;font-weight:bold;color:#fff;">{{ result.data.futures_price|floatformat:2 }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.basis %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Basis</div>
+          <div style="font-size:20px;font-weight:bold;color:{% if result.data.basis >= 0 %}#22c55e{% else %}#ef4444{% endif %};">{{ result.data.basis|floatformat:2 }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.volume %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Khối lượng</div>
+          <div style="font-size:20px;font-weight:bold;color:#fff;">{{ result.data.volume|floatformat:0 }}</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.master_score and result.data.master_score != 100 %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Master Score</div>
+          <div style="font-size:20px;font-weight:bold;color:#3b82f6;">{{ result.data.master_score }}/100</div>
+        </div>
+        {% endif %}
+        
+        {% if result.data.recommendation and result.data.recommendation != 'WATCH' %}
+        <div style="background:#1e293b;padding:12px;border-radius:8px;text-align:center;">
+          <div style="color:#64748b;font-size:10px;margin-bottom:4px;">Khuyến nghị</div>
+          <div style="font-size:20px;font-weight:bold;color:{% if result.data.recommendation == 'BUY' %}#22c55e{% elif result.data.recommendation == 'SELL' %}#ef4444{% else %}#f59e0b{% endif %};">
+            {{ result.data.recommendation }}
+          </div>
+        </div>
+        {% endif %}
+        
+      </div>
+    </div>
+    {% endif %}
+    
+  </div>
+  {% endif %}
+
 {% endif %}
+</div>

@@ -35,7 +35,7 @@ python -m venv .venv
 
 # Kích hoạt môi trường
 # Windows PowerShell:
-.venv\Scripts\activate
+& "$env:USERPROFILE\.venv\Scripts\Activate.ps1"
 
 # macOS / Linux:
 source .venv/bin/activate

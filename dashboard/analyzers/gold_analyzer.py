@@ -21,9 +21,16 @@ class GoldData:
     high: float = 0.0
     low: float = 0.0
     open_price: float = 0.0
-    unit: str = "VND/chỉ"  # or USD/oz
+    unit: str = "VND/chi"  # or USD/oz
     trend: str = "NEUTRAL"
     technical_status: str = "NEUTRAL"
+    rsi: float = 50.0
+    macd: float = 0.0
+    adx: float = 25.0
+    recommendation: str = "WATCH"
+    sma_20: float = 0.0
+    sma_50: float = 0.0
+    atr: float = 0.0
 
 
 class GoldAnalyzer:

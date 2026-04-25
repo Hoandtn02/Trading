@@ -1,0 +1,437 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backtest - Kiểm tra độ chính xác dự đoán</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .header h1 { font-size: 24px; color: #fff; }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #1e293b;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #334155; color: #fff; }
+        
+        .main-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid #f59e0b;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .form-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-label {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        .form-input, .form-select {
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #fff;
+            font-size: 14px;
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        
+        .btn-primary {
+            background: #f59e0b;
+            color: #0f172a;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover { background: #d97706; }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .result-card {
+            background: #0f172a;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #334155;
+        }
+        .result-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .result-value.good { color: #22c55e; }
+        .result-value.bad { color: #ef4444; }
+        .result-label {
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        
+        .chart-container {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 24px;
+            height: 400px;
+        }
+        
+        .trades-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .trades-table th, .trades-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #1e293b;
+        }
+        .trades-table th {
+            background: #0f172a;
+            color: #64748b;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .trade-buy { color: #22c55e; }
+        .trade-sell { color: #ef4444; }
+        
+        .loading { 
+            text-align: center; 
+            padding: 40px; 
+            color: #64748b; 
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>🔮 Backtesting - Kiểm tra độ chính xác dự đoán</h1>
+        <div class="nav-links">
+            <a href="/">← Dashboard</a>
+            <a href="/overview/">Market Overview</a>
+        </div>
+    </div>
+    
+    <div class="main-card">
+        <h2 style="color: #f59e0b; margin-bottom: 16px;">Cấu hình Backtest</h2>
+        
+        <div class="form-section">
+            <div class="form-group">
+                <label class="form-label">Mã cổ phiếu</label>
+                <input type="text" id="symbol" class="form-input" placeholder="VD: VCB" value="{{ symbol }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Ngày bắt đầu</label>
+                <input type="date" id="startDate" class="form-input" value="{{ start_date }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Ngày kết thúc</label>
+                <input type="date" id="endDate" class="form-input" value="{{ end_date }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Chiến lược</label>
+                <select id="strategy" class="form-select">
+                    <option value="ma_cross">MA Crossover (SMA 20/50)</option>
+                    <option value="rsi">RSI (Overbought/Oversold)</option>
+                    <option value="macd">MACD Crossover</option>
+                    <option value="combined" selected>Combined Score</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Initial Capital</label>
+                <input type="number" id="capital" class="form-input" value="10000000">
+            </div>
+        </div>
+        
+        <button onclick="runBacktest()" class="btn-primary">🚀 Chạy Backtest</button>
+        
+        <div id="results">
+            <p style="color: #64748b; margin-top: 24px;">
+                Nhấn "Chạy Backtest" để bắt đầu kiểm tra độ chính xác của dự đoán với dữ liệu lịch sử.
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // CSRF token helper for Django
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Fetch wrapper with CSRF
+        async function fetchWithCsrf(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'include',
+            };
+            return fetch(url, { ...defaultOptions, ...options });
+        }
+
+        // Set default dates
+        document.addEventListener('DOMContentLoaded', function() {
+            const today = new Date();
+            const lastYear = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+            
+            if (!document.getElementById('startDate').value) {
+                document.getElementById('startDate').value = lastYear.toISOString().split('T')[0];
+            }
+            if (!document.getElementById('endDate').value) {
+                document.getElementById('endDate').value = today.toISOString().split('T')[0];
+            }
+        });
+        
+        async function runBacktest() {
+            const symbol = document.getElementById('symbol').value.toUpperCase();
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const strategy = document.getElementById('strategy').value;
+            const capital = parseFloat(document.getElementById('capital').value) || 10000000;
+            
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">Đang chạy backtest cho ' + symbol + '...</div>';
+            
+            try {
+                // Call backtest API with CSRF token
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+                formData.append('start_date', startDate);
+                formData.append('end_date', endDate);
+                formData.append('strategy', strategy);
+                formData.append('capital', capital);
+                
+                const response = await fetchWithCsrf('/backtest/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    renderResults(data);
+                } else {
+                    resultsDiv.innerHTML = `<div style="color:#ef4444;padding:20px;">Lỗi: ${data.error || 'Không thể chạy backtest'}</div>`;
+                }
+            } catch (e) {
+                // Fallback: Run simple backtest in browser
+                runSimpleBacktest(symbol, startDate, endDate, strategy, capital);
+            }
+        }
+        
+        function renderResults(data) {
+            const winRateColor = data.win_rate >= 50 ? 'good' : 'bad';
+            const profitColor = data.total_return >= 0 ? 'good' : 'bad';
+            
+            let html = `
+                <div style="margin-top: 24px;">
+                    <h3 style="color: #fff; margin-bottom: 16px;">📊 Kết quả Backtest: ${data.symbol}</h3>
+                    
+                    <div class="results-grid">
+                        <div class="result-card">
+                            <div class="result-value ${winRateColor}">${data.win_rate?.toFixed(1)}%</div>
+                            <div class="result-label">Win Rate</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value ${profitColor}">${data.total_return?.toFixed(2)}%</div>
+                            <div class="result-label">Tổng Return</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value">${data.total_trades || 0}</div>
+                            <div class="result-label">Tổng Trades</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value">${data.win_trades || 0}</div>
+                            <div class="result-label">Win Trades</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value">${data.avg_return?.toFixed(2)}%</div>
+                            <div class="result-label">Return TB/Trade</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value ${data.profit_factor >= 1 ? 'good' : 'bad'}">${data.profit_factor?.toFixed(2)}</div>
+                            <div class="result-label">Profit Factor</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value">${data.max_drawdown?.toFixed(2)}%</div>
+                            <div class="result-label">Max Drawdown</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-value ${data.sharpe_ratio >= 1 ? 'good' : 'bad'}">${data.sharpe_ratio?.toFixed(2)}</div>
+                            <div class="result-label">Sharpe Ratio</div>
+                        </div>
+                    </div>
+                    
+                    ${data.equity_curve ? `
+                    <div class="chart-container">
+                        <canvas id="equityChart"></canvas>
+                    </div>
+                    ` : ''}
+                    
+                    ${data.trades && data.trades.length > 0 ? `
+                    <h4 style="color: #fff; margin-top: 24px;">Danh sách Trades</h4>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        <table class="trades-table">
+                            <thead>
+                                <tr>
+                                    <th>Ngày</th>
+                                    <th>Loại</th>
+                                    <th>Giá vào</th>
+                                    <th>Giá ra</th>
+                                    <th>Return</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.trades.slice(0, 20).map(trade => `
+                                <tr>
+                                    <td>${trade.date}</td>
+                                    <td class="${trade.type === 'BUY' ? 'trade-buy' : 'trade-sell'}">${trade.type}</td>
+                                    <td>${trade.entry_price?.toLocaleString()}</td>
+                                    <td>${trade.exit_price?.toLocaleString() || '-'}</td>
+                                    <td class="${trade.return >= 0 ? 'trade-buy' : 'trade-sell'}">${trade.return >= 0 ? '+' : ''}${trade.return?.toFixed(2)}%</td>
+                                </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            document.getElementById('results').innerHTML = html;
+            
+            // Draw chart if data available
+            if (data.equity_curve) {
+                drawChart(data.equity_curve);
+            }
+        }
+        
+        function drawChart(equityCurve) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: equityCurve.map((_, i) => i),
+                    datasets: [{
+                        label: 'Equity Curve',
+                        data: equityCurve,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            grid: { color: '#1e293b' },
+                            ticks: { color: '#64748b' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Simple backtest in browser
+        async function runSimpleBacktest(symbol, startDate, endDate, strategy, capital) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">Đang lấy dữ liệu và tính toán...</div>';
+            
+            try {
+                // Get historical data
+                const formData = new FormData();
+                formData.append('symbol', symbol);
+                formData.append('start_date', startDate);
+                formData.append('end_date', endDate);
+                formData.append('resolution', 'daily');
+                
+                const response = await fetch('/run/stock_historical/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const html = await response.text();
+                
+                // Parse HTML response to get data
+                // For now, show a placeholder
+                resultsDiv.innerHTML = `
+                    <div style="margin-top: 24px; padding: 20px; background: #0f172a; border-radius: 12px;">
+                        <h3 style="color: #f59e0b;">📊 Backtest cho ${symbol}</h3>
+                        <p style="color: #94a3b8; margin-top: 8px;">
+                            Chiến lược: ${strategy}<br>
+                            Thời gian: ${startDate} → ${endDate}<br>
+                            Vốn ban đầu: ${capital.toLocaleString()} VND
+                        </p>
+                        <p style="color: #64748b; margin-top: 16px;">
+                            Để chạy backtest đầy đủ, hệ thống cần xử lý dữ liệu lịch sử và áp dụng chiến lược giao dịch.
+                            Module backtest nâng cao đang được phát triển.
+                        </p>
+                    </div>
+                `;
+            } catch (e) {
+                resultsDiv.innerHTML = `<div style="color:#ef4444;padding:20px;">Lỗi: ${e.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -276,6 +276,9 @@ if __name__ == "__main__":
 7. **Flexible column matching** - Use partial string matching for robustness
 8. **Test with real data** - Don't assume values are correct
 9. **Listing API returns different types** - `symbols_by_group()` returns Series, `symbols_by_exchange()` returns DataFrame
+10. **Commodity API** - Use `CommodityPrice()` class for gold_vn, oil_crude, etc. with `length` parameter
+11. **Futures interval** - Use `interval="1D"` (capital D) not `"1d"` for daily data
+12. **Futures symbol conversion** - API automatically converts VN30F1M to KRX format internally
 
 ---
 
@@ -288,6 +291,23 @@ if __name__ == "__main__":
 
 ### Phase 2 - Index Analyzer
 - `tests/unit/analyzers/test_index_analyzer.py` - Index analyzer test script
+
+### Phase 3 - Gold & Futures
+- `tests/unit/analyzers/test_gold_futures_analyzer.py` - Gold & Futures test script
+
+### Phase 4 - ETF, Forex, Crypto, CW
+- `tests/unit/analyzers/test_phase4_analyzers.py` - Phase 4 test script
+
+### Phase 5 - Unified Dashboard Runner
+- `dashboard/dashboard_runner.py` - Unified runner với caching
+- `tests/unit/analyzers/test_phase5_runner.py` - Phase 5 test script
+
+### Key Patterns for Phase 5
+1. **StockAnalyzer** uses `to_string()` method
+2. **Other analyzers** use `format_output()` method
+3. **CacheManager** stores in `~/.trading_dashboard/cache/`
+4. **Batch processing** via `run_market_overview()`
+5. **BondAnalyzer** uses `get_government_bonds_list()` for listing
 
 ---
 
