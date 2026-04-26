@@ -473,12 +473,77 @@ class IndexAnalyzer:
                 if data.decline_value > data.advance_value * 1.5:
                     output += " → Áp lực bán mạnh hơn thực tế"
         
+        # Calculate Master Score first to display it
+        self._get_recommendation(data)
+        
+        # Get recommendation and override info
+        recommendation = self._get_recommendation(data)
+        has_override = hasattr(data, '_override_reason') and data._override_reason
+        is_pillar_drag = hasattr(data, '_is_pillar_drag') and data._is_pillar_drag
+        
+        # Calculate decline percent
+        decline_percent = 100 - data.breadth_percent
+        
+        # Build the enhanced AI Insight section
+        star = "*" * int(data.master_score / 20)
+        empty = "o" * int((100 - data.master_score) / 20)
+        
         output += f"""
 ╠══════════════════════════════════════════════════════════════╣
-║  🤖 AI INSIGHT: {self._get_recommendation(data)}
+║  AI INSIGHT: {data.master_score}/100 {star}{empty} 
+║     Khuyến nghị: {recommendation}
 ╠══════════════════════════════════════════════════════════════╣"""
         
-        # Generate insights
+        # CRITICAL: Pillar Drag Warning Section
+        if is_pillar_drag or has_override:
+            output += """
+║  ------------------------------------------------------------"""
+            
+            if is_pillar_drag:
+                index_direction = "tăng nhẹ" if data.change_percent > 0 else "giảm nhẹ"
+                output += f"""
+║  [!] CẢNH BÁO: PHÁT HIỆN KÉO TRỤ (XANH VỎ ĐỎ LÒNG)
+║  • {decline_percent:.0f}% cổ phiếu giảm/đi ngang dù Index {index_direction}.
+║  • Phân kỳ nghiêm trọng: Trụ giữ giá - Midcap/Smallcap bị xả."""
+            elif has_override:
+                output += f"""
+║  [!] CẢNH BÁO: {data._override_reason}"""
+            
+            output += """
+║  ------------------------------------------------------------"""
+            
+            # Breadth risk
+            if data.breadth_percent < 40:
+                risk_level = "Rất thấp" if data.breadth_percent < 30 else "Thấp"
+                output += f"""
+║  [X] Rủi ro: Breadth {data.breadth_percent:.0f}% ({risk_level}) -> Độ tin cậy Uptrend thấp"""
+            
+            # RSI risk
+            if data.rsi > 70:
+                risk_desc = "Cực lớn" if data.rsi > 80 else "Lớn"
+                output += f"""
+║  [X] Rủi ro: RSI {data.rsi:.1f} (Quá mua) -> Áp lực điều chỉnh {risk_desc}"""
+            
+            # Volume risk
+            vol_change_pct = 0
+            if data.avg_volume_20 > 0:
+                vol_change_pct = ((data.volume - data.avg_volume_20) / data.avg_volume_20) * 100
+            if vol_change_pct < -10:
+                output += f"""
+║  [X] Rủi ro: Vol giảm {abs(vol_change_pct):.0f}% -> Lực cầu suy yếu ở vùng cao"""
+            
+            # Technical signals status
+            if data.trend == "UPTREND" and data.adx > 25:
+                output += """
+║  [OK] Kỹ thuật: SMA & ADX vẫn báo tăng nhưng bị "vô hiệu hóa" """
+            elif data.adx > 25:
+                output += """
+║  [OK] Kỹ thuật: ADX mạnh nhưng cần xác nhận từ Breadth"""
+        
+        output += """
+╠══════════════════════════════════════════════════════════════╣"""
+        
+        # Generate insights (existing detailed insights)
         insights = self._generate_insights(data)
         for insight in insights:
             output += f"""
@@ -534,56 +599,202 @@ class IndexAnalyzer:
         else:
             insights.append(f"ℹ️ Breadth {data.breadth_percent:.1f}% → Phân hóa")
         
+        # Volume insight - Weak demand at high prices
+        vol_change_pct = 0
+        if data.avg_volume_20 > 0:
+            vol_change_pct = ((data.volume - data.avg_volume_20) / data.avg_volume_20) * 100
+        
+        if vol_change_pct < -10 and data.change_percent > 0 and data.rsi > 60:
+            insights.append(f"⚠️ Vol giảm {abs(vol_change_pct):.0f}% ở vùng cao → Phân phối, cẩn trọng!")
+        elif vol_change_pct < -15:
+            insights.append(f"⚠️ Vol giảm {abs(vol_change_pct):.0f}% → Lực cầu yếu")
+        elif vol_change_pct > 20:
+            insights.append(f"✅ Vol tăng {vol_change_pct:.0f}% → Dòng tiền tham gia mạnh")
+        
         return insights
     
     def _get_recommendation(self, data: IndexData) -> str:
-        """Get investment recommendation"""
+        """
+        Get investment recommendation based on weighted analysis.
+        
+        Scoring weights:
+        - Trend (60%): Based on ADX and price position vs SMAs
+        - Breadth (40%): Based on market breadth and RSI conditions
+        """
         score = 50  # Base score
         
-        # Trend adjustment
-        if data.trend == "UPTREND":
-            score += 20
-        elif data.trend == "DOWNTREND":
-            score -= 20
+        # ========================================
+        # TREND COMPONENT (60% weight)
+        # ========================================
         
-        # ADX adjustment
-        if data.adx > 30:
-            score += 10
-        elif data.adx < 20:
-            score -= 5
+        # ADX strength (how reliable is the trend)
+        trend_score = 0
+        if data.adx >= 40:
+            trend_score = 20  # Very strong trend
+        elif data.adx >= 25:
+            trend_score = 15  # Strong trend
+        elif data.adx >= 20:
+            trend_score = 10  # Weak trend
+        else:
+            trend_score = 0  # Sideway
         
-        # RSI adjustment
-        if data.rsi > 70:
-            score -= 10  # Overbought
+        # Price position vs SMAs
+        position_score = 0
+        if data.sma_50_available and data.sma_50 > 0:
+            if data.current_value > data.sma_20 and data.current_value > data.sma_50:
+                position_score = 15  # Strong bullish position
+            elif data.current_value > data.sma_20:
+                position_score = 5  # Mild bullish
+            elif data.current_value < data.sma_20 and data.current_value < data.sma_50:
+                position_score = -15  # Strong bearish position
+            elif data.current_value < data.sma_20:
+                position_score = -5  # Mild bearish
+        
+        trend_component = (trend_score + position_score) * 0.6
+        
+        # ========================================
+        # BREADTH COMPONENT (40% weight)
+        # ========================================
+        
+        # RSI condition
+        rsi_score = 0
+        if data.rsi > 75:
+            rsi_score = -20  # EXTREME overbought - danger zone
+        elif data.rsi > 70:
+            rsi_score = -10  # Overbought
         elif data.rsi < 30:
-            score += 10  # Oversold
+            rsi_score = 15  # Oversold - potential rebound
+        elif data.rsi < 35:
+            rsi_score = 5   # Near oversold
         
-        # Breadth adjustment
-        if data.breadth_percent > 55:
-            score += 15
-        elif data.breadth_percent < 45:
-            score -= 15
+        # Breadth condition
+        breadth_score = 0
+        if data.breadth_percent >= 55:
+            breadth_score = 20  # Most stocks rising
+        elif data.breadth_percent >= 45:
+            breadth_score = 5   # Mild bullish
+        elif data.breadth_percent <= 25:
+            breadth_score = -20  # EXTREME - most stocks falling
+        elif data.breadth_percent <= 40:
+            breadth_score = -10  # Bearish
         
-        # Change percent
-        if data.change_percent > 1:
-            score += 10
-        elif data.change_percent < -1:
-            score -= 10
+        breadth_component = (rsi_score + breadth_score) * 0.4
+        
+        # ========================================
+        # FINAL SCORE
+        # ========================================
+        
+        score += trend_component + breadth_component
+        
+        # ========================================
+        # CRITICAL OVERRIDE RULES
+        # These MUST override the score when specific dangerous conditions exist
+        # ========================================
+        
+        override_reason = None
+        is_pillar_drag = False  # Flag for pillar dragging detection
+        
+        # ========================================
+        # RULE 0: PILLAR DRAG DETECTION (KÉO TRỤ)
+        # Index up/flt but Breadth < 35% = Dangerous
+        # ========================================
+        if data.breadth_percent < 35:
+            if data.change_percent >= 0:
+                # Index up/flating but most stocks down = PILLAR DRAG
+                is_pillar_drag = True
+                score = min(score, 30)  # Cap at 30
+                override_reason = "⚠️ KÉO TRỤ: Index lên nhưng chỉ {0:.0f}% mã tăng".format(data.breadth_percent)
+            elif data.change_percent > -1 and data.breadth_percent < 25:
+                # Index flat/slight drop + very weak breadth = Warning
+                is_pillar_drag = True
+                score = min(score, 35)
+                override_reason = "⚠️ KÉO TRỤ TIỀM ẨN: Chỉ {0:.0f}% mã tăng".format(data.breadth_percent)
+        
+        # Store pillar drag flag for insights
+        data._is_pillar_drag = is_pillar_drag
+        
+        # ========================================
+        # BUILD OVERRIDE REASON - Separate Breadth vs RSI concepts
+        # ========================================
+        
+        override_parts = []  # List of warning parts
+        
+        # 1. Breadth warning (KÉO TRỤ)
+        if is_pillar_drag:
+            if data.change_percent >= 0:
+                override_parts.append("Breadth yếu ({:.0f}%) - Sự đồng thuận thấp".format(data.breadth_percent))
+            else:
+                override_parts.append("Breadth yếu ({:.0f}%) - Kéo trụ tiềm ẩn".format(data.breadth_percent))
+        
+        # 2. RSI warning (Động lượng)
+        if data.rsi > 80:
+            override_parts.append("RSI Quá mua cực độ ({:.0f})".format(data.rsi))
+        elif data.rsi > 75 and not is_pillar_drag:
+            override_parts.append("RSI Quá mua ({:.0f})".format(data.rsi))
+        
+        # 3. Volume warning (Phân phối)
+        vol_change_pct = 0
+        if data.avg_volume_20 > 0:
+            vol_change_pct = ((data.volume - data.avg_volume_20) / data.avg_volume_20) * 100
+        
+        if vol_change_pct < -10 and data.change_percent > 0 and data.rsi > 65:
+            override_parts.append("Vol giảm ở vùng cao - Phân phối")
+        
+        # 4. Oversold potential
+        if data.rsi < 25:
+            override_parts.append("RSI Quá bán ({:.0f}) - Tiềm năng rebound".format(data.rsi))
+        
+        # Combine override parts
+        if override_parts:
+            override_reason = "⚠️ KÉO TRỤ: " + " | ".join(override_parts) if is_pillar_drag else "⚠️ CẢNH BÁO: " + " | ".join(override_parts)
+        else:
+            override_reason = None
+        
+        # ========================================
+        # CRITICAL OVERRIDE RULES - Adjust scores based on conditions
+        # ========================================
+        
+        # Rule 0: PILLAR DRAG - Already handled above with is_pillar_drag flag
+        if is_pillar_drag:
+            score = min(score, 30)  # Cap at 30 for pillar drag
+        
+        # Rule 1: RSI > 75 + Breadth < 40% = "Xanh vỏ đỏ lòng"
+        if not is_pillar_drag and data.rsi > 75 and data.breadth_percent < 40:
+            score = min(score, 40)  # Cap at 40 regardless of trend
+        
+        # Rule 2: RSI > 80 = Extreme overbought regardless of other factors
+        if data.rsi > 80:
+            score = min(score, 35)
+        
+        # Rule 3: Volume weakening at high prices
+        if vol_change_pct < -10 and data.change_percent > 0 and data.rsi > 65:
+            if not is_pillar_drag:
+                score = min(score, 45)
+        
+        # Rule 4: RSI < 25 = Extreme oversold (potential rebound)
+        if data.rsi < 25:
+            score = max(score, 60)  # At least 60 for extreme oversold
         
         # Cap score
         score = max(0, min(100, score))
         data.master_score = int(score)
         
+        # ========================================
+        # RECOMMENDATION MAPPING
+        # ========================================
+        
         if score >= 75:
             return "TÍCH CỰC - Nên tham gia"
-        elif score >= 55:
-            return "KHẢ QUAN - Có thể mua"
-        elif score >= 45:
-            return "TRUNG LẬG - Chờ xác nhận"
+        elif score >= 60:
+            return "KHẢ QUAN - Có thể mua nhẹ"
+        elif score >= 50:
+            return "TRUNG LẬP - Chờ xác nhận"
+        elif score >= 40:
+            return "THẬN TRỌNG - Chốt lời từng phần"
         elif score >= 25:
-            return "THẬN TRỌNG - Có thể bán"
+            return "TIÊU CỰC - Cắt lỗ hoặc chờ"
         else:
-            return "TIÊU CỰC - Không nên tham gia"
+            return "NGUY HIỂM - Không nên tham gia"
 
 
 # Add attributes to IndexData

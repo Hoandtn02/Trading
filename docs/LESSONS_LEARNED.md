@@ -460,3 +460,203 @@ sys.path.insert(0, r"d:\OneDrive\Desktop\Trading-1")  # CORRECT
 Stock: API returns 60.6 → Actual 60,600 VND (multiply by 1000)
 Index: API returns 1853 → Actual 1853 points (keep as-is)
 ```
+
+### 11.7 Master Score Override Rules
+**Critical Problem:** RSI 83.7 + Breadth 19% was giving "KHẢ QUAN" - extremely dangerous!
+
+**Fix:** Added override rules to cap score when dangerous conditions exist:
+
+```python
+# Rule 1: RSI > 75 + Breadth < 40% = "Xanh vỏ đỏ lòng"
+if data.rsi > 75 and data.breadth_percent < 40:
+    score = min(score, 40)  # Cap at 40
+
+# Rule 2: RSI > 80 = Extreme overbought
+if data.rsi > 80:
+    score = min(score, 35)
+
+# Rule 3: Volume weakening at high prices
+if vol_change_pct < -10 and data.change_percent > 0 and data.rsi > 65:
+    score = min(score, 45)  # Distribution pattern
+
+# Rule 4: RSI < 25 = Extreme oversold
+if data.rsi < 25:
+    score = max(score, 60)  # Potential rebound
+```
+
+**New Output:**
+```
+VNINDEX: RSI 83.7 + Breadth 19%
+→ Master Score: 35/100
+→ Recommendation: TIÊU CỰC - Cắt lỗ hoặc chờ
+→ Override: RSI cực đại quá mua
+```
+
+### 11.8 Master Score Display
+**Added:** Master Score display in output header
+```
+║  🤖 AI INSIGHT: 35/100 ★☆☆☆ 
+║     Khuyến nghị: TIÊU CỰC - Cắt lờ hoặc chờ
+```
+
+### 11.9 Volume Weakening Insight
+**Added:** Volume analysis insight for distribution pattern
+```
+⚠️ Vol giảm 11% ở vùng cao → Phân phối, cẩn trọng!
+```
+
+### 11.10 Weighted Scoring System
+**New scoring approach:**
+```
+TREND COMPONENT (60%):
+- ADX >= 40: +20 (Very strong)
+- ADX >= 25: +15 (Strong)
+- Price > SMA20 & > SMA50: +15 (Bullish position)
+
+BREADTH COMPONENT (40%):
+- RSI > 75: -20 (Extreme overbought)
+- RSI > 70: -10 (Overbought)
+- Breadth <= 25: -20 (Extreme bearish)
+- Breadth <= 40: -10 (Bearish)
+
+FINAL MAPPING:
+- 75+: TÍCH CỰC
+- 60-74: KHẢ QUAN
+- 50-59: TRUNG LẬP
+- 40-49: THẬN TRỌNG
+- 25-39: TIÊU CỰC
+- <25: NGUY HIỂM
+```
+
+### 11.11 Pillar Drag Detection (KÉO TRỤ)
+**Critical:** Index up but Breadth < 35% = PILLAR DRAG - EXTREMELY DANGEROUS
+
+```python
+# RULE 0: PILLAR DRAG DETECTION
+if data.breadth_percent < 35:
+    if data.change_percent >= 0:
+        # Index UP but most stocks DOWN = PILLAR DRAG
+        score = min(score, 30)
+        override_reason = "⚠️ KÉO TRỤ: Index lên nhưng chỉ {breadth}% mã tăng"
+    elif data.change_percent > -1 and data.breadth_percent < 25:
+        # Index flat/slight drop + very weak breadth = Warning
+        score = min(score, 35)
+        override_reason = "⚠️ KÉO TRỤ TIỀM ẨN: Chỉ {breadth}% mã tăng"
+```
+
+### 11.12 Override Message Format - Separate Breadth vs RSI
+**Problem:** "KÉO TRỤ: RSI cực đại" mixes two different concepts
+
+**Fix:** Separate Breadth (Kéo trụ) vs RSI (Động lượng)
+
+```python
+override_parts = []
+
+# 1. Breadth warning (KÉO TRỤ)
+if is_pillar_drag:
+    override_parts.append("Breadth yếu ({:.0f}%) - Sự đồng thuận thấp".format(data.breadth_percent))
+
+# 2. RSI warning (Động lượng)
+if data.rsi > 80:
+    override_parts.append("RSI Quá mua cực độ ({:.0f})".format(data.rsi))
+elif data.rsi > 75 and not is_pillar_drag:
+    override_parts.append("RSI Quá mua ({:.0f})".format(data.rsi))
+
+# 3. Volume warning
+if vol_change_pct < -10 and data.change_percent > 0 and data.rsi > 65:
+    override_parts.append("Vol giảm ở vùng cao - Phân phối")
+
+# Combine
+if override_parts:
+    override_reason = "⚠️ KÉO TRỤ: " + " | ".join(override_parts)
+```
+
+**Example Output:**
+```
+Override: ⚠️ KÉO TRỤ: Breadth yếu (19%) - Sự đồng thuận thấp | RSI Quá mua (84)
+```
+
+### 11.13 Enhanced AI Insight UI - Visual Hierarchy
+**Improvement:** Add dedicated warning section with clear visual hierarchy
+
+**New Structure:**
+```
+╠══════════════════════════════════════════════════════════════╣
+║  AI INSIGHT: 30/100 *ooo 
+║     Khuyen nghich: TIÊU CỰC - Cắt lỗ hoặc chờ
+╠══════════════════════════════════════════════════════════════╣
+║  ------------------------------------------------------------
+║  [!] CANH BAO: PHAT HIEN KEO TRU (XANH VO DO LONG)
+║  * 81% co phieu giam/di ngang du Index giam nhe.
+║  * Phan ky nghiem trong: Tru giu gia - Midcap/Smallcap bi xa.
+║  ------------------------------------------------------------
+║  [X] Rui ro: Breadth 19% (Rat thap) -> Do tin cay Uptrend thap
+║  [X] Rui ro: RSI 83.7 (Qua mua) -> Ap luc dieu chinh Cu lon
+║  [X] Rui ro: Vol giam 11% -> Luc cay suy yeu o vung cao
+║  [OK] Ky thuat: SMA & ADX van bao tang nhung bi "vo hieu hoa" 
+╠══════════════════════════════════════════════════════════════╣
+```
+
+**Key Improvements:**
+1. Score stars use `*` and `o` instead of Unicode stars (cross-platform compatibility)
+2. Warning section clearly separated with visual divider
+3. Each risk factor displayed with `[X]` (risk) or `[OK]` (confirmed) prefix
+4. "Pillar Drag" warning includes:
+   - Decline percentage (81% stocks down)
+   - Index direction comparison
+   - Phase divergence explanation
+5. Technical signals marked as "vô hiệu hóa" when overridden
+
+---
+
+## 12. Phase 1 Stock Analyzer Fixes (2026-04-26)
+
+### 12.1 Trend Label when ADX < 20
+**Problem:** "Strong Uptrend (ADX: 19.4 - SIDEWAY)" is confusing
+
+**Root Cause:** `_get_trend_status()` only considers price vs SMAs, not ADX
+
+**Fix:** Override trend_status after calculation when ADX < 20
+
+```python
+# After calculating trend_status
+if tech.adx and tech.adx < 20:
+    tech.trend_status = "sideways"
+
+# In display
+trend_text = result.technical.trend_status.replace("_", " ").title()
+if result.technical.adx and result.technical.adx < 20:
+    trend_text = "SIDEWAY"  # ADX < 20 = No trend
+```
+
+**Result:**
+```
+Before: XU HƯỚNG: Strong Uptrend (ADX: 19.4 - SIDEWAY)
+After:  XU HƯỚNG: SIDEWAY (ADX: 19.4 - Không xu hướng)
+```
+
+### 12.2 Banking Metrics (NIM/NPL)
+**Problem:** Banking stocks show "Tăng trưởng LN: N/A"
+
+**Fix:** Add banking-specific metrics (NIM, NPL) for bank stocks
+
+```python
+# In FundamentalData dataclass
+nim: float = 0.0  # Net Interest Margin
+npl_ratio: float = 0.0  # Non-Performing Loan ratio
+is_banking: bool = False
+
+# In display
+if result.fundamental.is_banking and (result.fundamental.nim > 0 or result.fundamental.npl_ratio > 0):
+    banking_parts = []
+    if result.fundamental.nim > 0:
+        banking_parts.append(f"NIM: {result.fundamental.nim:.2f}%")
+    if result.fundamental.npl_ratio > 0:
+        banking_parts.append(f"NPL: {result.fundamental.npl_ratio:.2f}%")
+    lines.append(f"│     📊 Ngân hàng: {' | '.join(banking_parts)}...")
+```
+
+**Example Output for Bank:**
+```
+📊 Ngân hàng: NIM: 3.25% | NPL: 1.85%
+```

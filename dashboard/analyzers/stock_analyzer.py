@@ -86,6 +86,11 @@ class FundamentalData:
     profit_growth_yoy: float = 0.0
     margin: float = 0.0
     
+    # Banking specific metrics (NIM, NPL)
+    nim: float = 0.0  # Net Interest Margin
+    npl_ratio: float = 0.0  # Non-Performing Loan ratio
+    is_banking: bool = False
+    
     # F-Score components
     roa_increase: bool = False
     roe_increase: bool = False
@@ -350,6 +355,9 @@ class StockAnalyzer:
             
             # Trend status
             tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
+            # FIX: If ADX < 20, trend is SIDEWAY regardless of price position
+            if tech.adx and tech.adx < 20:
+                tech.trend_status = "sideways"
             
             # SuperTrend - returns pd.DataFrame with columns: SUPERT_10_3.0, SUPERTd_10_3.0, SUPERTl_10_3.0, SUPERTs_10_3.0
             st_df = indicator.supertrend(length=10, multiplier=3)
@@ -514,6 +522,9 @@ class StockAnalyzer:
         
         # Trend status
         tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
+        # FIX: If ADX < 20, trend is SIDEWAY regardless of price position
+        if tech.adx and tech.adx < 20:
+            tech.trend_status = "sideways"
         
         # Ichimoku
         ichimoku_values = self._calculate_ichimoku(df)
@@ -814,10 +825,63 @@ class StockAnalyzer:
             fund.f_score = self._calculate_f_score(symbol)
             fund.f_score_grade = self._get_f_score_grade(fund.f_score)
             
+            # Get banking-specific metrics (NIM, NPL)
+            self._get_banking_metrics(symbol, fund)
+            
         except Exception:
             pass
         
         return fund
+    
+    def _get_banking_metrics(self, symbol: str, fund: FundamentalData):
+        """Get banking-specific metrics (NIM, NPL) for bank stocks"""
+        # List of major Vietnamese banks
+        BANK_SYMBOLS = {
+            'VCB', 'CTG', 'TPB', 'MBB', 'ACB', 'VPB', 'TCB', 
+            'STB', 'BID', 'SHB', 'HDB', 'LPB', 'OCB', 'VIB',
+            'MSB', 'EIB', 'KLB', 'SGB', 'NAB', 'PGB', 'BAB'
+        }
+        
+        if symbol.upper() not in BANK_SYMBOLS:
+            return
+        
+        try:
+            from vnstock_data import Fundamental
+            import warnings
+            
+            fun = Fundamental()
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                fund.is_banking = True
+                
+                # Try to get financial_health which may contain NIM, NPL
+                try:
+                    health = fun.equity(symbol).financial_health()
+                    if health is not None and len(health) > 0:
+                        # Check for banking metrics in the data
+                        health_str = health.to_string().lower() if hasattr(health, 'to_string') else str(health).lower()
+                        
+                        # Try to find NIM
+                        for idx in health.index:
+                            row_str = str(idx).lower()
+                            if 'nim' in row_str or 'interest margin' in row_str:
+                                fund.nim = float(health.loc[idx].iloc[-1]) if hasattr(health.loc[idx], 'iloc') else float(health.loc[idx])
+                                break
+                        
+                        # Try to find NPL or bad debt
+                        for idx in health.index:
+                            row_str = str(idx).lower()
+                            if 'npl' in row_str or 'non-performing' in row_str or 'bad debt' in row_str:
+                                val = health.loc[idx].iloc[-1] if hasattr(health.loc[idx], 'iloc') else health.loc[idx]
+                                fund.npl_ratio = float(val)
+                                break
+                except:
+                    pass
+                    
+        except Exception:
+            pass
     
     def _calculate_f_score(self, symbol: str) -> int:
         """
@@ -1462,7 +1526,11 @@ class StockAnalyzer:
         price_change = f"{result.technical.change_percent:+.2f}%" if result.technical.change_percent else "N/A"
         lines.append(f"│  GIÁ: {result.technical.current_price:,.0f} VND ({price_change})".ljust(70) + "│")
         
+        # Trend display - FIX: When ADX < 20, always show SIDEWAY regardless of trend_status
         trend_text = result.technical.trend_status.replace("_", " ").title()
+        if result.technical.adx and result.technical.adx < 20:
+            trend_text = "SIDEWAY"  # ADX < 20 = No trend, regardless of price position
+        
         adx_text = f"ADX: {result.technical.adx:.1f} - {result.technical.adx_status}" if result.technical.adx else "ADX: N/A"
         atr_text = f"ATR: {result.technical.atr:,.0f}" if result.technical.atr else "ATR: N/A"
         lines.append(f"│  XU HƯỚNG: {trend_text} ({adx_text}) | BIẾN ĐỘNG: {atr_text}".ljust(70) + "│")
@@ -1527,10 +1595,22 @@ class StockAnalyzer:
         roe_text = f"ROE: {result.fundamental.roe:.1f}%" if result.fundamental.roe > 0 else "ROE: N/A"
         lines.append(f"│     Định giá: {pe_text} | {pb_text} | {roe_text}".ljust(70) + "│")
         
-        # Growth
-        growth_text = f"Tăng trưởng LN: {result.fundamental.profit_growth:+.1f}% YoY" if result.fundamental.profit_growth != 0 else "Tăng trưởng LN: N/A"
-        margin_text = f"Margin: {result.fundamental.margin:.1f}%" if result.fundamental.margin > 0 else ""
-        lines.append(f"│     {growth_text} {margin_text}".ljust(70) + "│")
+        # Growth / Banking Metrics
+        if result.fundamental.is_banking and (result.fundamental.nim > 0 or result.fundamental.npl_ratio > 0):
+            # Show banking metrics instead of profit growth
+            banking_parts = []
+            if result.fundamental.nim > 0:
+                banking_parts.append(f"NIM: {result.fundamental.nim:.2f}%")
+            if result.fundamental.npl_ratio > 0:
+                banking_parts.append(f"NPL: {result.fundamental.npl_ratio:.2f}%")
+            if banking_parts:
+                lines.append(f"│     📊 Ngân hàng: {' | '.join(banking_parts)}".ljust(70) + "│")
+        else:
+            # Show regular profit growth
+            growth_text = f"Tăng trưởng LN: {result.fundamental.profit_growth:+.1f}% YoY" if result.fundamental.profit_growth != 0 else "Tăng trưởng LN: N/A"
+            margin_text = f"Margin: {result.fundamental.margin:.1f}%" if result.fundamental.margin > 0 else ""
+            if growth_text or margin_text:
+                lines.append(f"│     {growth_text} {margin_text}".ljust(70) + "│")
         
         lines.append("├" + "─" * 72 + "┤")
         
