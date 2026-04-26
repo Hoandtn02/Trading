@@ -19,13 +19,18 @@ class IndexData:
     high: float = 0.0
     low: float = 0.0
     volume: int = 0
+    avg_volume_20: int = 0  # Average volume 20 days
     market_breadth: Dict[str, int] = None  # {advance: N, decline: M}
     breadth_percent: float = 0.0  # % cổ phiếu tăng
+    # Money flow (tỷ đồng)
+    advance_value: float = 0.0  # Tổng giá trị nhóm tăng
+    decline_value: float = 0.0  # Tổng giá trị nhóm giảm
     technical_status: str = "NEUTRAL"  # BULL, BEAR, NEUTRAL
     trend: str = "SIDEWAYS"
     # Technical indicators
     sma_20: float = 0.0
     sma_50: float = 0.0
+    sma_50_available: bool = False  # Flag để check dữ liệu đủ 50 phiên
     adx: float = 0.0
     rsi: float = 0.0
     # Recommendation
@@ -42,6 +47,8 @@ class MarketBreadth:
     total: int = 0
     percent_up: float = 0.0
     a_d_ratio: float = 0.0  # Advance/Decline ratio
+    advance_value: float = 0.0  # Tổng giá trị nhóm tăng (triệu VND)
+    decline_value: float = 0.0  # Tổng giá trị nhóm giảm (triệu VND)
 
 
 class IndexAnalyzer:
@@ -49,6 +56,7 @@ class IndexAnalyzer:
     
     def __init__(self, period_ta: int = 60):
         self.period_ta = period_ta
+        self._breadth_scope_note = "subset"
     
     def analyze(self, symbol: str = "VNINDEX") -> IndexData:
         """
@@ -74,6 +82,8 @@ class IndexAnalyzer:
                 "unchanged": breadth.unchanged
             }
             data.breadth_percent = breadth.percent_up
+            data.advance_value = breadth.advance_value
+            data.decline_value = breadth.decline_value
         
         # Determine technical status
         self._determine_technical_status(data)
@@ -103,7 +113,8 @@ class IndexAnalyzer:
             mkt = Market()
             
             end = pd.Timestamp.today().strftime("%Y-%m-%d")
-            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta)).strftime("%Y-%m-%d")
+            # Need ~70 trading days for SMA50, get 90 calendar days to be safe
+            start = (pd.Timestamp.today() - pd.DateOffset(days=90)).strftime("%Y-%m-%d")
             
             df = mkt.index(symbol).ohlcv(start=start, end=end)
             
@@ -155,6 +166,11 @@ class IndexAnalyzer:
             data.sma_20 = float(close.rolling(20).mean().iloc[-1])
         if len(close) >= 50:
             data.sma_50 = float(close.rolling(50).mean().iloc[-1])
+            data.sma_50_available = True
+        
+        # Average Volume 20 days
+        if 'volume' in df.columns and len(df) >= 20:
+            data.avg_volume_20 = int(df['volume'].tail(20).mean())
         
         # RSI
         if len(close) >= 14:
@@ -190,13 +206,17 @@ class IndexAnalyzer:
                 data.adx = float(dx.rolling(14).mean().iloc[-1])
         
         # Determine trend based on ADX and price position
-        if len(close) >= 50:
-            if data.current_value > data.sma_50 and data.adx > 20:
-                data.trend = "UPTREND"
-            elif data.current_value < data.sma_50 and data.adx > 20:
-                data.trend = "DOWNTREND"
-            else:
-                data.trend = "SIDEWAYS"
+        # CHỈ xác định xu hướng khi đủ dữ liệu SMA50
+        if not data.sma_50_available:
+            data.trend = "ĐANG TÍNH TOÁN"  # Chưa đủ 50 phiên
+        elif data.adx < 20:
+            data.trend = "SIDEWAY"  # Không có xu hướng rõ ràng
+        elif data.current_value > data.sma_50 and data.current_value > data.sma_20:
+            data.trend = "UPTREND"
+        elif data.current_value < data.sma_50 and data.current_value < data.sma_20:
+            data.trend = "DOWNTREND"
+        else:
+            data.trend = "SIDEWAY"
     
     def _get_market_breadth(self, symbol: str) -> Optional[MarketBreadth]:
         """
@@ -211,6 +231,10 @@ class IndexAnalyzer:
             
             # Get list of stocks in the index
             lst = Listing(source='VCI')
+            
+            # NOTE: KBS/VCI API typically returns VN100 constituents
+            # We'll note this limitation
+            is_vn100_limited = True
             
             try:
                 if symbol == "VNINDEX":
@@ -243,8 +267,14 @@ class IndexAnalyzer:
             else:
                 symbols = list(stocks) if stocks else []
             
+            # Store note about scope (dynamic based on actual count)
+            self._breadth_scope_note = f"{len(symbols)} mã (VN100/Index subset)"
+            
             # Limit to 100 for performance
             symbols = symbols[:100]
+            
+            # Update note after limiting
+            self._breadth_scope_note = f"~{len(symbols)} mã (VN100/Index subset)"
             
             # Get quotes for all symbols (batch call)
             mkt = Market()
@@ -253,9 +283,9 @@ class IndexAnalyzer:
             if quotes is None or len(quotes) == 0:
                 return breadth
             
-            # Calculate breadth
+            # Calculate breadth and money flow
+            # volume col names: volume, trading_volume, volume_shares
             for _, row in quotes.iterrows():
-                # Try different column names for price
                 close = 0
                 ref = 0
                 
@@ -273,10 +303,25 @@ class IndexAnalyzer:
                             ref = float(val) * 1000  # Scale back
                             break
                 
+                # Get volume
+                vol = 0
+                for vol_col in ['volume', 'trading_volume', 'volume_shares']:
+                    if vol_col in row.index:
+                        val = row.get(vol_col, 0)
+                        if pd.notna(val):
+                            vol = float(val)
+                            break
+                
+                # Calculate money flow (price * volume in millions)
+                # Volume is in shares, price in VND, convert to millions
+                money_flow = (close * vol) / 1_000_000 if close > 0 and vol > 0 else 0
+                
                 if close > ref:
                     breadth.advance += 1
+                    breadth.advance_value += money_flow
                 elif close < ref:
                     breadth.decline += 1
+                    breadth.decline_value += money_flow
                 else:
                     breadth.unchanged += 1
             
@@ -350,6 +395,20 @@ class IndexAnalyzer:
         else:
             breadth_status = "GIẢM MẠNH"
         
+        # SMA50 status - check both flag AND value to handle edge cases
+        sma50_available = data.sma_50_available and data.sma_50 > 0
+        sma50_str = f"{data.sma_50:,.2f}" if sma50_available else "N/A"
+        
+        # Volume comparison vs 20-day average
+        vol_change_pct = 0
+        vol_change_str = ""
+        if data.avg_volume_20 > 0:
+            vol_change_pct = ((data.volume - data.avg_volume_20) / data.avg_volume_20) * 100
+            if vol_change_pct > 0:
+                vol_change_str = f"(↑ {vol_change_pct:.0f}% so với TB 20 phiên)"
+            else:
+                vol_change_str = f"(↓ {abs(vol_change_pct):.0f}% so với TB 20 phiên)"
+        
         # Volume formatting
         vol_str = f"{data.volume:,}" if data.volume < 1000000 else f"{data.volume/1000000:.1f}M"
         
@@ -362,16 +421,20 @@ class IndexAnalyzer:
 ║  Giá: {data.current_value:,.2f} điểm
 ║  {change_emoji} Thay đổi: {data.change_percent:+.2f}% ({data.change_value:+,.2f} điểm)
 ║  Cao/Thấp: {data.high:,.2f} / {data.low:,.2f}
-║  Khối lượng: {vol_str}
+║  Khối lượng: {vol_str} {vol_change_str}
 ╠══════════════════════════════════════════════════════════════╣
 ║  📈 PHÂN TÍCH KỸ THUẬT
 ║  ────────────────────────────────────────────────────────────
 ║  📐 XU HƯỚNG
-║     SMA(20): {data.sma_20:,.2f} | SMA(50): {data.sma_50:,.2f}
+║     SMA(20): {data.sma_20:,.2f} | SMA(50): {sma50_str}
 ║     Giá: {data.current_value:,.2f} - """
         
-        # Price vs SMA position
-        if data.current_value > data.sma_20 and data.current_value > data.sma_50:
+        # Price vs SMA position - NHẤT QUÁN với trend logic
+        if not sma50_available:
+            output += "Chưa đủ dữ liệu SMA50 → Chờ xác nhận"
+        elif data.adx < 20:
+            output += "ADX < 20 → Sideway, không có xu hướng rõ"
+        elif data.current_value > data.sma_20 and data.current_value > data.sma_50:
             output += "Giá TRÊN cả 2 SMA → Uptrend"
         elif data.current_value < data.sma_20 and data.current_value < data.sma_50:
             output += "Giá DƯỚI cả 2 SMA → Downtrend"
@@ -386,7 +449,7 @@ class IndexAnalyzer:
 ║  📊 ADX: {data.adx:.1f} - Xu hướng {adx_status}
 ║  📉 RSI(14): {data.rsi:.1f} - Zone: {rsi_zone}
 ╠══════════════════════════════════════════════════════════════╣
-║  📊 MARKET BREADTH (Sức khỏe thị trường)
+║  📊 MARKET BREADTH ({self._breadth_scope_note})
 ║  ────────────────────────────────────────────────────────────"""
         
         if data.market_breadth:
@@ -399,6 +462,16 @@ class IndexAnalyzer:
 ║  Advance/Decline: {advance} ↑ / {decline} ↓ / {unchanged} ─
 ║  Tỷ lệ: {ratio:.1f}:1 ({breadth_status})
 ║  Tỷ lệ tăng: {data.breadth_percent:.1f}%"""
+            
+            # Money Flow Distribution
+            if data.advance_value > 0 or data.decline_value > 0:
+                adv_val_str = f"{data.advance_value/1000:.1f}T" if data.advance_value > 1000 else f"{data.advance_value:.0f}M"
+                dec_val_str = f"{data.decline_value/1000:.1f}T" if data.decline_value > 1000 else f"{data.decline_value:.0f}M"
+                output += f"""
+║  💰 DÒNG TIỀN:
+║     Tăng: {adv_val_str} | Giảm: {dec_val_str}"""
+                if data.decline_value > data.advance_value * 1.5:
+                    output += " → Áp lực bán mạnh hơn thực tế"
         
         output += f"""
 ╠══════════════════════════════════════════════════════════════╣
@@ -417,28 +490,39 @@ class IndexAnalyzer:
         return output
     
     def _generate_insights(self, data: IndexData) -> List[str]:
-        """Generate market insights based on data"""
+        """Generate market insights based on data - NHẤT QUÁN với trend logic"""
         insights = []
         
-        # Trend insight
-        if data.trend == "UPTREND":
-            insights.append("✅ Giá đang trên SMA50 → Uptrend được xác nhận")
+        # Check SMA50 availability
+        sma50_available = data.sma_50_available and data.sma_50 > 0
+        
+        # Trend insight - NHẤT QUÁN với _calculate_index_indicators
+        if not sma50_available:
+            insights.append("⏳ SMA50 chưa đủ dữ liệu → Không xác định xu hướng")
+        elif data.adx < 20:
+            insights.append("⚠️ ADX < 20 → Không có xu hướng rõ ràng (Sideway)")
+        elif data.trend == "UPTREND":
+            insights.append("✅ Giá trên cả 2 SMA + ADX > 20 → Uptrend xác nhận")
         elif data.trend == "DOWNTREND":
-            insights.append("⚠️ Giá đang dưới SMA50 → Downtrend")
+            insights.append("⚠️ Giá dưới cả 2 SMA + ADX > 20 → Downtrend")
         else:
-            insights.append("🔄 Giá sideway quanh SMA → Chờ xác nhận")
+            insights.append("🔄 Giá sideway quanh SMA → Chờ xác nhận xu hướng")
         
         # ADX insight
-        if data.adx > 25:
-            insights.append(f"✅ ADX {data.adx:.1f} > 25 → Xu hướng có độ tin cậy")
+        if data.adx > 40:
+            insights.append(f"✅ ADX {data.adx:.1f} > 40 → Xu hướng RẤT MẠNH")
+        elif data.adx > 25:
+            insights.append(f"✅ ADX {data.adx:.1f} > 25 → Xu hướng đáng tin cậy")
+        elif data.adx >= 20:
+            insights.append(f"⚠️ ADX {data.adx:.1f} 20-25 → Xu hướng yếu")
         else:
-            insights.append(f"⚠️ ADX {data.adx:.1f} < 25 → Xu hướng yếu, sideway")
+            insights.append(f"⚠️ ADX {data.adx:.1f} < 20 → Sideway, không có xu hướng")
         
         # RSI insight
         if data.rsi > 70:
-            insights.append(f"⚠️ RSI {data.rsi:.1f} > 70 → Quá mua, có thể điều chỉnh")
+            insights.append(f"⚠️ RSI {data.rsi:.1f} > 70 → QUÁ MUA, có thể điều chỉnh")
         elif data.rsi < 30:
-            insights.append(f"✅ RSI {data.rsi:.1f} < 30 → Quá bán, có thể rebound")
+            insights.append(f"✅ RSI {data.rsi:.1f} < 30 → QUÁ BÁN, có thể rebound")
         else:
             insights.append(f"ℹ️ RSI {data.rsi:.1f} → Trung lập, chờ tín hiệu")
         
@@ -505,3 +589,10 @@ class IndexAnalyzer:
 # Add attributes to IndexData
 IndexData.sma_20 = 0.0
 IndexData.sma_50 = 0.0
+IndexData.sma_50_available = False
+IndexData.avg_volume_20 = 0
+IndexData.advance_value = 0.0
+IndexData.decline_value = 0.0
+
+# Instance attribute for breadth scope note
+IndexAnalyzer._breadth_scope_note = "subset"  # Will be set during analysis

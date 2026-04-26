@@ -380,3 +380,83 @@ bb_values = self._calculate_bollinger(close, period=20, std=2)  # Call - ERROR!
 def _calculate_bollinger(close, period=20, std_mult=2):  # Definition
 bb_values = self._calculate_bollinger(close, period=20, std_mult=2)  # Call - OK
 ```
+
+---
+
+## 11. Phase 2 Index Analyzer Fixes (2026-04-26)
+
+### 11.1 SMA(50) = 0 Issue
+**Problem:** Dataset doesn't have enough rows to calculate SMA(50)
+- 90 calendar days only gives ~60 trading days (excluding weekends)
+- Need at least 50 trading days for SMA50 calculation
+
+**Fix:** 
+- Use 90 calendar days for index data (vs 60 for stocks)
+- Add `sma_50_available` flag to check if SMA50 is valid
+- Display "N/A" when SMA50 is not available
+
+```python
+# In IndexData dataclass
+sma_50_available: bool = False  # Flag để check dữ liệu đủ 50 phiên
+
+# In _calculate_index_indicators
+if len(close) >= 50:
+    data.sma_50 = float(close.rolling(50).mean().iloc[-1])
+    data.sma_50_available = True
+```
+
+### 11.2 Logic Contradiction (Uptrend vs Sideway)
+**Problem:** AI Insight says "Sideway" while Trend section says "Uptrend"
+
+**Root Cause:** Two different logic paths for trend determination
+
+**Fix:** Unify logic in both places:
+```
+ADX < 20: SIDEWAY (no clear trend)
+ADX >= 20 AND Price > SMA20 AND > SMA50: UPTREND
+ADX >= 20 AND Price < SMA20 AND < SMA50: DOWNTREND
+Otherwise: SIDEWAY
+```
+
+### 11.3 Market Breadth Scope Label
+**Problem:** Output shows "100 mã" but VNINDEX has ~400 stocks on HOSE
+
+**Fix:** Add scope note to clarify data subset:
+```
+📊 MARKET BREADTH (~100 mã (VN100/Index subset))
+```
+
+### 11.4 Volume Comparison
+**Problem:** Volume 673.9M is meaningless without comparison
+
+**Fix:** Add 20-day average comparison:
+```
+Khối lượng: 673.9M (↓ 11% so với TB 20 phiên)
+```
+
+```python
+# Calculate average volume
+if 'volume' in df.columns and len(df) >= 20:
+    data.avg_volume_20 = int(df['volume'].tail(20).mean())
+
+# Format comparison
+if data.avg_volume_20 > 0:
+    vol_change_pct = ((data.volume - data.avg_volume_20) / data.avg_volume_20) * 100
+    vol_change_str = f"(↑ {vol_change_pct:.0f}% so với TB 20 phiên)" if vol_change_pct > 0 else f"(↓ {abs(vol_change_pct):.0f}% so với TB 20 phiên)"
+```
+
+### 11.5 Test Script Path Error
+**Problem:** Test script used wrong path `d:\OneDrive\Desktop\Trading` instead of `Trading-1`
+
+**Fix:** Update test script path:
+```python
+sys.path.insert(0, r"d:\OneDrive\Desktop\Trading-1")  # CORRECT
+# sys.path.insert(0, r"d:\OneDrive\Desktop\Trading")  # WRONG
+```
+
+### 11.6 Index vs Stock Price Scaling
+**Important:** Index values are NOT divided by 1000 like stock prices
+```
+Stock: API returns 60.6 → Actual 60,600 VND (multiply by 1000)
+Index: API returns 1853 → Actual 1853 points (keep as-is)
+```

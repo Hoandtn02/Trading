@@ -2,7 +2,7 @@
 Test script for IndexAnalyzer - Phase 2
 """
 import sys
-sys.path.insert(0, r"d:\OneDrive\Desktop\Trading")
+sys.path.insert(0, r"d:\OneDrive\Desktop\Trading-1")
 
 import warnings
 warnings.filterwarnings('ignore')

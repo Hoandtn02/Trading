@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+Đọc file @vnstock-agent-guide-main/vnstock-agent-guide-main/.cursor/rules/instructions.md để xem cách kết nối tới các chỉ báo đúng. Xem file @docs/LESSONS_LEARNED.md để tham khảo các lỗi thường gặp. Lưu ý hoạt động sao cho tiết kiệm token nhất.
