@@ -933,6 +933,16 @@ dashboard/
   - Futures: VN30 Index, Basis, ATR, Bollinger Width, VWAP, Pivot, SMA, ADX, RSI, MACD, Contango/Backwardation, Contract Value, Margin, Master Score
   - Bond: Government Bonds Table, YTM, Coupon, Duration, Modified Duration, Yield Curve, Master Score
 
+### 2026-04-26
+- ✅ Phase 1 Critical Logic Fixes:
+  - **ADX Logic**: ADX < 20 = "SIDEWAY - Không xu hướng" (was incorrectly showing "Strong Downtrend")
+  - **Master Score vs Action Consistency**: Rewrote `_generate_recommendation()` to ensure score and action are aligned
+  - **Stop Loss Fix**: SL must be BELOW current price for LONG/BUY positions (was incorrectly above price)
+  - **Added Ichimoku Cloud**: Tenkan, Kijun, Span A/B with bullish/bearish/neutral status
+  - **Added Full Fallback**: Manual calculation for all indicators when vnstock_ta crashes
+  - **vnstock Fallback**: Added `_get_ohlcv_fallback()` using vnstock free library
+  - **Test Results**: MBB with 26,200 VND, ADX 14.3 → SIDEWAY, SL 25,557 < Price 26,200 ✓
+
 ---
 
 ## 16. CÁCH SỬ DỤNG

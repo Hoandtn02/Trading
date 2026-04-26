@@ -316,3 +316,67 @@ if __name__ == "__main__":
 - vnstock_data docs: `vnstock-agent-guide-main/docs/vnstock-data/`
 - vnstock_ta docs: `vnstock-agent-guide-main/docs/vnstock_ta/`
 - Architecture: `docs/ARCHITECTURE_ROADMAP.md`
+
+---
+
+## 10. Phase 1 Stock Analyzer Fixes (2026-04-26)
+
+### 10.1 ADX Interpretation
+**Critical Rule**: ADX < 20 = NO TREND (Sideway), NOT a strong trend
+```
+ADX < 20: SIDEWAY - No directional trend
+ADX 20-25: Weak trend
+ADX >= 25: Strong trend
+ADX >= 40: Very strong trend
+```
+
+### 10.2 Stop Loss Logic
+**For LONG/BUY positions**: Stop Loss MUST be BELOW current price
+```
+WRONG: SL = Price + ATR (above current price)
+RIGHT: SL = Price - (ATR * multiplier)
+```
+
+### 10.3 Master Score vs Action Consistency
+**Critical**: Master Score and Action must be aligned
+```
+High Score (>=70) + Strong Bullish signals = BUY
+Medium Score (50-70) + Mixed signals = HOLD/WATCH
+Low Score (<=40) + Bearish signals = SELL
+```
+
+### 10.4 vnstock_ta Crash Handling
+**vnstock_ta can crash** in some environments. Always implement full manual fallback:
+```python
+def _calculate_technical_fallback(self, df: pd.DataFrame):
+    # Calculate ALL indicators manually:
+    # - RSI: 100 - (100 / (1 + RS))
+    # - MACD: EMA(fast) - EMA(slow)
+    # - ADX: Calculate +DI, -DI, DX, then ADX
+    # - ATR: max(H-L, |H-PC|, |L-PC|).mean()
+    # - Bollinger: SMA ± (std * 2)
+    # - Ichimoku: Tenkan, Kijun, Span A/B
+```
+
+### 10.5 vnstock Fallback for OHLCV
+When vnstock_data is unavailable:
+```python
+def _get_ohlcv_fallback(self, symbol):
+    from vnstock.explorer.vci.quote import Quote
+    q = Quote(symbol=symbol, show_log=False)
+    df = q.history(start=start, end=end, interval='1D')
+    # Prices are in thousands (26.40 = 26,400 VND)
+    df[col] = df[col] * 1000
+```
+
+### 10.6 Parameter Name Consistency
+When defining methods, be consistent with parameter names:
+```python
+# WRONG: Define with 'std_mult' but call with 'std'
+def _calculate_bollinger(close, period=20, std_mult=2):  # Definition
+bb_values = self._calculate_bollinger(close, period=20, std=2)  # Call - ERROR!
+
+# RIGHT: Use consistent parameter name
+def _calculate_bollinger(close, period=20, std_mult=2):  # Definition
+bb_values = self._calculate_bollinger(close, period=20, std_mult=2)  # Call - OK
+```

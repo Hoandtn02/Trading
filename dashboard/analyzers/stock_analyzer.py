@@ -24,29 +24,36 @@ class TechnicalIndicators:
     current_price: float = 0.0
     change_percent: float = 0.0
     volume: int = 0
-    
+
     # Momentum
     rsi: float = 50.0
     rsi_status: str = "neutral"
     macd: float = 0.0
     macd_signal: str = "neutral"
-    
+
     # Trend
     adx: float = 0.0
-    adx_status: str = "no_trend"
+    adx_status: str = "SIDEWAY"
     sma_20: float = 0.0
     sma_50: float = 0.0
     sma_200: float = 0.0
     trend_status: str = "neutral"
     supertrend_signal: str = "neutral"
     supertrend_stop: float = 0.0
-    
+
+    # Ichimoku Cloud
+    ichimoku_tenkan: float = 0.0
+    ichimoku_kijun: float = 0.0
+    ichimoku_span_a: float = 0.0
+    ichimoku_span_b: float = 0.0
+    ichimoku_status: str = "neutral"  # bullish, bearish, neutral
+
     # Money Flow
     cmf: float = 0.0
     cmf_status: str = "neutral"
     mfi: float = 50.0
     mfi_status: str = "neutral"
-    
+
     # Volatility
     atr: float = 0.0
     atr_status: str = "normal"
@@ -54,7 +61,7 @@ class TechnicalIndicators:
     bollinger_middle: float = 0.0
     bollinger_lower: float = 0.0
     bollinger_position: float = 0.5
-    
+
     # Value
     vwap: float = 0.0
     vwap_status: str = "neutral"
@@ -208,7 +215,8 @@ class StockAnalyzer:
         return result
     
     def _get_ohlcv(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV data from vnstock_data"""
+        """Fetch OHLCV data from vnstock_data with vnstock fallback"""
+        # Try vnstock_data first
         try:
             from vnstock_data import Market
             mkt = Market()
@@ -232,6 +240,36 @@ class StockAnalyzer:
                 # Set time index if present
                 if 'time' in df.columns:
                     df.set_index('time', inplace=True)
+                
+                return df
+            
+            return None
+        except (ImportError, Exception) as e:
+            # Fallback to vnstock
+            return self._get_ohlcv_fallback(symbol)
+    
+    def _get_ohlcv_fallback(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Fallback: Get OHLCV from vnstock free library"""
+        try:
+            from vnstock.explorer.vci.quote import Quote
+            
+            q = Quote(symbol=symbol, show_log=False)
+            end = pd.Timestamp.today().strftime("%Y-%m-%d")
+            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta)).strftime("%Y-%m-%d")
+            
+            df = q.history(start=start, end=end, interval='1D')
+            
+            if df is not None and len(df) > 0:
+                # Ensure numeric columns
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                # vnstock returns prices in thousands (26.40 = 26,400 VND)
+                price_cols = ['open', 'high', 'low', 'close']
+                for col in price_cols:
+                    if col in df.columns:
+                        df[col] = df[col] * 1000
                 
                 return df
             
@@ -387,6 +425,10 @@ class StockAnalyzer:
             tech.mfi = self._calculate_mfi(df, period=14)
             tech.mfi_status = self._get_mfi_status(tech.mfi)
             
+            # Ichimoku Cloud - reliable for VN stock market
+            ichimoku_values = self._calculate_ichimoku(df)
+            tech.ichimoku_tenkan, tech.ichimoku_kijun, tech.ichimoku_span_a, tech.ichimoku_span_b, tech.ichimoku_status = ichimoku_values
+            
         except ImportError as e:
             # Fallback if vnstock_ta not available
             tech = self._calculate_technical_fallback(df)
@@ -397,31 +439,175 @@ class StockAnalyzer:
         return tech
     
     def _calculate_technical_fallback(self, df: pd.DataFrame) -> TechnicalIndicators:
-        """Fallback technical calculation without vnstock_ta"""
+        """Fallback technical calculation without vnstock_ta - calculates ALL indicators manually"""
         tech = TechnicalIndicators()
         
         close = df['close'].dropna()
+        high = df['high'].dropna()
+        low = df['low'].dropna()
+        volume = df['volume'].dropna()
+        
         if len(close) < 20:
             return tech
         
         tech.current_price = float(close.iloc[-1])
         
-        # SMA
-        tech.sma_20 = float(close.iloc[-20:].mean()) if len(close) >= 20 else float(close.mean())
-        tech.sma_50 = float(close.iloc[-50:].mean()) if len(close) >= 50 else tech.sma_20
+        # Calculate all SMAs
+        if len(close) >= 20:
+            tech.sma_20 = float(close.iloc[-20:].mean())
+        else:
+            tech.sma_20 = float(close.mean())
+            
+        if len(close) >= 50:
+            tech.sma_50 = float(close.iloc[-50:].mean())
+        else:
+            tech.sma_50 = tech.sma_20
         
-        # Simple RSI
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        tech.rsi = round(float(100 - (100 / (1 + rs)).iloc[-1]), 2) if len(rs) > 0 and rs.iloc[-1] > 0 else 50.0
+        if len(close) >= 200:
+            tech.sma_200 = float(close.iloc[-200:].mean())
+        
+        # RSI
+        tech.rsi = self._calculate_rsi(close, period=14)
         tech.rsi_status = self._get_rsi_status(tech.rsi)
         
-        # Trend
+        # MACD
+        macd_values = self._calculate_macd(close)
+        tech.macd = macd_values['macd']
+        tech.macd_signal = self._get_macd_status(tech.macd)
+        
+        # ADX
+        adx_values = self._calculate_adx(high, low, close, period=14)
+        tech.adx = adx_values['adx']
+        tech.adx_status = self._get_adx_status(tech.adx)
+        
+        # ATR
+        tech.atr = self._calculate_atr(high, low, close, period=14)
+        tech.atr_status = self._get_atr_status(tech.atr, tech.current_price)
+        
+        # Bollinger Bands - FIX: use correct parameter name std_mult
+        bb_values = self._calculate_bollinger(close, period=20, std_mult=2)
+        tech.bollinger_upper = bb_values['upper']
+        tech.bollinger_middle = bb_values['middle']
+        tech.bollinger_lower = bb_values['lower']
+        
+        if tech.bollinger_upper > tech.bollinger_lower:
+            tech.bollinger_position = round(
+                (tech.current_price - tech.bollinger_lower) / (tech.bollinger_upper - tech.bollinger_lower), 2
+            )
+        
+        # VWAP
+        typical = (high + low + close) / 3
+        tech.vwap = float((typical * volume).sum() / volume.sum()) if volume.sum() > 0 else tech.current_price
+        tech.vwap_status = "above" if tech.current_price > tech.vwap else "below"
+        
+        # CMF
+        tech.cmf = self._calculate_cmf(df, period=20)
+        tech.cmf_status = "inflow" if tech.cmf > 0 else "outflow"
+        
+        # MFI
+        tech.mfi = self._calculate_mfi(df, period=14)
+        tech.mfi_status = self._get_mfi_status(tech.mfi)
+        
+        # SuperTrend (simplified)
+        tech.supertrend_signal = "neutral"
+        tech.supertrend_stop = tech.bollinger_lower
+        
+        # Trend status
         tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
         
+        # Ichimoku
+        ichimoku_values = self._calculate_ichimoku(df)
+        tech.ichimoku_tenkan, tech.ichimoku_kijun, tech.ichimoku_span_a, tech.ichimoku_span_b, tech.ichimoku_status = ichimoku_values
+        
         return tech
+    
+    def _calculate_rsi(self, close: pd.Series, period: int = 14) -> float:
+        """Calculate RSI manually"""
+        try:
+            delta = close.diff()
+            gain = delta.where(delta > 0, 0).rolling(period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+            
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return round(float(rsi.iloc[-1]), 2) if len(rsi) > 0 and not pd.isna(rsi.iloc[-1]) else 50.0
+        except:
+            return 50.0
+    
+    def _calculate_macd(self, close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
+        """Calculate MACD manually"""
+        try:
+            ema_fast = close.ewm(span=fast, adjust=False).mean()
+            ema_slow = close.ewm(span=slow, adjust=False).mean()
+            macd_line = ema_fast - ema_slow
+            signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+            
+            return {
+                'macd': round(float(macd_line.iloc[-1]), 2),
+                'signal': float(signal_line.iloc[-1]),
+                'histogram': round(float(macd_line.iloc[-1] - signal_line.iloc[-1]), 2)
+            }
+        except:
+            return {'macd': 0, 'signal': 0, 'histogram': 0}
+    
+    def _calculate_adx(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> dict:
+        """Calculate ADX manually"""
+        try:
+            # True Range
+            tr1 = high - low
+            tr2 = abs(high - close.shift())
+            tr3 = abs(low - close.shift())
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(period).mean()
+            
+            # Directional Movement
+            plus_dm = high.diff()
+            minus_dm = -low.diff()
+            
+            plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+            minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+            
+            plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+            minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
+            
+            dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+            adx = dx.rolling(period).mean()
+            
+            return {
+                'adx': round(float(adx.iloc[-1]), 2) if len(adx) > 0 and not pd.isna(adx.iloc[-1]) else 0,
+                'dmp': float(plus_di.iloc[-1]) if len(plus_di) > 0 else 0,
+                'dmn': float(minus_di.iloc[-1]) if len(minus_di) > 0 else 0
+            }
+        except:
+            return {'adx': 0, 'dmp': 0, 'dmn': 0}
+    
+    def _calculate_atr(self, high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+        """Calculate ATR manually"""
+        try:
+            tr1 = high - low
+            tr2 = abs(high - close.shift())
+            tr3 = abs(low - close.shift())
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(period).mean()
+            
+            return round(float(atr.iloc[-1]), 2) if len(atr) > 0 and not pd.isna(atr.iloc[-1]) else 0
+        except:
+            return 0
+    
+    def _calculate_bollinger(self, close: pd.Series, period: int = 20, std_mult: float = 2) -> dict:
+        """Calculate Bollinger Bands manually"""
+        try:
+            middle = close.rolling(period).mean()
+            std = close.rolling(period).std()
+            
+            return {
+                'upper': round(float((middle + std_mult * std).iloc[-1]), 2),
+                'middle': round(float(middle.iloc[-1]), 2),
+                'lower': round(float((middle - std_mult * std).iloc[-1]), 2)
+            }
+        except:
+            return {'upper': 0, 'middle': 0, 'lower': 0}
     
     def _calculate_cmf(self, df: pd.DataFrame, period: int = 20) -> float:
         """Calculate Chaikin Money Flow (CMF)"""
@@ -486,6 +672,72 @@ class StockAnalyzer:
             return round(float(mfi.iloc[-1]), 2) if len(mfi) > 0 and not pd.isna(mfi.iloc[-1]) else 50.0
         except Exception:
             return 50.0
+    
+    def _calculate_ichimoku(self, df: pd.DataFrame) -> tuple:
+        """
+        Calculate Ichimoku Cloud components.
+        Returns: (tenkan, kijun, span_a, span_b, status)
+        
+        Ichimoku Cloud is reliable for VN stock market:
+        - Tenkan-sen (Conversion Line): (9-period high + 9-period low) / 2
+        - Kijun-sen (Base Line): (26-period high + 26-period low) / 2
+        - Senkou Span A (Leading Span A): (Tenkan + Kijun) / 2
+        - Senkou Span B (Leading Span B): (52-period high + 52-period low) / 2
+        """
+        try:
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            
+            # Tenkan-sen (9 periods)
+            tenkan_high = high.rolling(9).max()
+            tenkan_low = low.rolling(9).min()
+            tenkan = (tenkan_high + tenkan_low) / 2
+            
+            # Kijun-sen (26 periods)
+            kijun_high = high.rolling(26).max()
+            kijun_low = low.rolling(26).min()
+            kijun = (kijun_high + kijun_low) / 2
+            
+            # Senkou Span A (26 periods forward)
+            span_a = ((tenkan + kijun) / 2).shift(26)
+            
+            # Senkou Span B (52 periods forward)
+            span_b_high = high.rolling(52).max()
+            span_b_low = low.rolling(52).min()
+            span_b = ((span_b_high + span_b_low) / 2).shift(26)
+            
+            # Get current values
+            current_tenkan = float(tenkan.iloc[-1]) if len(tenkan) > 0 else 0
+            current_kijun = float(kijun.iloc[-1]) if len(kijun) > 0 else 0
+            current_span_a = float(span_a.iloc[-1]) if len(span_a) > 0 and not pd.isna(span_a.iloc[-1]) else 0
+            current_span_b = float(span_b.iloc[-1]) if len(span_b) > 0 and not pd.isna(span_b.iloc[-1]) else 0
+            
+            # Determine status based on price vs cloud
+            price = float(close.iloc[-1])
+            
+            # Cloud boundaries (use current span values shifted back)
+            cloud_top = max(current_span_a, current_span_b) if current_span_a > 0 and current_span_b > 0 else 0
+            cloud_bottom = min(current_span_a, current_span_b) if current_span_a > 0 and current_span_b > 0 else 0
+            
+            if cloud_top > 0 and cloud_bottom > 0:
+                if price > cloud_top:
+                    status = "bullish"  # Above cloud = strong bullish
+                elif price < cloud_bottom:
+                    status = "bearish"  # Below cloud = strong bearish
+                elif price > current_tenkan and price > current_kijun:
+                    status = "bullish"  # In cloud but above both lines
+                elif price < current_tenkan and price < current_kijun:
+                    status = "bearish"  # In cloud but below both lines
+                else:
+                    status = "neutral"  # In cloud, mixed signals
+            else:
+                status = "neutral"
+            
+            return current_tenkan, current_kijun, current_span_a, current_span_b, status
+            
+        except Exception:
+            return 0, 0, 0, 0, "neutral"
     
     def _calculate_supertrend(self, df: pd.DataFrame) -> tuple[str, float]:
         """Calculate SuperTrend (simplified)"""
@@ -855,15 +1107,24 @@ class StockAnalyzer:
         return "neutral"
     
     def _get_adx_status(self, adx: float) -> str:
-        if adx >= 40:
-            return "very_strong_trend"
+        """ADX < 20 = Sideway (không có xu hướng), ADX > 25 = có xu hướng mạnh"""
+        if adx < 20:
+            return "SIDEWAY - Không xu hướng"  # CRITICAL: ADX < 20 = no trend
+        elif adx >= 40:
+            return "Xu hướng rất mạnh"
         elif adx >= 25:
-            return "strong_trend"
+            return "Xu hướng mạnh"
         elif adx >= 20:
-            return "moderate_trend"
-        return "weak_trend"
+            return "Xu hướng yếu"
+        return "SIDEWAY"
     
     def _get_trend_status(self, price: float, sma_20: float, sma_50: float) -> str:
+        """
+        Determine trend based on price vs SMAs.
+        Note: ADX < 20 = no trend (sideway) regardless of price position.
+        This method only determines the DIRECTION, not trend strength.
+        Use ADX to determine trend strength.
+        """
         if price > sma_20 > sma_50:
             return "strong_uptrend"
         elif price > sma_20:
@@ -949,52 +1210,130 @@ class StockAnalyzer:
         return "HOLD"
     
     def _generate_recommendation(self, result: StockAnalysis) -> Recommendation:
-        """Generate final recommendation based on all data"""
+        """Generate final recommendation based on all data - CONSISTENT LOGIC"""
         rec = Recommendation()
         
-        # Technical action
-        tech_action = self._get_action_from_indicators(result.technical)
+        price = result.technical.current_price
+        atr = result.technical.atr
+        rsi = result.technical.rsi
+        adx = result.technical.adx
+        cmf = result.technical.cmf
+        sma_20 = result.technical.sma_20
+        sma_50 = result.technical.sma_50
+        trend = result.technical.trend_status
+        f_score = result.fundamental.f_score
+        pe = result.fundamental.pe
         
-        # Override with fundamental check
-        if result.fundamental.pe > 30 and tech_action == "BUY":
-            # Expensive stock, be cautious
-            rec.action = "HOLD" if tech_action == "BUY" else tech_action
-        elif result.fundamental.f_score >= 7 and tech_action in ["BUY", "HOLD"]:
-            rec.action = "BUY"
+        # Count bullish/bearish signals
+        bullish_signals = 0
+        bearish_signals = 0
+        
+        # RSI Analysis
+        if rsi >= 70:
+            bearish_signals += 1  # Overbought = bearish
+        elif rsi <= 30:
+            bullish_signals += 1  # Oversold = bullish
+        elif rsi >= 65:
+            bearish_signals += 0.5  # Light overbought
+        elif rsi <= 35:
+            bullish_signals += 0.5  # Light oversold
+        
+        # MACD Analysis
+        if result.technical.macd > 0:
+            bullish_signals += 1
         else:
-            rec.action = tech_action
+            bearish_signals += 1
+        
+        # ADX + Trend Analysis - CRITICAL FIX: ADX < 20 = no trend
+        if adx >= 25:  # Strong trend
+            if trend in ["strong_uptrend", "uptrend"]:
+                bullish_signals += 2
+            elif trend in ["strong_downtrend", "downtrend"]:
+                bearish_signals += 2
+        elif adx >= 20:  # Weak trend
+            if trend in ["strong_uptrend", "uptrend"]:
+                bullish_signals += 1
+            elif trend in ["strong_downtrend", "downtrend"]:
+                bearish_signals += 1
+        # ADX < 20 = SIDEWAY - no trend signals
+        
+        # CMF Analysis
+        if cmf > 0.1:
+            bullish_signals += 1
+        elif cmf < -0.1:
+            bearish_signals += 1
+        
+        # SuperTrend Analysis
+        if result.technical.supertrend_signal == "buy":
+            bullish_signals += 1
+        elif result.technical.supertrend_signal == "sell":
+            bearish_signals += 1
         
         # Calculate Master Score (0-100)
         score = 50
         
-        # RSI contribution (0-20)
-        if 40 <= result.technical.rsi <= 60:
-            score += 20
-        elif 30 <= result.technical.rsi <= 70:
-            score += 10
+        # ADX contribution (0-15) - ADX < 20 should NOT contribute to trend score
+        if adx >= 30:
+            score += 15
+        elif adx >= 25:
+            score += 12
+        elif adx >= 20:
+            score += 6
+        # ADX < 20: 0 points - no trend
         
-        # ADX contribution (0-20)
-        if result.technical.adx >= 25:
-            score += 20
-        elif result.technical.adx >= 20:
-            score += 10
+        # Trend contribution (0-15) - ONLY count if ADX >= 20
+        if adx >= 20:
+            if trend in ["strong_uptrend"]:
+                score += 15
+            elif trend in ["uptrend"]:
+                score += 10
+            elif trend in ["strong_downtrend"]:
+                score -= 10  # Strong downtrend = bad for BUY
+            elif trend in ["downtrend"]:
+                score -= 5
+            elif trend == "sideways":
+                score += 2  # Sideways is neutral
         
-        # Trend contribution (0-20)
-        if result.technical.trend_status in ["strong_uptrend", "uptrend"]:
-            score += 20
-        elif result.technical.trend_status == "sideways":
+        # RSI contribution (0-15)
+        if 40 <= rsi <= 60:
+            score += 15  # Ideal zone
+        elif 35 <= rsi <= 65:
+            score += 8
+        elif rsi > 70:
+            score -= 10  # Overbought = risky
+        elif rsi < 30:
+            score += 5  # Oversold can bounce
+        
+        # CMF contribution (0-15)
+        if cmf > 0.2:
+            score += 15
+        elif cmf > 0.1:
+            score += 10
+        elif cmf > 0:
             score += 5
+        elif cmf < -0.2:
+            score -= 10
+        elif cmf < -0.1:
+            score -= 5
         
-        # CMF contribution (0-20)
-        if result.technical.cmf > 0.1:
-            score += 20
-        elif result.technical.cmf > 0:
-            score += 10
+        # F-Score contribution (0-15)
+        score += min(f_score * 1.5, 15)
         
-        # Fundamental contribution (0-20)
-        score += min(result.fundamental.f_score * 2, 20)
+        # P/E contribution (0-10)
+        if pe > 0:
+            if pe < 10:
+                score += 10
+            elif pe < 15:
+                score += 8
+            elif pe < 20:
+                score += 5
+            elif pe > 30:
+                score -= 10  # Expensive
+            elif pe > 25:
+                score -= 5
         
-        rec.master_score = min(max(score, 0), 100)
+        # Clamp score
+        rec.master_score = max(0, min(100, round(score)))
         
         # Stars
         if rec.master_score >= 80:
@@ -1002,63 +1341,110 @@ class StockAnalyzer:
         elif rec.master_score >= 70:
             rec.score_stars = "★★★★☆"
         elif rec.master_score >= 60:
-            rec.score_stars = "★★★★☆☆"
-        elif rec.master_score >= 50:
             rec.score_stars = "★★★☆☆"
-        elif rec.master_score >= 40:
+        elif rec.master_score >= 50:
             rec.score_stars = "★★☆☆☆"
-        else:
+        elif rec.master_score >= 40:
             rec.score_stars = "★☆☆☆☆"
+        else:
+            rec.score_stars = "☆☆☆☆☆"
+        
+        # Determine ACTION based on signals - MUST be consistent with Master Score
+        if rec.master_score >= 70:
+            if bullish_signals > bearish_signals + 1:
+                rec.action = "BUY"
+            else:
+                rec.action = "WATCH"  # Score high but signals weak
+        elif rec.master_score >= 60:
+            if bullish_signals > bearish_signals:
+                rec.action = "BUY"
+            else:
+                rec.action = "WATCH"
+        elif rec.master_score >= 50:
+            if bullish_signals > bearish_signals + 2:
+                rec.action = "BUY"
+            elif bearish_signals > bullish_signals + 2:
+                rec.action = "SELL"
+            else:
+                rec.action = "HOLD"
+        elif rec.master_score >= 40:
+            if bearish_signals > bullish_signals + 1:
+                rec.action = "SELL"
+            else:
+                rec.action = "WATCH"
+        else:
+            rec.action = "SELL"
         
         # Reasons
-        if result.technical.adx >= 25:
-            if result.technical.trend_status in ["strong_uptrend", "uptrend"]:
-                rec.reasons_positive.append(f"Xu hướng tăng mạnh (ADX: {result.technical.adx})")
-            else:
-                rec.reasons_positive.append(f"Xu hướng giảm mạnh (ADX: {result.technical.adx})")
+        if adx < 20:
+            rec.reasons_negative.append(f"ADX {adx:.1f} < 20 - Thị trường SIDEWAY, không có xu hướng rõ ràng")
+        elif adx >= 25:
+            if trend in ["strong_uptrend", "uptrend"]:
+                rec.reasons_positive.append(f"Xu hướng tăng mạnh (ADX: {adx:.1f})")
+            elif trend in ["strong_downtrend", "downtrend"]:
+                rec.reasons_negative.append(f"Xu hướng giảm mạnh (ADX: {adx:.1f})")
         
-        if result.technical.cmf > 0:
-            rec.reasons_positive.append(f"Dòng tiền chảy vào (CMF: {result.technical.cmf:.2f})")
+        if cmf > 0.1:
+            rec.reasons_positive.append(f"Dòng tiền chảy vào (CMF: {cmf:.3f})")
+        elif cmf < -0.1:
+            rec.reasons_negative.append(f"Dòng tiền chảy ra (CMF: {cmf:.3f})")
+        
+        if rsi > 70:
+            rec.reasons_negative.append(f"RSI {rsi:.1f} - Vùng quá mua, có thể điều chỉnh")
+        elif rsi < 30:
+            rec.reasons_positive.append(f"RSI {rsi:.1f} - Vùng quá bán, có thể phục hồi")
+        
+        if f_score >= 7:
+            rec.reasons_positive.append(f"Nội tại doanh nghiệp vững (F-Score: {f_score}/9)")
+        elif f_score <= 3:
+            rec.reasons_negative.append(f"F-Score thấp ({f_score}/9) - Rủi ro cao")
+        
+        if pe > 0 and pe < 15:
+            rec.reasons_positive.append(f"Định giá hấp dẫn (P/E: {pe:.1f})")
+        elif pe > 30:
+            rec.reasons_negative.append(f"Định giá cao (P/E: {pe:.1f})")
+        
+        # Support/Resistance - FIXED: Use Bollinger Bands
+        rec.support = result.technical.bollinger_lower if result.technical.bollinger_lower > 0 else price * 0.97
+        rec.resistance = result.technical.bollinger_upper if result.technical.bollinger_upper > 0 else price * 1.03
+        
+        # CRITICAL FIX: Stop Loss for LONG position
+        # SL must be BELOW current price for BUY signal
+        if atr > 0:
+            # Standard: SL = Price - 1.5 to 2 ATR
+            rec.stop_loss = price - (atr * 1.5)
         else:
-            rec.reasons_negative.append(f"Dòng tiền chảy ra (CMF: {result.technical.cmf:.2f})")
+            # Fallback: SL = Price - 3% to 5%
+            rec.stop_loss = price * 0.97
         
-        if result.technical.rsi > 70:
-            rec.reasons_negative.append(f"RSI {result.technical.rsi} - Vùng quá mua")
-        elif result.technical.rsi < 30:
-            rec.reasons_positive.append(f"RSI {result.technical.rsi} - Vùng quá bán, có thể phục hồi")
+        # Entry target - slightly above current price for BUY
+        rec.entry_target = price * 1.005  # Entry slightly above current
         
-        if result.fundamental.f_score >= 7:
-            rec.reasons_positive.append(f"Nội tại doanh nghiệp vững (F-Score: {result.fundamental.f_score}/9)")
-        
-        if result.fundamental.pe > 0 and result.fundamental.pe < 15:
-            rec.reasons_positive.append(f"Định giá hấp dẫn (P/E: {result.fundamental.pe:.1f})")
-        elif result.fundamental.pe > 25:
-            rec.reasons_negative.append(f"Định giá cao (P/E: {result.fundamental.pe:.1f})")
-        
-        # Support/Resistance
-        rec.support = result.technical.bollinger_lower if result.technical.bollinger_lower > 0 else result.technical.current_price * 0.95
-        rec.resistance = result.technical.bollinger_upper if result.technical.bollinger_upper > 0 else result.technical.current_price * 1.05
-        
-        # Stop loss & Target
-        rec.stop_loss = result.technical.sma_50 if result.technical.sma_50 > 0 else result.technical.current_price * 0.95
-        rec.profit_target = rec.resistance
-        rec.entry_target = result.technical.sma_20 if result.technical.current_price > result.technical.sma_20 else result.technical.current_price * 0.98
+        # Profit target - use resistance or ATR-based
+        if rec.resistance > price:
+            rec.profit_target = rec.resistance
+        else:
+            rec.profit_target = price + (atr * 3) if atr > 0 else price * 1.05
         
         # Timeframe
-        if result.technical.adx >= 30:
+        if adx >= 25:
             rec.timeframe = "SWING"
-        elif result.technical.adx >= 20:
+        elif adx >= 20:
             rec.timeframe = "SHORT-TERM"
         else:
-            rec.timeframe = "DAY TRADE"
+            rec.timeframe = "WAIT"
         
         # Risk level
-        if result.technical.atr_status == "high":
-            rec.risk_level = "HIGH"
-        elif result.technical.atr_status == "medium":
-            rec.risk_level = "MEDIUM"
+        if atr > 0:
+            atr_percent = (atr / price) * 100
+            if atr_percent >= 5:
+                rec.risk_level = "HIGH"
+            elif atr_percent >= 3:
+                rec.risk_level = "MEDIUM"
+            else:
+                rec.risk_level = "LOW"
         else:
-            rec.risk_level = "LOW"
+            rec.risk_level = "MEDIUM"
         
         return rec
     
@@ -1077,7 +1463,7 @@ class StockAnalyzer:
         lines.append(f"│  GIÁ: {result.technical.current_price:,.0f} VND ({price_change})".ljust(70) + "│")
         
         trend_text = result.technical.trend_status.replace("_", " ").title()
-        adx_text = f"ADX: {result.technical.adx:.1f}" if result.technical.adx else "ADX: N/A"
+        adx_text = f"ADX: {result.technical.adx:.1f} - {result.technical.adx_status}" if result.technical.adx else "ADX: N/A"
         atr_text = f"ATR: {result.technical.atr:,.0f}" if result.technical.atr else "ATR: N/A"
         lines.append(f"│  XU HƯỚNG: {trend_text} ({adx_text}) | BIẾN ĐỘNG: {atr_text}".ljust(70) + "│")
         lines.append("├" + "─" * 72 + "┤")
@@ -1117,6 +1503,13 @@ class StockAnalyzer:
         # VWAP
         vwap_text = f"VWAP: {result.technical.vwap:,.0f} - Giá {'TRÊN' if 'above' in result.technical.vwap_status else 'DƯỚI'} VWAP"
         lines.append(f"│     {vwap_text}".ljust(70) + "│")
+        
+        # Ichimoku Cloud
+        ichimoku_status_icon = "🟢" if result.technical.ichimoku_status == "bullish" else "🔴" if result.technical.ichimoku_status == "bearish" else "🟡"
+        ichimoku_text = f"Ichimoku: Tenkan {result.technical.ichimoku_tenkan:,.0f} | Kijun {result.technical.ichimoku_kijun:,.0f}"
+        lines.append(f"│     {ichimoku_text}".ljust(70) + "│")
+        ichimoku_cloud = f"Cloud: {result.technical.ichimoku_status.upper()} {ichimoku_status_icon}"
+        lines.append(f"│     {ichimoku_cloud}".ljust(70) + "│")
         
         lines.append("├" + "─" * 72 + "┤")
         
