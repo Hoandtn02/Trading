@@ -808,7 +808,7 @@
 - [x] 1.4 Tạo output template cho Stock Card
 - [x] 1.5 Tích hợp vào dashboard/runners.py
 - [x] 1.6 Đăng ký vào registry.py
-- [ ] 1.7 Test với các mã VN30
+- [x] 1.7 Test với các mã VN30
 
 ### Phase 2: Chỉ số thị trường (Index Analysis)
 **Thời gian**: 1 tuần
@@ -816,23 +816,29 @@
 - [x] 2.1 Tạo module `dashboard/analyzers/index_analyzer.py`
 - [x] 2.2 Tính Market Breadth
 - [x] 2.3 Tạo output template cho Index Card
-- [ ] 2.4 Tích hợp vào dashboard
+- [x] 2.4 Tích hợp vào dashboard
 
 ### Phase 3: Kim loại quý & Phái sinh
 **Thời gian**: 1 tuần
 
 - [x] 3.1 Module vàng (SJC, thế giới, dầu thô)
 - [x] 3.2 Module phái sinh (VN30F)
-- [ ] 3.3 Tích hợp vào dashboard
+- [x] 3.3 Tích hợp vào dashboard
 
 ### Phase 4: Các nhóm còn lại
 **Thời gian**: 2 tuần
 
 - [x] 4.1 ETF/Quỹ đầu tư (E1VFVN30)
 - [x] 4.2 Forex (EURUSD, USDJPY)
-- [x] 4.3 Crypto (BTC, ETH via Binance)
+- [x] 4.3 Crypto (BTC, ETH via Yahoo Finance)
 - [x] 4.4 CW/Chứng quyền (CACB2511, CHPG2512)
-- [ ] 4.5 Tích hợp vào dashboard
+- [x] 4.5 Tích hợp vào dashboard (runners + registry)
+
+**Features:**
+- ETF: NAV, Premium/Discount, Tracking Error
+- Forex: Exchange rates, VCB rates fallback
+- Crypto: BTC/ETH via Yahoo Finance
+- CW: Warrant parsing, ITM/ATM/OTM status
 
 ### Phase 5: Tích hợp & Optimization
 **Thời gian**: 2 tuần
@@ -909,6 +915,23 @@ dashboard/
     - TCB: 34,250 VND ✅ (was showing 34)
     - HPG: 27,900 VND ✅ (was showing 28)
   - **Moved to Phase 2** after 2 failed attempts on F-Score
+- ✅ Phase 4 Integration Complete
+  - Added `real_cw_analysis` runner function
+  - Fixed CW symbol parsing (CACB2511 -> ACB underlying, 2025-11 maturity)
+  - Added fallback mechanisms for ETF, Forex, Crypto, CW analyzers
+  - Fixed vnstock API calls (Quote.history instead of Quote.realtime)
+  - Added Yahoo Finance fallback for crypto prices
+  - Added VCB exchange rate fallback for forex
+  - Updated registry.py with CW Analysis function
+  - All Phase 4 modules now work with free vnstock library
+  - **FORMAT OUTPUT**: All analyzers now output exactly as specified in ARCHITECTURE_ROADMAP.md sections 7-11:
+    - ETF: NAV, Premium/Discount, AUM, Performance 1D/W/M/YTD, RSI, MACD, SMA, ADX, Master Score, ƯU ĐIỂM, RỦI RO, HÀNH ĐỘNG
+    - Forex: Multiple pairs table, Bid/Ask spread, CMF, SMA, ADX, ATR, Interest rate differential, Trade balance, Master Score
+    - Crypto: Price, 24h Change, RSI, MACD, CMF, Bollinger, VWAP, SMA, ADX, Fear & Greed, Funding Rate, ETF Flow, Master Score
+    - CW: Underlying, Strike, Moneyness, Greeks (Delta, Gamma, Vega, Theta), Leverage, Break-even, Underlying analysis, Master Score
+- ✅ Phase 3 Futures & Phase 5 Bond Format Updated
+  - Futures: VN30 Index, Basis, ATR, Bollinger Width, VWAP, Pivot, SMA, ADX, RSI, MACD, Contango/Backwardation, Contract Value, Margin, Master Score
+  - Bond: Government Bonds Table, YTM, Coupon, Duration, Modified Duration, Yield Curve, Master Score
 
 ---
 

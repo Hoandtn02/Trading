@@ -275,7 +275,12 @@ def real_index_analysis(**params: Any) -> dict[str, Any]:
                     "change_percent": result.change_percent if hasattr(result, 'change_percent') else 0,
                     "trend": result.trend if hasattr(result, 'trend') else "NEUTRAL",
                     "market_breadth": result.market_breadth if hasattr(result, 'market_breadth') else {},
-                    "technical_status": result.technical_status if hasattr(result, 'technical_status') else "NEUTRAL"
+                    "technical_status": result.technical_status if hasattr(result, 'technical_status') else "NEUTRAL",
+                    "sma_20": result.sma_20 if hasattr(result, 'sma_20') else 0,
+                    "sma_50": result.sma_50 if hasattr(result, 'sma_50') else 0,
+                    "adx": result.adx if hasattr(result, 'adx') else 0,
+                    "rsi": result.rsi if hasattr(result, 'rsi') else 0,
+                    "master_score": result.master_score if hasattr(result, 'master_score') else 50
                 }
             )
     except Exception as exc:
@@ -348,7 +353,17 @@ def real_gold_analysis(**params: Any) -> dict[str, Any]:
                     "change_percent": result.change_percent if hasattr(result, 'change_percent') else 0,
                     "trend": result.trend if hasattr(result, 'trend') else "NEUTRAL",
                     "technical_status": result.technical_status if hasattr(result, 'technical_status') else "NEUTRAL",
-                    "rsi": result.rsi if hasattr(result, 'rsi') else None,
+                    "master_score": result.master_score if hasattr(result, 'master_score') else 50,
+                    "rsi": result.rsi if hasattr(result, 'rsi') else 0,
+                    "macd": result.macd if hasattr(result, 'macd') else 0,
+                    "adx": result.adx if hasattr(result, 'adx') else 0,
+                    "sma_20": result.sma_20 if hasattr(result, 'sma_20') else 0,
+                    "sma_50": result.sma_50 if hasattr(result, 'sma_50') else 0,
+                    "atr": result.atr if hasattr(result, 'atr') else 0,
+                    "bollinger_upper": result.bollinger_upper if hasattr(result, 'bollinger_upper') else 0,
+                    "bollinger_lower": result.bollinger_lower if hasattr(result, 'bollinger_lower') else 0,
+                    "pivot_r1": result.pivot_r1 if hasattr(result, 'pivot_r1') else 0,
+                    "pivot_s1": result.pivot_s1 if hasattr(result, 'pivot_s1') else 0,
                     "recommendation": result.recommendation if hasattr(result, 'recommendation') else "WATCH"
                 }
             )
@@ -531,6 +546,55 @@ def real_crypto_analysis(**params: Any) -> dict[str, Any]:
             )
     except Exception as exc:
         return _payload(f"Phan tich crypto {symbol}", kind="json", data={"error": f"{type(exc).__name__}: {exc}"})
+
+
+# ─── Phase 4: CW/ Covered Warrant Analysis (Full) ─────────────────────────────
+
+def real_cw_analysis(**params: Any) -> dict[str, Any]:
+    """
+    Full covered warrant analysis with Greeks and technical indicators
+    Returns comprehensive analysis like ARCHITECTURE_ROADMAP.md
+    """
+    symbol = params.get("symbol", "CACB2511").upper().strip()
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            from dashboard.analyzers import CWAnalyzer
+
+            analyzer = CWAnalyzer(period_ta=30)
+            result = analyzer.analyze(symbol)
+
+            if result is None:
+                return _payload(f"Phan tich CW {symbol}", kind="json", data={"error": f"Khong the phan tich {symbol}"})
+
+            # Format full output
+            output = analyzer.format_output(result)
+
+            return _payload(
+                f"Phan tich chung quyen {symbol}",
+                kind="analysis",
+                data={
+                    "kind": "analysis",
+                    "symbol": symbol,
+                    "name": f"CW {symbol}",
+                    "analysis": output,
+                    "underlying": result.underlying if hasattr(result, 'underlying') else "",
+                    "warrant_type": result.warrant_type if hasattr(result, 'warrant_type') else "",
+                    "current_price": result.current_price if hasattr(result, 'current_price') else 0,
+                    "current_value": result.current_price if hasattr(result, 'current_price') else 0,
+                    "change_percent": result.change_percent if hasattr(result, 'change_percent') else 0,
+                    "strike_price": result.strike_price if hasattr(result, 'strike_price') else 0,
+                    "maturity_date": result.maturity_date if hasattr(result, 'maturity_date') else "",
+                    "exercise_ratio": result.exercise_ratio if hasattr(result, 'exercise_ratio') else 1,
+                    "status": result.status if hasattr(result, 'status') else "UNKNOWN",
+                    "trend": result.trend if hasattr(result, 'trend') else "NEUTRAL",
+                    "technical_status": result.technical_status if hasattr(result, 'technical_status') else "NEUTRAL"
+                }
+            )
+    except Exception as exc:
+        return _payload(f"Phan tich CW {symbol}", kind="json", data={"error": f"{type(exc).__name__}: {exc}"})
 
 
 # ─── Phase 5: Bond Analysis (Full) ───────────────────────────────────────────

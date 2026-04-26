@@ -23,6 +23,14 @@ class IndexData:
     breadth_percent: float = 0.0  # % cổ phiếu tăng
     technical_status: str = "NEUTRAL"  # BULL, BEAR, NEUTRAL
     trend: str = "SIDEWAYS"
+    # Technical indicators
+    sma_20: float = 0.0
+    sma_50: float = 0.0
+    adx: float = 0.0
+    rsi: float = 0.0
+    # Recommendation
+    master_score: int = 50
+    recommendation: str = "NEUTRAL"
 
 
 @dataclass
@@ -148,11 +156,44 @@ class IndexAnalyzer:
         if len(close) >= 50:
             data.sma_50 = float(close.rolling(50).mean().iloc[-1])
         
-        # Determine trend
+        # RSI
+        if len(close) >= 14:
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / loss
+            data.rsi = float(100 - (100 / (1 + rs)).iloc[-1])
+        
+        # ADX (simplified calculation)
+        if len(df) >= 14:
+            high = df['high'].dropna()
+            low = df['low'].dropna()
+            if len(high) >= 14 and len(low) >= 14:
+                # True Range
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                
+                # Directional Movement
+                plus_dm = high.diff()
+                minus_dm = -low.diff()
+                plus_dm[plus_dm < 0] = 0
+                minus_dm[minus_dm < 0] = 0
+                
+                # Smoothed values
+                atr = tr.rolling(14).mean()
+                plus_di = 100 * (plus_dm.rolling(14).mean() / atr)
+                minus_di = 100 * (minus_dm.rolling(14).mean() / atr)
+                
+                dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+                data.adx = float(dx.rolling(14).mean().iloc[-1])
+        
+        # Determine trend based on ADX and price position
         if len(close) >= 50:
-            if data.current_value > data.sma_50:
+            if data.current_value > data.sma_50 and data.adx > 20:
                 data.trend = "UPTREND"
-            elif data.current_value < data.sma_50:
+            elif data.current_value < data.sma_50 and data.adx > 20:
                 data.trend = "DOWNTREND"
             else:
                 data.trend = "SIDEWAYS"
@@ -273,7 +314,7 @@ class IndexAnalyzer:
             return pd.DataFrame()
     
     def format_output(self, data: IndexData) -> str:
-        """Format analysis output as readable string"""
+        """Format analysis output as readable string - Full version"""
         change_emoji = "🟢" if data.change_percent >= 0 else "🔴"
         status_emoji = {
             "BULL": "🟢",
@@ -281,33 +322,135 @@ class IndexAnalyzer:
             "NEUTRAL": "🟡"
         }.get(data.technical_status, "🟡")
         
+        # RSI zone
+        if data.rsi > 70:
+            rsi_zone = "QUÁ MUA"
+        elif data.rsi < 30:
+            rsi_zone = "QUÁ BÁN"
+        else:
+            rsi_zone = "TRUNG LẬP"
+        
+        # ADX strength
+        if data.adx > 40:
+            adx_status = "RẤT MẠNH"
+        elif data.adx > 25:
+            adx_status = "MẠNH"
+        elif data.adx > 20:
+            adx_status = "YẾU"
+        else:
+            adx_status = "SIDEWAY"
+        
+        # Breadth assessment
+        if data.breadth_percent >= 60:
+            breadth_status = "TĂNG MẠNH"
+        elif data.breadth_percent >= 50:
+            breadth_status = "TĂNG NHẸ"
+        elif data.breadth_percent >= 40:
+            breadth_status = "GIẢM NHẸ"
+        else:
+            breadth_status = "GIẢM MẠNH"
+        
+        # Volume formatting
+        vol_str = f"{data.volume:,}" if data.volume < 1000000 else f"{data.volume/1000000:.1f}M"
+        
         output = f"""
 ╔══════════════════════════════════════════════════════════════╗
-║  📊 INDEX ANALYSIS: {data.symbol} ({data.name})
-║  Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+║  📊 CHỈ SỐ THỊ TRƯỜNG            | THỜI GIAN: {datetime.now().strftime('%Y-%m-%d %H:%M')}  ║
 ╠══════════════════════════════════════════════════════════════╣
-║  CHỈ SỐ: {data.current_value:,.2f} điểm
-║  {change_emoji} Thay đổi: {data.change_value:+,.2f} ({data.change_percent:+.2f}%)
-║  Cao/Thấp: {data.high:,.2f} / {data.low:,.2f}
-╠══════════════════════════════════════════════════════════════╣
-║  📈 XU HƯỚNG: {data.trend}
-║  {status_emoji} Tình trạng: {data.technical_status}
-╠══════════════════════════════════════════════════════════════╣"""
-        
-        # Market Breadth
-        if data.market_breadth:
-            output += f"""
-║  📊 MARKET BREADTH
+║  💹 {data.symbol} - {data.name}
 ║  ────────────────────────────────────────────────────────────
-║     Tăng: {data.market_breadth.get('advance', 0)} | Giảm: {data.market_breadth.get('decline', 0)} | Đứng: {data.market_breadth.get('unchanged', 0)}
-║     Tỷ lệ tăng: {data.breadth_percent:.1f}%
-╠══════════════════════════════════════════════════════════════╣"""
+║  Giá: {data.current_value:,.2f} điểm
+║  {change_emoji} Thay đổi: {data.change_percent:+.2f}% ({data.change_value:+,.2f} điểm)
+║  Cao/Thấp: {data.high:,.2f} / {data.low:,.2f}
+║  Khối lượng: {vol_str}
+╠══════════════════════════════════════════════════════════════╣
+║  📈 PHÂN TÍCH KỸ THUẬT
+║  ────────────────────────────────────────────────────────────
+║  📐 XU HƯỚNG
+║     SMA(20): {data.sma_20:,.2f} | SMA(50): {data.sma_50:,.2f}
+║     Giá: {data.current_value:,.2f} - """
+        
+        # Price vs SMA position
+        if data.current_value > data.sma_20 and data.current_value > data.sma_50:
+            output += "Giá TRÊN cả 2 SMA → Uptrend"
+        elif data.current_value < data.sma_20 and data.current_value < data.sma_50:
+            output += "Giá DƯỚI cả 2 SMA → Downtrend"
+        elif data.current_value > data.sma_20:
+            output += "Giá TRÊN SMA20 → Ngưỡng kháng cự"
+        elif data.current_value < data.sma_20:
+            output += "Giá DƯỚI SMA20 → Cần theo dõi"
+        else:
+            output += "Giá gần SMA → Sideway"
         
         output += f"""
-║  🤖 ĐÁNH GIÁ: {self._get_recommendation(data)}
+║  📊 ADX: {data.adx:.1f} - Xu hướng {adx_status}
+║  📉 RSI(14): {data.rsi:.1f} - Zone: {rsi_zone}
+╠══════════════════════════════════════════════════════════════╣
+║  📊 MARKET BREADTH (Sức khỏe thị trường)
+║  ────────────────────────────────────────────────────────────"""
+        
+        if data.market_breadth:
+            advance = data.market_breadth.get('advance', 0)
+            decline = data.market_breadth.get('decline', 0)
+            unchanged = data.market_breadth.get('unchanged', 0)
+            ratio = advance / decline if decline > 0 else 0
+            
+            output += f"""
+║  Advance/Decline: {advance} ↑ / {decline} ↓ / {unchanged} ─
+║  Tỷ lệ: {ratio:.1f}:1 ({breadth_status})
+║  Tỷ lệ tăng: {data.breadth_percent:.1f}%"""
+        
+        output += f"""
+╠══════════════════════════════════════════════════════════════╣
+║  🤖 AI INSIGHT: {self._get_recommendation(data)}
+╠══════════════════════════════════════════════════════════════╣"""
+        
+        # Generate insights
+        insights = self._generate_insights(data)
+        for insight in insights:
+            output += f"""
+║  {insight}"""
+        
+        output += """
 ╚══════════════════════════════════════════════════════════════╝
 """
         return output
+    
+    def _generate_insights(self, data: IndexData) -> List[str]:
+        """Generate market insights based on data"""
+        insights = []
+        
+        # Trend insight
+        if data.trend == "UPTREND":
+            insights.append("✅ Giá đang trên SMA50 → Uptrend được xác nhận")
+        elif data.trend == "DOWNTREND":
+            insights.append("⚠️ Giá đang dưới SMA50 → Downtrend")
+        else:
+            insights.append("🔄 Giá sideway quanh SMA → Chờ xác nhận")
+        
+        # ADX insight
+        if data.adx > 25:
+            insights.append(f"✅ ADX {data.adx:.1f} > 25 → Xu hướng có độ tin cậy")
+        else:
+            insights.append(f"⚠️ ADX {data.adx:.1f} < 25 → Xu hướng yếu, sideway")
+        
+        # RSI insight
+        if data.rsi > 70:
+            insights.append(f"⚠️ RSI {data.rsi:.1f} > 70 → Quá mua, có thể điều chỉnh")
+        elif data.rsi < 30:
+            insights.append(f"✅ RSI {data.rsi:.1f} < 30 → Quá bán, có thể rebound")
+        else:
+            insights.append(f"ℹ️ RSI {data.rsi:.1f} → Trung lập, chờ tín hiệu")
+        
+        # Breadth insight
+        if data.breadth_percent >= 55:
+            insights.append(f"✅ Breadth {data.breadth_percent:.1f}% → Đa số cổ phiếu tăng")
+        elif data.breadth_percent <= 45:
+            insights.append(f"⚠️ Breadth {data.breadth_percent:.1f}% → Đa số cổ phiếu giảm")
+        else:
+            insights.append(f"ℹ️ Breadth {data.breadth_percent:.1f}% → Phân hóa")
+        
+        return insights
     
     def _get_recommendation(self, data: IndexData) -> str:
         """Get investment recommendation"""
@@ -318,6 +461,18 @@ class IndexAnalyzer:
             score += 20
         elif data.trend == "DOWNTREND":
             score -= 20
+        
+        # ADX adjustment
+        if data.adx > 30:
+            score += 10
+        elif data.adx < 20:
+            score -= 5
+        
+        # RSI adjustment
+        if data.rsi > 70:
+            score -= 10  # Overbought
+        elif data.rsi < 30:
+            score += 10  # Oversold
         
         # Breadth adjustment
         if data.breadth_percent > 55:
@@ -331,12 +486,16 @@ class IndexAnalyzer:
         elif data.change_percent < -1:
             score -= 10
         
+        # Cap score
+        score = max(0, min(100, score))
+        data.master_score = int(score)
+        
         if score >= 75:
             return "TÍCH CỰC - Nên tham gia"
         elif score >= 55:
             return "KHẢ QUAN - Có thể mua"
         elif score >= 45:
-            return "TRUNG LẬP - Chờ xác nhận"
+            return "TRUNG LẬG - Chờ xác nhận"
         elif score >= 25:
             return "THẬN TRỌNG - Có thể bán"
         else:

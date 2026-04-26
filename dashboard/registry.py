@@ -310,6 +310,17 @@ FUNCTION_REGISTRY = [
                     "source": {"type": "string", "required": False, "default": "vci"},
                 },
             },
+            {
+                "function_id": "cw_analysis",
+                "label": "Phân tích CW (Full)",
+                "status": "ready",
+                "description": "Phân tích chứng quyền với ITM/ATM/OTM, Strike, Maturity, Leverage và AI insights.",
+                "runner_path": "dashboard.runners.real_cw_analysis",
+                "output_type": "json",
+                "param_schema": {
+                    "symbol": {"type": "string", "required": False, "default": "CACB2511"},
+                },
+            },
         ],
     },
     {
