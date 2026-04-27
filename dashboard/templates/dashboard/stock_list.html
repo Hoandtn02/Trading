@@ -1,0 +1,440 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Danh Sách Cổ Phiếu - VN30 Alpha Scanner v2</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .header h1 { font-size: 24px; color: #fff; }
+        .header .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #1e293b;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #334155; color: #fff; }
+        .nav-links a.active { background: #3b82f6; color: #fff; }
+
+        .export-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .export-btn:hover { opacity: 0.9; }
+
+        /* Summary Cards */
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .summary-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .summary-value.buy { color: #22c55e; }
+        .summary-value.veto { color: #ef4444; }
+        .summary-value.fast { color: #f59e0b; }
+        .summary-value.qualified { color: #8b5cf6; }
+        .summary-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+        /* Filters */
+        .filters {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+        .filters .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filters label {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .filters select, .filters input {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .filters select:focus, .filters input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .filter-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #94a3b8;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover { border-color: #3b82f6; color: #fff; }
+        .filter-btn.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        /* Table */
+        .table-container {
+            background: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .table-scroll {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1400px;
+        }
+        th {
+            background: #0f172a;
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 12px 8px;
+            text-align: left;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+        }
+        th:hover { color: #fff; }
+        td {
+            padding: 10px 8px;
+            font-size: 13px;
+            border-bottom: 1px solid #1e293b;
+            white-space: nowrap;
+        }
+        tr:hover { background: #1e293b; }
+        tr.vetoed { opacity: 0.6; background: rgba(239, 68, 68, 0.05); }
+        tr.fast-pick { background: rgba(245, 158, 11, 0.05); }
+        tr.qualified { background: rgba(34, 197, 94, 0.05); }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-buy { background: #22c55e; color: #fff; }
+        .badge-sell { background: #ef4444; color: #fff; }
+        .badge-wait { background: #64748b; color: #fff; }
+        .badge-veto { background: #ef4444; color: #fff; }
+        .badge-fast { background: #f59e0b; color: #000; }
+        .badge-high-risk { background: #dc2626; color: #fff; }
+        .badge-qualified { background: #8b5cf6; color: #fff; }
+
+        .score-bar {
+            width: 50px;
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        .score-bar .fill {
+            height: 100%;
+            border-radius: 3px;
+        }
+        .score-high { background: #22c55e; }
+        .score-medium { background: #f59e0b; }
+        .score-low { background: #ef4444; }
+
+        .rsi-indicator {
+            font-weight: 600;
+        }
+        .rsi-overbought { color: #ef4444; }
+        .rsi-oversold { color: #22c55e; }
+        .rsi-neutral { color: #94a3b8; }
+
+        .positive { color: #22c55e; }
+        .negative { color: #ef4444; }
+
+        .symbol-cell {
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .company-cell {
+            font-size: 11px;
+            color: #64748b;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            padding: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state p { font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>📊 Danh Sách Cổ Phiếu</h1>
+            <div class="subtitle">Xem chi tiết tất cả cổ phiếu đã quét</div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <nav class="nav-links">
+                <a href="{% url 'home' %}">Trang Chủ</a>
+                <a href="{% url 'market_overview' %}">Tổng Quan</a>
+                <a href="{% url 'top_picks' %}">Top Picks</a>
+                <a href="{% url 'stock_list' %}" class="active">Danh Sách</a>
+            </nav>
+            <a href="{% url 'export_stocks_csv' %}" class="export-btn">
+                📥 Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="summary-row">
+        <div class="summary-card">
+            <div class="summary-value">{{ total }}</div>
+            <div class="summary-label">Tổng Đã Quét</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value buy">{{ buy_count }}</div>
+            <div class="summary-label">Tín Hiệu Mua</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value veto">{{ veto_count }}</div>
+            <div class="summary-label">Bị Veto</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value fast">{{ fast_count }}</div>
+            <div class="summary-label">Fast Picks</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value qualified">{{ qualified_count }}</div>
+            <div class="summary-label">Qualified</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="filters">
+        <div class="filter-group">
+            <label>🔍 Tìm:</label>
+            <input type="text" name="search" value="{{ search_value }}" placeholder="Mã cổ phiếu...">
+        </div>
+
+        <div class="filter-group">
+            <label>📊 Lọc:</label>
+            <button type="submit" name="filter" value="all" class="filter-btn {% if current_filter == 'all' %}active{% endif %}">Tất Cả</button>
+            <button type="submit" name="filter" value="buy" class="filter-btn {% if current_filter == 'buy' %}active{% endif %}">Mua</button>
+            <button type="submit" name="filter" value="veto" class="filter-btn {% if current_filter == 'veto' %}active{% endif %}">Veto</button>
+            <button type="submit" name="filter" value="fast" class="filter-btn {% if current_filter == 'fast' %}active{% endif %}">Fast</button>
+            <button type="submit" name="filter" value="qualified" class="filter-btn {% if current_filter == 'qualified' %}active{% endif %}">Qualified</button>
+        </div>
+
+        <div class="filter-group">
+            <label>📈 Score tối thiểu:</label>
+            <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" style="width: 80px;">
+        </div>
+
+        <div class="filter-group">
+            <label>🔽 Sắp xếp:</label>
+            <select name="sort">
+                <option value="master_score" {% if current_sort == 'master_score' %}selected{% endif %}>Score</option>
+                <option value="rsi" {% if current_sort == 'rsi' %}selected{% endif %}>RSI</option>
+                <option value="criteria" {% if current_sort == 'criteria' %}selected{% endif %}>Criteria</option>
+                <option value="rr" {% if current_sort == 'rr' %}selected{% endif %}>R:R Ratio</option>
+                <option value="price" {% if current_sort == 'price' %}selected{% endif %}>Price</option>
+                <option value="change" {% if current_sort == 'change' %}selected{% endif %}>Change %</option>
+            </select>
+        </div>
+
+        <button type="submit" class="export-btn" style="margin-left: auto;">Áp Dụng</button>
+    </form>
+
+    <!-- Table -->
+    <div class="table-container">
+        {% if stocks %}
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Mã</th>
+                        <th>Giá</th>
+                        <th>Thay Đổi</th>
+                        <th>Score</th>
+                        <th>Signal</th>
+                        <th>Criteria</th>
+                        <th>R:R</th>
+                        <th>RSI</th>
+                        <th>ADX</th>
+                        <th>CMF</th>
+                        <th>Volume Ratio</th>
+                        <th>SMA20</th>
+                        <th>MACD</th>
+                        <th>Entry</th>
+                        <th>Stop Loss</th>
+                        <th>Take Profit</th>
+                        <th>Est. Days</th>
+                        <th>Trạng Thái</th>
+                        <th>Trend</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in stocks %}
+                    <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}">
+                        <td>{{ forloop.counter }}</td>
+                        <td>
+                            <span class="symbol-cell">{{ stock.symbol }}</span>
+                            <div class="company-cell">{{ stock.company_name }}</div>
+                        </td>
+                        <td>{{ stock.price|floatformat:1 }}</td>
+                        <td class="{% if stock.change_percent >= 0 %}positive{% else %}negative{% endif %}">
+                            {% if stock.change_percent >= 0 %}+{% endif %}{{ stock.change_percent|floatformat:2 }}%
+                        </td>
+                        <td>
+                            <span class="score-bar">
+                                <span class="fill {% if stock.master_score >= 70 %}score-high{% elif stock.master_score >= 50 %}score-medium{% else %}score-low{% endif %}"
+                                      style="width: {{ stock.master_score }}%;"></span>
+                            </span>
+                            {{ stock.master_score }}
+                        </td>
+                        <td>
+                            <span class="badge {% if stock.signal == 'BUY' or stock.signal == 'STRONG_BUY' %}badge-buy{% elif stock.signal == 'SELL' %}badge-sell{% else %}badge-wait{% endif %}">
+                                {{ stock.signal }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if stock.criteria_met >= 9 %}badge-qualified{% elif stock.criteria_met >= 7 %}badge-buy{% else %}badge-wait{% endif %}">
+                                {{ stock.criteria_met }}/10
+                            </span>
+                        </td>
+                        <td>{{ stock.risk_reward_ratio|floatformat:2 }}</td>
+                        <td class="rsi-indicator {% if stock.rsi >= 70 %}rsi-overbought{% elif stock.rsi <= 30 %}rsi-oversold{% else %}rsi-neutral{% endif %}">
+                            {{ stock.rsi|floatformat:0 }}
+                        </td>
+                        <td>{{ stock.adx|floatformat:0 }}</td>
+                        <td class="{% if stock.cmf > 0 %}positive{% elif stock.cmf < 0 %}negative{% endif %}">
+                            {{ stock.cmf|floatformat:3 }}
+                        </td>
+                        <td class="{% if stock.volume_ratio >= 1.3 %}positive{% elif stock.volume_ratio >= 1 %}neutral{% else %}negative{% endif %}">
+                            {{ stock.volume_ratio|floatformat:1 }}x
+                        </td>
+                        <td>
+                            {% if stock.sma_20 > 0 %}
+                                {% if stock.price > stock.sma_20 %}<span class="positive">▲</span>{% else %}<span class="negative">▼</span>{% endif %}
+                                {{ stock.sma_20|floatformat:1 }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if stock.macd > stock.macd_signal %}<span class="positive">▲</span>{% else %}<span class="negative">▼</span>{% endif %}
+                        </td>
+                        <td>{{ stock.entry_price|floatformat:1 }}</td>
+                        <td class="negative">{{ stock.stop_loss|floatformat:1 }}</td>
+                        <td class="positive">{{ stock.take_profit|floatformat:1 }}</td>
+                        <td>{{ stock.estimated_days_to_target|floatformat:0 }}d</td>
+                        <td>
+                            {% if stock.is_vetoed %}
+                                <span class="badge badge-veto">VETO</span>
+                            {% elif stock.is_high_risk %}
+                                <span class="badge badge-high-risk">HIGH RISK</span>
+                            {% elif stock.is_fast_pick %}
+                                <span class="badge badge-fast">FAST</span>
+                            {% elif stock.criteria_met >= 9 %}
+                                <span class="badge badge-qualified">EXCELLENT</span>
+                            {% elif stock.criteria_met >= 7 %}
+                                <span class="badge badge-buy">QUALIFIED</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ stock.trend }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">📊</div>
+            <p>Chưa có dữ liệu. Nhấn "Quét Ngay" để bắt đầu phân tích.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // Quick search on enter
+        document.querySelector('input[name="search"]').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                this.form.submit();
+            }
+        });
+    </script>
+</body>
+</html>

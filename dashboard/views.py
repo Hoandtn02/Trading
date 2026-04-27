@@ -589,3 +589,152 @@ def run_backtest(symbol: str, start_date: str, end_date: str, strategy: str, cap
         
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+def stock_list(request: HttpRequest) -> HttpResponse:
+    """Trang xem tất cả cổ phiếu với thông tin phân tích chi tiết"""
+    from .models import StockData, StockAnalysis
+
+    # Lấy filter từ query params
+    filter_type = request.GET.get("filter", "all")
+    sort_by = request.GET.get("sort", "master_score")
+    search = request.GET.get("search", "").upper()
+    min_score = int(request.GET.get("min_score", 0))
+
+    # Query cơ bản
+    analyses = StockAnalysis.objects.select_related("symbol").all()
+
+    # Filter
+    if filter_type == "buy":
+        analyses = analyses.filter(signal__in=["BUY", "STRONG_BUY"])
+    elif filter_type == "veto":
+        analyses = analyses.filter(is_vetoed=True)
+    elif filter_type == "fast":
+        analyses = analyses.filter(is_fast_pick=True, is_vetoed=False)
+    elif filter_type == "high_risk":
+        analyses = analyses.filter(is_high_risk=True)
+    elif filter_type == "qualified":
+        analyses = analyses.filter(criteria_met__gte=7)
+
+    # Search
+    if search:
+        analyses = analyses.filter(symbol__symbol__icontains=search)
+
+    # Min score filter
+    if min_score > 0:
+        analyses = analyses.filter(master_score__gte=min_score)
+
+    # Sort
+    sort_fields = {
+        "master_score": "-master_score",
+        "rsi": "-symbol__rsi",
+        "criteria": "-criteria_met",
+        "rr": "-risk_reward_ratio",
+        "price": "-symbol__price",
+        "volume": "-symbol__volume",
+        "change": "-symbol__change_percent",
+    }
+    order_field = sort_fields.get(sort_by, "-master_score")
+    analyses = analyses.order_by(order_field)
+
+    # Build stocks list
+    stocks = []
+    for a in analyses[:200]:  # Limit to 200 for performance
+        s = a.symbol
+        stocks.append({
+            "symbol": s.symbol,
+            "company_name": s.company_name or s.symbol,
+            "price": s.price,
+            "change_percent": s.change_percent,
+            "volume": s.volume,
+            "volume_ratio": s.volume_ratio,
+            # Technical
+            "rsi": s.rsi,
+            "adx": s.adx,
+            "cmf": s.cmf,
+            "atr": s.atr,
+            "sma_20": s.sma_20,
+            "macd": s.macd,
+            "macd_signal": s.macd_signal,
+            "bb_upper": s.bb_upper,
+            "bb_lower": s.bb_lower,
+            # Analysis
+            "master_score": a.master_score,
+            "technical_score": a.technical_score,
+            "fundamental_score": a.fundamental_score,
+            "signal": a.signal,
+            "criteria_met": a.criteria_met,
+            "risk_reward_ratio": a.risk_reward_ratio,
+            "is_vetoed": a.is_vetoed,
+            "veto_reason": a.veto_reason,
+            "is_fast_pick": a.is_fast_pick,
+            "is_high_risk": a.is_high_risk,
+            "trend": a.trend,
+            "breakout_status": a.breakout_status,
+            "entry_price": a.entry_price,
+            "stop_loss": a.stop_loss,
+            "take_profit": a.take_profit,
+            "estimated_days_to_target": a.estimated_days_to_target,
+        })
+
+    # Summary stats
+    total = StockAnalysis.objects.count()
+    buy_count = StockAnalysis.objects.filter(signal__in=["BUY", "STRONG_BUY"]).count()
+    veto_count = StockAnalysis.objects.filter(is_vetoed=True).count()
+    fast_count = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
+    qualified_count = StockAnalysis.objects.filter(criteria_met__gte=7).count()
+
+    context = {
+        "stocks": stocks,
+        "total": total,
+        "buy_count": buy_count,
+        "veto_count": veto_count,
+        "fast_count": fast_count,
+        "qualified_count": qualified_count,
+        "current_filter": filter_type,
+        "current_sort": sort_by,
+        "search_value": search,
+        "min_score_value": min_score,
+    }
+
+    return render(request, "dashboard/stock_list.html", context)
+
+
+def export_stocks_csv(request: HttpRequest) -> HttpResponse:
+    """Export tất cả stocks ra CSV"""
+    import csv
+    from django.http import HttpResponse
+    from .models import StockData, StockAnalysis
+
+    analyses = StockAnalysis.objects.select_related("symbol").all()
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="stocks_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "Symbol", "Company", "Price", "Change%", "Volume", "Volume Ratio",
+        "RSI", "ADX", "CMF", "ATR", "SMA20", "MACD", "MACD Signal",
+        "Master Score", "Tech Score", "Fund Score", "Signal",
+        "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
+        "Est. Days", "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
+        "Trend", "Breakout Status"
+    ])
+
+    for a in analyses:
+        s = a.symbol
+        writer.writerow([
+            s.symbol, s.company_name, s.price, s.change_percent,
+            s.volume, s.volume_ratio,
+            s.rsi, s.adx, s.cmf, s.atr, s.sma_20, s.macd, s.macd_signal,
+            a.master_score, a.technical_score, a.fundamental_score, a.signal,
+            a.criteria_met, a.risk_reward_ratio,
+            a.entry_price, a.stop_loss, a.take_profit,
+            a.estimated_days_to_target,
+            "Yes" if a.is_vetoed else "No", a.veto_reason,
+            "Yes" if a.is_fast_pick else "No",
+            "Yes" if a.is_high_risk else "No",
+            a.trend, a.breakout_status
+        ])
+
+    return response

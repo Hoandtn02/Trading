@@ -35,6 +35,7 @@
             transition: all 0.2s;
         }
         .nav-links a:hover { background: #334155; color: #fff; }
+        .nav-links a.active { background: #3b82f6; color: #fff; }
 
         .scan-btn {
             background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
@@ -445,6 +446,7 @@
         <div class="nav-links">
             <a href="/overview/">← Quay lại</a>
             <a href="/">Dashboard</a>
+            <a href="{% url 'stock_list' %}">📊 Danh Sách</a>
             <button class="scan-btn" onclick="triggerSync()" id="scanBtn">
                 <span id="scanBtnText">⚡ QUÉT NGAY</span>
                 <span id="scanProgress" style="display:none;">0%</span>
