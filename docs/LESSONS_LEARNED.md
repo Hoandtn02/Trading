@@ -660,3 +660,152 @@ if result.fundamental.is_banking and (result.fundamental.nim > 0 or result.funda
 ```
 📊 Ngân hàng: NIM: 3.25% | NPL: 1.85%
 ```
+
+## 13. Phase 3 Futures Analyzer Fixes (2026-04-26)
+
+### 13.1 Zero Data Disaster - Insufficient Historical Data
+**Problem:** Technical indicators (ATR, SMA, ADX, VWAP, Pivot) all return 0 because API only fetched ~30 periods
+
+**Fix:** Increase data fetch period to 100+ days
+
+```python
+def __init__(self, period_ta: int = 100):
+    self.period_ta = period_ta  # Need 100+ periods for valid indicators
+
+# Get 100+ days for valid indicators
+df = mkt.futures(contract).ohlcv(
+    interval="1D",
+    length=self.period_ta + 50
+)
+```
+
+### 13.2 Manual Technical Indicators
+**Problem:** Indicators using vnstock_ta library returned 0
+
+**Fix:** Calculate indicators manually from OHLCV data
+
+```python
+# ATR (14) - Manual
+tr = pd.concat([
+    high - low,
+    abs(high - close.shift(1)),
+    abs(low - close.shift(1))
+], axis=1).max(axis=1)
+data.atr = float(tr.rolling(14).mean().iloc[-1])
+
+# SMA(20) - Manual
+data.sma_20 = float(close.rolling(20).mean().iloc[-1])
+
+# ADX (14) - Manual
+plus_dm = high.diff()
+minus_dm = -low.diff()
+# ... full ADX calculation ...
+
+# RSI (14) - Manual
+delta = close.diff()
+gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+rs = gain / loss
+data.rsi = float(100 - (100 / (1 + rs)).iloc[-1])
+```
+
+### 13.3 Term Structure Logic - Backwardation is BEARISH
+**Problem:** System showed Backwardation in "Ưu điểm" (Strengths) section - WRONG!
+
+**Knowledge:** Backwardation means F1M > F2M > F3M (prices declining) = BEARISH signal
+
+**Fix:**
+```python
+# Term structure determination
+if data.current_price < data.futures_m2 < data.futures_m3:
+    data.term_structure = "CONTANGO"
+    data.term_signal = "Tín hiệu TĂNG - Thị trường kỳ vọng tích cực"
+elif data.current_price > data.futures_m2 > data.futures_m3:
+    data.term_structure = "BACKWARDATION"
+    data.term_signal = "Tín hiệu GIẢM - Thị trường bi quan ngắn hạn"
+
+# Score contribution
+if data.term_structure == "CONTANGO":
+    score += 5  # Bullish
+elif data.term_structure == "BACKWARDATION":
+    score -= 10  # Bearish - CORRECT!
+```
+
+**Display Fix:**
+```python
+# Ưu điểm - only show if bullish
+if term_bullish:
+    output += "• Contango - Kỳ vọng tích cực\n"
+
+# Rủi ro - show Backwardation here
+if data.term_structure == "BACKWARDATION":
+    output += "• Backwardation - Cảnh báo giảm\n"
+```
+
+### 13.4 Trend Logic - Handle SMA=0 Cases
+**Problem:** "Giá TRÊN cả 2 SMA → UPTREND" when SMA=0 is meaningless
+
+**Fix:**
+```python
+# Only count trend if we have valid SMA data
+if data.sma_20 > 0 and data.sma_50 > 0:
+    if data.current_price > data.sma_20 and data.current_price > data.sma_50:
+        score += 15
+        data.trend = "UPTREND"
+    else:
+        data.trend = "CHƯA XÁC ĐỊNH"
+```
+
+### 13.5 Target/Stop Loss Based on ATR
+**Problem:** Entry, SL, TP all returned 0 or nonsensical values
+
+**Fix:**
+```python
+def _calculate_entry_exit(self, data: FuturesData):
+    """Calculate Entry, Stop Loss, and Take Profit based on ATR"""
+    if data.current_price > 0 and data.atr > 0:
+        # For LONG positions
+        data.stop_loss = data.current_price - 2 * data.atr
+        data.take_profit = data.current_price + 3 * data.atr
+        data.entry_target = data.current_price
+    elif data.current_price > 0:
+        # Fallback if ATR is 0
+        data.stop_loss = data.current_price * 0.97
+        data.take_profit = data.current_price * 1.03
+```
+
+**Example Output:**
+```
+📌 HÀNH ĐỘNG:
+   • Mở vị thế quanh: 2,015
+   • 🛑 Stop Loss: 1,942 (-73 điểm)
+   • 🎯 Take Profit: 2,124 (+109 điểm)
+```
+
+### 13.6 Spot Proxy Fallback
+**Problem:** Futures data API returns no data, all indicators fail
+
+**Fix:** Use VN30 spot index as proxy for calculations
+```python
+def _get_spot_as_futures(self, data: FuturesData):
+    """Use VN30 spot as proxy if futures data unavailable"""
+    df = mkt.index("VN30").ohlcv(
+        interval="1D",
+        length=self.period_ta + 30
+    )
+    data.symbol = "VN30 (Spot Proxy)"
+    data.current_price = float(df['close'].iloc[-1])
+```
+
+**Result (After Fix):**
+```
+=== Futures Data ===
+Symbol: VN30F2606
+ATR: 36.3 ✓
+SMA20: 1925.56 ✓
+SMA50: 1917.77 ✓
+ADX: 53.6 ✓
+RSI: 79.5 ✓
+VWAP: 1916.68 ✓
+Term Structure: N/A (F2M/F3M not available)
+```
