@@ -21,6 +21,9 @@ class DynamicFunctionForm(forms.Form):
             default = config.get("default", "")
             if field_type == "date":
                 field = forms.DateField(required=required, initial=default, widget=forms.DateInput(attrs={"type": "date"}))
+            elif field_type == "select":
+                choices = [(opt, opt) for opt in config.get("options", [])]
+                field = forms.ChoiceField(choices=choices, required=required, initial=default, widget=forms.Select())
             else:
                 field = forms.CharField(required=required, initial=default)
             self.fields[field_name] = field

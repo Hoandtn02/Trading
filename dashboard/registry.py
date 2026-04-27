@@ -333,7 +333,10 @@ FUNCTION_REGISTRY = [
                 "description": "Phân tích vàng SJC với RSI, MACD, Bollinger, ADX, Pivot Points và AI insights.",
                 "runner_path": "dashboard.runners.real_gold_analysis",
                 "output_type": "json",
-                "param_schema": {},
+                "param_schema": {
+                    "mode": {"type": "select", "required": False, "default": "GOLD_COMBO",
+                             "options": ["GOLD_COMBO", "WORLD_ONLY", "SJC_ONLY"]},
+                },
             },
             {
                 "function_id": "gold_domestic",

@@ -14,6 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .forms import DynamicFunctionForm
 from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset
 from .services import get_function_definition, iter_registry_functions, run_registry_function
+from .analyzers.vn30_scanner import Top100Scanner, StockPick, ScanResult, scan_top100
 
 
 def retry_on_db_lock(max_retries: int = 3, delay: float = 0.5):
@@ -45,28 +46,25 @@ def _seed_missing_registry_rows() -> None:
                 slug=group_data["slug"],
                 defaults={"name": group_data["name"], "description": group_data.get("description", "")},
             )
-            FunctionDefinition.objects.update_or_create(
+            new_schema = item.get("param_schema", {})
+
+            # Use update_or_create to ensure param_schema is always synced
+            fd, created = FunctionDefinition.objects.update_or_create(
                 function_id=item["function_id"],
                 defaults={
                     "group": group,
                     "label": item["label"],
                     "description": item.get("description", ""),
                     "runner_path": item["runner_path"],
-                    "param_schema": item.get("param_schema", {}),
+                    "param_schema": new_schema,
                     "output_type": item.get("output_type", "table"),
                     "is_active": item.get("status") != "disabled",
                 },
             )
-            fd = FunctionDefinition.objects.filter(function_id=item["function_id"]).first()
-            if fd:
-                registry_status = item.get("status", "planned")
-                fresh_active = registry_status != "disabled"
-                if fd.is_active != fresh_active or fd.runner_path != item["runner_path"]:
-                    fd.is_active = fresh_active
-                    fd.runner_path = item["runner_path"]
-                    fd.param_schema = item.get("param_schema", {})
-                    fd.output_type = item.get("output_type", "table")
-                    fd.save(update_fields=["is_active", "runner_path", "param_schema", "output_type"])
+            # Always sync param_schema from registry (source of truth)
+            if fd.param_schema != new_schema:
+                fd.param_schema = new_schema
+                fd.save(update_fields=["param_schema"])
     _seed()
 
 
@@ -217,6 +215,108 @@ def load_presets(request: HttpRequest, function_id: str) -> HttpResponse:
 def market_overview(request: HttpRequest) -> HttpResponse:
     """Market Overview Dashboard - Shows all products from Phase 1-5"""
     return render(request, "dashboard/market_overview.html", {})
+
+
+@csrf_exempt
+def top_picks(request: HttpRequest) -> HttpResponse:
+    """
+    Top Picks Dashboard - Top 100 Liquidity Scanner v5
+    Mục tiêu: Tìm mã tốt nhất để đánh T+ (Swing Trading)
+
+    v5 Features:
+    - Top 100 mã thanh khoản cao nhất HOSE
+    - R:R Ranking Priority (>=2.0 first)
+    - Smart Est. Days (RSI>80 → +3 days)
+    - High Risk label cho missing fundamental data
+    """
+    force_refresh = request.GET.get("refresh", "") == "1"
+
+    scanner = Top100Scanner(use_cache=True)
+    scan_result = scanner.scan(force_refresh=force_refresh)
+
+    # Serialize scan result for template
+    context = {
+        "scan_result": scan_result,
+        "top_picks": scan_result.top_picks,
+        "fast_picks": scan_result.fast_picks,
+        "slow_picks": scan_result.slow_picks,
+        "all_stocks": scan_result.stocks[:15],
+        "scan_time": scan_result.scan_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "market_status": scan_result.market_status,
+        "market_rsi": scan_result.market_rsi,
+        "bullish_count": scan_result.bullish_count,
+        "bearish_count": scan_result.bearish_count,
+        "breakout_count": scan_result.breakout_count,
+        "qualified_count": scan_result.qualified_count,
+        "fast_count": scan_result.fast_count,
+        "vetoed_count": scan_result.vetoed_count,
+        "high_risk_count": scan_result.high_risk_count,
+        "total_scanned": scan_result.total_scanned,
+        "has_conflict": scan_result.signal_conflict,
+        "conflict_message": scan_result.conflict_message,
+        "has_market_warning": scan_result.market_overbought_warning,
+        "market_warning_message": scan_result.market_warning_message,
+        "has_hot_pick": any(p.master_score >= 80 for p in scan_result.fast_picks),
+    }
+
+    return render(request, "dashboard/top_picks.html", context)
+
+
+@csrf_exempt
+def scan_vn30_api(request: HttpRequest) -> HttpResponse:
+    """API endpoint for AJAX VN30 scanner refresh"""
+    import json
+
+    force_refresh = request.POST.get("refresh", "") == "1"
+
+    scanner = Top100Scanner(use_cache=True)
+    scan_result = scanner.scan(force_refresh=force_refresh)
+
+    # Serialize results
+    top_picks_data = []
+    for pick in scan_result.top_picks[:5]:
+        top_picks_data.append({
+            "symbol": pick.symbol,
+            "master_score": pick.master_score,
+            "current_price": pick.current_price,
+            "change_percent": pick.change_percent,
+            "rsi": pick.rsi,
+            "adx": pick.adx,
+            "cmf": pick.cmf,
+            "atr": pick.atr,
+            "trend": pick.trend,
+            "breakout_status": pick.breakout_status,
+            "signal": pick.signal,
+            "is_short_term_qualified": pick.is_short_term_qualified,
+            "is_vetoed": pick.is_vetoed,
+            "veto_reason": pick.veto_reason,
+            "is_slow_mode": pick.is_slow_mode,
+            "estimated_days_to_target": pick.estimated_days_to_target,
+            "entry_price": pick.entry_price,
+            "stop_loss": pick.stop_loss,
+            "take_profit": pick.take_profit,
+            "risk_reward_ratio": pick.risk_reward_ratio,
+            "criteria_met": pick.criteria_met,
+            "criteria_list": pick.criteria_list,
+        })
+
+    return JsonResponse({
+        "status": "success",
+        "scan_time": scan_result.scan_time.isoformat(),
+        "market_status": scan_result.market_status,
+        "market_rsi": scan_result.market_rsi,
+        "top_picks": top_picks_data,
+        "bullish_count": scan_result.bullish_count,
+        "bearish_count": scan_result.bearish_count,
+        "breakout_count": scan_result.breakout_count,
+        "qualified_count": scan_result.qualified_count,
+        "fast_count": scan_result.fast_count,
+        "vetoed_count": scan_result.vetoed_count,
+        "high_risk_count": scan_result.high_risk_count,
+        "has_market_warning": scan_result.market_overbought_warning,
+        "market_warning_message": scan_result.market_warning_message,
+        "has_hot_pick": any(p.master_score >= 80 for p in scan_result.fast_picks),
+    })
 
 
 @csrf_exempt

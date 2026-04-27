@@ -1,0 +1,891 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Top Picks - VN30 Alpha Scanner v2</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .header h1 { font-size: 24px; color: #fff; }
+        .header .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #1e293b;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #334155; color: #fff; }
+
+        .scan-btn {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .scan-btn:hover { background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); }
+        .scan-btn.loading { opacity: 0.7; cursor: not-allowed; }
+
+        /* Banners */
+        .banner {
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .banner .icon { font-size: 24px; }
+        .banner .message { font-size: 14px; }
+
+        .market-warning-banner {
+            background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+            border: 2px solid #ef4444;
+        }
+
+        .conflict-banner {
+            background: linear-gradient(135deg, #713f12 0%, #92400e 100%);
+            border: 2px solid #f59e0b;
+        }
+
+        .bull-banner {
+            background: linear-gradient(135deg, #14532d 0%, #166534 100%);
+            border: 2px solid #22c55e;
+        }
+
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            text-align: center;
+        }
+        .summary-value { font-size: 28px; font-weight: 700; }
+        .summary-value.bull { color: #22c55e; }
+        .summary-value.bear { color: #ef4444; }
+        .summary-value.neutral { color: #f59e0b; }
+        .summary-value.blue { color: #3b82f6; }
+        .summary-value.fast { color: #10b981; }
+        .summary-value.slow { color: #f97316; }
+        .summary-label { color: #64748b; font-size: 12px; margin-top: 4px; }
+
+        .section-title {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin: 24px 0 12px 0;
+            padding-left: 8px;
+            border-left: 3px solid #f59e0b;
+        }
+
+        /* Trading Table */
+        .trading-table {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 12px;
+            border: 1px solid #334155;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+        .trading-table-header {
+            background: #0f172a;
+            padding: 12px 16px;
+            display: grid;
+            grid-template-columns: 60px 1fr 80px 120px 100px 100px 100px 100px 80px 80px;
+            gap: 12px;
+            font-weight: 600;
+            color: #94a3b8;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .trading-table-row {
+            padding: 12px 16px;
+            display: grid;
+            grid-template-columns: 60px 1fr 80px 120px 100px 100px 100px 100px 80px 80px;
+            gap: 12px;
+            border-bottom: 1px solid #1e293b;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        .trading-table-row:hover { background: #1e293b; }
+        .trading-table-row:last-child { border-bottom: none; }
+
+        .rank { font-size: 18px; font-weight: 700; }
+        .rank.top1 { color: #fbbf24; }
+        .rank.top2 { color: #94a3b8; }
+        .rank.top3 { color: #cd7f32; }
+
+        .symbol { font-weight: 600; color: #fff; }
+        .score-bar {
+            background: #0f172a;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .score-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .score-fill.high { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        .score-fill.medium { background: linear-gradient(90deg, #f59e0b, #d97706); }
+        .score-fill.low { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+        .breakout-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .breakout-badge.breakout { background: #7f1d1d; color: #ef4444; }
+        .breakout-badge.retest { background: #713f12; color: #f59e0b; }
+        .breakout-badge.qualified { background: #1e3a5f; color: #60a5fa; }
+        .breakout-badge.consolidation { background: #1e293b; color: #94a3b8; }
+        .breakout-badge.slow { background: #78350f; color: #f97316; }
+        .breakout-badge.veto { background: #7f1d1d; color: #fca5a5; }
+        .breakout-badge.high-risk { background: #78350f; color: #fbbf24; }
+
+        .criteria-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .criteria-badge.excellent { background: linear-gradient(135deg, #166534, #14532d); color: #4ade80; }
+        .criteria-badge.good { background: #1e3a5f; color: #60a5fa; }
+        .criteria-badge.fair { background: #713f12; color: #fbbf24; }
+
+        .sl-cell { color: #ef4444; font-weight: 600; }
+        .tp-cell { color: #22c55e; font-weight: 600; }
+        .rr-cell { color: #60a5fa; font-weight: 600; }
+        .days-cell { color: #10b981; font-weight: 600; }
+        .days-cell.slow { color: #f97316; font-weight: 600; }
+
+        /* Pick Cards */
+        .pick-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            border: 2px solid #334155;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .pick-card.featured { border-color: #fbbf24; box-shadow: 0 0 30px rgba(251, 191, 36, 0.2); }
+        .pick-card.fast { border-color: #10b981; }
+        .pick-card.slow { border-color: #f97316; opacity: 0.85; }
+
+        .pick-header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .pick-rank {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .pick-rank.rank1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #000; }
+        .pick-rank.rank2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: #000; }
+        .pick-rank.rank3 { background: linear-gradient(135deg, #cd7f32, #a16207); color: #fff; }
+        .pick-rank.rank4, .pick-rank.rank5 { background: #1e293b; color: #94a3b8; border: 2px solid #334155; }
+
+        .pick-info h2 { font-size: 28px; color: #fff; margin-bottom: 4px; }
+        .pick-info .company { color: #64748b; font-size: 14px; }
+
+        .pick-score { text-align: right; }
+        .pick-score .value { font-size: 48px; font-weight: 700; }
+        .pick-score .label { color: #64748b; font-size: 12px; }
+        .pick-score .value.high { color: #22c55e; }
+        .pick-score .value.medium { color: #f59e0b; }
+
+        .pick-badges { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+
+        .qualified-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, #166534 0%, #14532d 100%);
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #4ade80;
+        }
+        .slow-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, #78350f 0%, #451a03 100%);
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #fb923c;
+        }
+        .criteria-badge-large {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .criteria-badge-large.excellent { background: #166534; color: #4ade80; }
+        .criteria-badge-large.good { background: #1e3a5f; color: #60a5fa; }
+        .criteria-badge-large.fair { background: #713f12; color: #fbbf24; }
+
+        .pick-body { padding: 20px; }
+
+        /* Trading Levels */
+        .trading-levels {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .level-card {
+            background: #0f172a;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .level-card.entry { border: 2px solid #3b82f6; }
+        .level-card.sl { border: 2px solid #ef4444; }
+        .level-card.tp { border: 2px solid #22c55e; }
+        .level-card.rr { border: 2px solid #60a5fa; }
+        .level-card.days { border: 2px solid #10b981; }
+        .level-card.days.slow { border-color: #f97316; }
+
+        .level-label { font-size: 11px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
+        .level-value { font-size: 20px; font-weight: 700; }
+        .level-card.entry .level-value { color: #3b82f6; }
+        .level-card.sl .level-value { color: #ef4444; }
+        .level-card.tp .level-value { color: #22c55e; }
+        .level-card.rr .level-value { color: #60a5fa; }
+        .level-card.days .level-value { color: #10b981; }
+        .level-card.days.slow .level-value { color: #f97316; }
+        .level-change { font-size: 11px; margin-top: 4px; }
+        .level-change.up { color: #22c55e; }
+        .level-change.down { color: #ef4444; }
+
+        /* Metrics Grid */
+        .pick-metrics {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .metric {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value { font-size: 18px; font-weight: 600; color: #fff; }
+        .metric-label { color: #64748b; font-size: 11px; margin-top: 4px; }
+        .metric-value.up { color: #22c55e; }
+        .metric-value.down { color: #ef4444; }
+        .metric-value.warning { color: #f59e0b; }
+
+        /* Analysis Section */
+        .pick-analysis {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .pick-analysis h4 { color: #94a3b8; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; }
+        .analysis-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        .analysis-row:last-child { border-bottom: none; }
+        .analysis-row .label { color: #64748b; }
+        .analysis-row .value { color: #fff; font-weight: 500; }
+        .analysis-row .value.good { color: #22c55e; }
+        .analysis-row .value.bad { color: #ef4444; }
+
+        /* Criteria Checklist */
+        .criteria-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .criteria-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .criteria-item .check { color: #22c55e; font-weight: bold; }
+        .criteria-item .cross { color: #ef4444; }
+        .criteria-item .text { color: #e2e8f0; }
+
+        /* Score Breakdown */
+        .score-breakdown {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .score-item {
+            background: rgba(0,0,0,0.2);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .score-item .label { font-size: 11px; color: #64748b; }
+        .score-item .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #64748b;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #1e293b;
+            border-top-color: #22c55e;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Fast/Slow Section */
+        .fast-section { margin-bottom: 24px; }
+        .slow-section { margin-top: 24px; opacity: 0.85; }
+        .veto-badge {
+            background: #7f1d1d;
+            color: #fca5a5;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        @media (max-width: 1200px) {
+            .summary-row { grid-template-columns: repeat(4, 1fr); }
+            .trading-table-header, .trading-table-row { grid-template-columns: 50px 1fr 70px 100px 80px 80px; }
+            .trading-table-header > *:nth-child(n+7), .trading-table-row > *:nth-child(n+7) { display: none; }
+            .pick-metrics { grid-template-columns: repeat(3, 1fr); }
+            .trading-levels { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 768px) {
+            .summary-row { grid-template-columns: repeat(2, 1fr); }
+            .trading-table-header, .trading-table-row { grid-template-columns: 50px 1fr 70px 80px; }
+            .trading-table-header > *:nth-child(n+5), .trading-table-row > *:nth-child(n+5) { display: none; }
+            .pick-metrics { grid-template-columns: repeat(2, 1fr); }
+            .trading-levels { grid-template-columns: repeat(2, 1fr); }
+            .criteria-list { grid-template-columns: 1fr; }
+            .score-breakdown { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🚀 Top Picks - VN30 Alpha Scanner v2</h1>
+            <div class="subtitle">Mua xong bán trong thời gian ngắn | T+ Swing Trading | Cần 9/10 tiêu chí</div>
+        </div>
+        <div class="nav-links">
+            <a href="/overview/">← Quay lại</a>
+            <a href="/">Dashboard</a>
+            <button class="scan-btn" onclick="refreshScan()" id="scanBtn">
+                <span>🔄</span> QUÉT NGAY
+            </button>
+        </div>
+    </div>
+
+    {# Market Warning #}
+    {% if has_market_warning %}
+    <div class="banner market-warning-banner">
+        <span class="icon">⚠️</span>
+        <span class="message">{{ market_warning_message }}</span>
+    </div>
+    {% endif %}
+
+    {# Signal Conflict #}
+    {% if has_conflict %}
+    <div class="banner conflict-banner">
+        <span class="icon">🔴</span>
+        <span class="message">{{ conflict_message }}</span>
+    </div>
+    {% elif market_status == "STRONG_BULL" %}
+    <div class="banner bull-banner">
+        <span class="icon">🚀</span>
+        <span class="message">{{ conflict_message }}</span>
+    </div>
+    {% endif %}
+
+    {# Summary Row #}
+    <div class="summary-row">
+        <div class="summary-card">
+            <div class="summary-value">{{ total_scanned }}</div>
+            <div class="summary-label">Đã quét</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value bull">{{ bullish_count }}</div>
+            <div class="summary-label">Tín hiệu tốt</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value bear">{{ vetoed_count }}</div>
+            <div class="summary-label">🛑 Bị VETO</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value warning">{{ high_risk_count }}</div>
+            <div class="summary-label">⚠️ High Risk</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value fast">{{ fast_count }}</div>
+            <div class="summary-label">⚡ FAST Picks</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value {% if market_rsi > 80 %}bear{% elif market_rsi > 70 %}neutral{% elif market_rsi > 50 %}bull{% else %}neutral{% endif %}">
+                {{ market_rsi|floatformat:0 }}
+            </div>
+            <div class="summary-label">VNIndex RSI</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value {% if market_rsi > 80 %}bear{% elif market_status == 'STRONG_BULL' or market_status == 'BULL' %}bull{% elif market_status == 'BEAR' %}bear{% else %}neutral{% endif %}">
+                {% if market_rsi > 80 %}SELL ZONE{% else %}{{ market_status }}{% endif %}
+            </div>
+            <div class="summary-label">Thị trường</div>
+        </div>
+    </div>
+
+    {# Fast Picks Section #}
+    <h3 class="section-title">⚡ Top Picks Nhanh (Holding ≤ 10 ngày)</h3>
+    <div class="fast-section">
+        {% if fast_picks %}
+        <div class="trading-table">
+            <div class="trading-table-header">
+                <div>Hạng</div>
+                <div>Mã CP</div>
+                <div>Score</div>
+                <div>Trạng thái</div>
+                <div>Est. Days</div>
+                <div>R:R</div>
+                <div>Criteria</div>
+                <div>RSI</div>
+                <div>Entry</div>
+                <div>SL</div>
+            </div>
+            {% for stock in fast_picks %}
+            <div class="trading-table-row">
+                <div class="rank {% if forloop.counter == 1 %}top1{% elif forloop.counter == 2 %}top2{% elif forloop.counter == 3 %}top3{% endif %}">
+                    {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
+                </div>
+                <div class="symbol">{{ stock.symbol }}</div>
+                <div>
+                    <span>{{ stock.master_score }}</span>
+                    <div class="score-bar">
+                        <div class="score-fill {% if stock.master_score >= 70 %}high{% elif stock.master_score >= 50 %}medium{% else %}low{% endif %}" style="width: {{ stock.master_score }}%;"></div>
+                    </div>
+                </div>
+                <div>
+                    <span class="breakout-badge {% if 'BREAKOUT' in stock.breakout_status %}breakout{% elif 'SLOW' in stock.breakout_status %}slow{% elif 'QUALIFIED' in stock.breakout_status %}qualified{% else %}retest{% endif %}">
+                        {{ stock.breakout_status }}
+                    </span>
+                </div>
+                <div class="days-cell {% if stock.is_slow_mode %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
+                <div class="rr-cell">{{ stock.risk_reward_ratio|floatformat:1 }}</div>
+                <div>
+                    <span class="criteria-badge {% if stock.criteria_met >= 9 %}excellent{% elif stock.criteria_met >= 7 %}good{% else %}fair{% endif %}">
+                        {{ stock.criteria_met }}/10
+                    </span>
+                </div>
+                <div>{{ stock.rsi|floatformat:0 }}</div>
+                <div>{{ stock.entry_price|floatformat:0 }}</div>
+                <div class="sl-cell">{{ stock.stop_loss|floatformat:0 }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="loading">Không có Fast Picks trong phiên này</div>
+        {% endif %}
+    </div>
+
+    {# Full Leaderboard #}
+    <h3 class="section-title">📊 Bảng Xếp Hạng VN30</h3>
+    <div class="trading-table">
+        <div class="trading-table-header">
+            <div>Hạng</div>
+            <div>Mã CP</div>
+            <div>Score</div>
+            <div>Trạng thái</div>
+            <div>Est. Days</div>
+            <div>R:R</div>
+            <div>Criteria</div>
+            <div>RSI</div>
+            <div>Entry</div>
+            <div>SL</div>
+        </div>
+        {% for stock in all_stocks %}
+        <div class="trading-table-row">
+            <div class="rank {% if forloop.counter == 1 %}top1{% elif forloop.counter == 2 %}top2{% elif forloop.counter == 3 %}top3{% endif %}">
+                {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
+            </div>
+            <div class="symbol">{{ stock.symbol }}</div>
+            <div>
+                <span>{{ stock.master_score }}</span>
+                <div class="score-bar">
+                    <div class="score-fill {% if stock.master_score >= 70 %}high{% elif stock.master_score >= 50 %}medium{% else %}low{% endif %}" style="width: {{ stock.master_score }}%;"></div>
+                </div>
+            </div>
+            <div>
+                <span class="breakout-badge {% if 'BREAKOUT' in stock.breakout_status %}breakout{% elif 'SLOW' in stock.breakout_status %}slow{% elif 'VETO' in stock.breakout_status %}veto{% elif 'QUALIFIED' in stock.breakout_status %}qualified{% else %}consolidation{% endif %}">
+                    {{ stock.breakout_status }}
+                </span>
+            </div>
+            <div class="days-cell {% if stock.is_slow_mode %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
+            <div class="rr-cell">{{ stock.risk_reward_ratio|floatformat:1 }}</div>
+            <div>
+                <span class="criteria-badge {% if stock.criteria_met >= 9 %}excellent{% elif stock.criteria_met >= 7 %}good{% else %}fair{% endif %}">
+                    {{ stock.criteria_met }}/10
+                </span>
+            </div>
+            <div>{{ stock.rsi|floatformat:0 }}</div>
+            <div>{{ stock.entry_price|floatformat:0 }}</div>
+            <div class="sl-cell">{{ stock.stop_loss|floatformat:0 }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# Top Pick Cards #}
+    <h3 class="section-title">🎯 Chi Tiết Top Picks</h3>
+
+    {% for pick in fast_picks %}
+    <div class="pick-card fast {% if forloop.counter == 1 %}featured{% endif %}">
+        <div class="pick-header">
+            <div style="display:flex;align-items:center;gap:16px;">
+                <div class="pick-rank rank{{ forloop.counter }}">{{ forloop.counter }}</div>
+                <div class="pick-info">
+                    <h2>{{ pick.symbol }}</h2>
+                    <div class="company">{{ pick.company_name|default:pick.symbol }}</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div class="pick-badges">
+                    {% if pick.is_vetoed %}
+                    <div style="background:#7f1d1d;color:#fca5a5;padding:6px 12px;border-radius:16px;font-size:11px;font-weight:600;">
+                        🛑 VETO
+                    </div>
+                    {% elif pick.is_high_risk %}
+                    <div style="background:#78350f;color:#fbbf24;padding:6px 12px;border-radius:16px;font-size:11px;font-weight:600;">
+                        ⚠️ HIGH RISK
+                    </div>
+                    {% elif pick.criteria_met >= 9 %}
+                    <div class="qualified-badge">⚡ EXCELLENT</div>
+                    {% endif %}
+                    <span class="criteria-badge-large {% if pick.criteria_met >= 9 %}excellent{% elif pick.criteria_met >= 7 %}good{% else %}fair{% endif %}">
+                        {{ pick.criteria_met }}/10
+                    </span>
+                </div>
+                <div class="pick-score">
+                    <div class="value {% if pick.is_vetoed %}bear{% elif pick.master_score >= 70 %}high{% else %}medium{% endif %}">{{ pick.master_score }}</div>
+                    <div class="label">MASTER SCORE</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pick-body">
+            <div class="trading-levels">
+                <div class="level-card entry">
+                    <div class="level-label">Entry</div>
+                    <div class="level-value">{{ pick.entry_price|floatformat:0 }}</div>
+                    <div class="level-change {% if pick.change_percent >= 0 %}up{% else %}down{% endif %}">{% if pick.change_percent >= 0 %}+{% endif %}{{ pick.change_percent|floatformat:2 }}%</div>
+                </div>
+                <div class="level-card sl">
+                    <div class="level-label">Stop Loss</div>
+                    <div class="level-value">{{ pick.stop_loss|floatformat:0 }}</div>
+                </div>
+                <div class="level-card tp">
+                    <div class="level-label">Take Profit</div>
+                    <div class="level-value">{{ pick.take_profit|floatformat:0 }}</div>
+                </div>
+                <div class="level-card rr">
+                    <div class="level-label">Risk:Reward</div>
+                    <div class="level-value">{{ pick.risk_reward_ratio|floatformat:1 }}:1</div>
+                </div>
+                <div class="level-card days">
+                    <div class="level-label">Est. Days</div>
+                    <div class="level-value">{{ pick.estimated_days_to_target|floatformat:1 }}d</div>
+                </div>
+            </div>
+
+            <div class="pick-metrics">
+                <div class="metric">
+                    <div class="metric-value">{{ pick.rsi|floatformat:0 }}</div>
+                    <div class="metric-label">RSI(14)</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ pick.adx|floatformat:0 }}</div>
+                    <div class="metric-label">ADX</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value {% if pick.cmf > 0 %}up{% else %}warning{% endif %}">{{ pick.cmf|floatformat:3 }}</div>
+                    <div class="metric-label">CMF</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value {% if pick.volume_ratio > 1.3 %}up{% endif %}">{{ pick.volume_ratio|floatformat:1 }}x</div>
+                    <div class="metric-label">Volume</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ pick.atr|floatformat:0 }}</div>
+                    <div class="metric-label">ATR(14)</div>
+                </div>
+            </div>
+
+            <div class="pick-analysis">
+                <h4>{% if pick.is_vetoed %}🛑 LÝ DO VETO{% else %}✅ Tiêu Chí Đạt ({{ pick.criteria_met }}/10){% endif %}</h4>
+                {% if pick.is_vetoed %}
+                <div style="background:#7f1d1d;padding:16px;border-radius:8px;margin-top:8px;">
+                    <div style="color:#fca5a5;font-weight:600;font-size:14px;">{{ pick.veto_reason }}</div>
+                    <div style="color:#fca5a5;font-size:12px;margin-top:8px;">
+                        Mã này bị loại khỏi danh sách gợi ý vì không đạt điều kiện an toàn.
+                    </div>
+                </div>
+                {% else %}
+                <div class="criteria-list">
+                    {% if "RSI Sweet Spot (50-65)" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">RSI Sweet Spot</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">RSI Sweet Spot</span></div>
+                    {% endif %}
+
+                    {% if "ADX Strong (>20)" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">ADX Strong</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">ADX Strong</span></div>
+                    {% endif %}
+
+                    {% if "DI Bullish" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">+DI > -DI</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">+DI > -DI</span></div>
+                    {% endif %}
+
+                    {% if "CMF Positive" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">CMF > 0</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">CMF > 0</span></div>
+                    {% endif %}
+
+                    {% if "Volume Active" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">Volume > 1x</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Volume > 1x</span></div>
+                    {% endif %}
+
+                    {% if "Above SMA20" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">Price > SMA20</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Price > SMA20</span></div>
+                    {% endif %}
+
+                    {% if "MACD Bullish" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">MACD Bullish</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">MACD Bullish</span></div>
+                    {% endif %}
+
+                    {% if "R:R Good (>0.4)" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">R:R > 0.4</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">R:R > 0.4</span></div>
+                    {% endif %}
+
+                    {% if "F-Score OK" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">F-Score ≥ 2</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">F-Score ≥ 2</span></div>
+                    {% endif %}
+
+                    {% if "Fast Holding (<10d)" in pick.criteria_list %}
+                    <div class="criteria-item"><span class="check">✓</span><span class="text">Holding ≤ 10d</span></div>
+                    {% else %}
+                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Holding ≤ 10d</span></div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <div class="score-breakdown">
+                    <div class="score-item">
+                        <div class="label">Technical (70%)</div>
+                        <div class="value" style="color: #3b82f6;">{{ pick.technical_score }}</div>
+                    </div>
+                    <div class="score-item">
+                        <div class="label">Fundamental (30%)</div>
+                        <div class="value" style="color: #f59e0b;">{{ pick.fundamental_score }}</div>
+                    </div>
+                    <div class="score-item">
+                        <div class="label">Signal</div>
+                        <div class="value" style="color: {% if 'BUY' in pick.signal %}#22c55e{% else %}#94a3b8{% endif %};">{{ pick.signal }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="loading">
+        <div class="loading-spinner"></div>
+        <div>Đang quét VN30...</div>
+    </div>
+    {% endfor %}
+
+    {# SLOW Picks Section #}
+    {% if slow_picks %}
+    <h3 class="section-title slow-section">🐢 Slow Picks (Holding > 10 ngày)</h3>
+    <div class="slow-section">
+        {% for pick in slow_picks %}
+        <div class="pick-card slow">
+            <div class="pick-header">
+                <div style="display:flex;align-items:center;gap:16px;">
+                    <div class="pick-rank" style="background: #78350f; color: #fb923c; border: 2px solid #78350f;">
+                        {{ forloop.counter }}
+                    </div>
+                    <div class="pick-info">
+                        <h2>{{ pick.symbol }}</h2>
+                        <div class="company">{{ pick.company_name|default:pick.symbol }}</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div class="slow-badge">🐢 SLOW ({{ pick.estimated_days_to_target|floatformat:0 }}d)</div>
+                    <div class="pick-score">
+                        <div class="value medium">{{ pick.master_score }}</div>
+                        <div class="label">MASTER SCORE</div>
+                    </div>
+                </div>
+            </div>
+            <div class="pick-body">
+                <div class="trading-levels">
+                    <div class="level-card entry">
+                        <div class="level-label">Entry</div>
+                        <div class="level-value">{{ pick.entry_price|floatformat:0 }}</div>
+                    </div>
+                    <div class="level-card sl">
+                        <div class="level-label">Stop Loss</div>
+                        <div class="level-value">{{ pick.stop_loss|floatformat:0 }}</div>
+                    </div>
+                    <div class="level-card tp">
+                        <div class="level-label">Take Profit</div>
+                        <div class="level-value">{{ pick.take_profit|floatformat:0 }}</div>
+                    </div>
+                    <div class="level-card days slow">
+                        <div class="level-label">Est. Days</div>
+                        <div class="level-value" style="color: #f97316;">{{ pick.estimated_days_to_target|floatformat:0 }}d</div>
+                    </div>
+                    <div class="level-card rr">
+                        <div class="level-label">R:R</div>
+                        <div class="level-value">{{ pick.risk_reward_ratio|floatformat:1 }}:1</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Legend #}
+    <div style="background:#1e293b;border-radius:8px;padding:16px;margin-top:20px;color:#64748b;font-size:12px;">
+        <strong style="color:#94a3b8;">📖 Hướng dẫn:</strong><br>
+        • <strong>EXCELLENT (9/10)</strong>: Thỏa mãn gần như tất cả tiêu chí - Ưu tiên cao nhất<br>
+        • <strong>FAST (≤10 ngày)</strong>: Holding period ≤ 10 ngày - Phù hợp cho T+ Swing Trading<br>
+        • <strong>SLOW (>10 ngày)</strong>: Holding period > 10 ngày - Cần thận trọng hơn<br>
+        • <strong>Est. Days</strong>: Ước tính số ngày để đạt Take Profit = (TP - Entry) / ATR<br>
+        • <strong>R:R</strong>: Risk:Reward Ratio - Nên chọn R:R ≥ 2:1<br>
+        ⚠️ <strong style="color:#f59e0b;">Lưu ý</strong>: Hệ thống này chỉ mang tính tham khảo. Hãy tự nghiên cứu trước khi đầu tư.
+    </div>
+
+    <div style="text-align:center;color:#64748b;font-size:12px;margin-top:20px;">
+        Dữ liệu cập nhật lúc: {{ scan_time }} | Cache 1 giờ | VN30 Alpha Scanner v2
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        async function refreshScan() {
+            const btn = document.getElementById('scanBtn');
+            btn.classList.add('loading');
+            btn.innerHTML = '<span>⏳</span> ĐANG QUÉT...';
+
+            try {
+                const response = await fetch('/top-picks/?refresh=1');
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Lỗi khi quét. Vui lòng thử lại.');
+                }
+            } catch (e) {
+                alert('Lỗi: ' + e.message);
+            }
+
+            btn.classList.remove('loading');
+            btn.innerHTML = '<span>🔄</span> QUÉT NGAY';
+        }
+    </script>
+</body>
+</html>

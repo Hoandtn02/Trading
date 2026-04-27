@@ -323,6 +323,11 @@ def real_gold_analysis(**params: Any) -> dict[str, Any]:
     """
     Full gold analysis with technical indicators and AI insights
     Returns comprehensive analysis like ARCHITECTURE_ROADMAP.md
+
+    Args:
+        mode: "GOLD_COMBO" - Both World & SJC analysis
+              "WORLD_ONLY" - Only XAU/USD analysis
+              "SJC_ONLY" - Only SJC analysis
     """
     try:
         with warnings.catch_warnings():
@@ -330,43 +335,91 @@ def real_gold_analysis(**params: Any) -> dict[str, Any]:
 
             from dashboard.analyzers import GoldAnalyzer
 
+            mode = params.get("mode", "GOLD_COMBO")
             analyzer = GoldAnalyzer(period_ta=90)
-            result = analyzer.analyze()
 
-            if result is None:
-                return _payload("Phan tich vang", kind="json", data={"error": "Khong the phan tich vang"})
+            # Analyze based on mode
+            if mode == "WORLD_ONLY":
+                result = analyzer.analyze(mode="WORLD_ONLY")
+                output = analyzer.format_world(result)
+                return _payload(
+                    "Phan tich vang The Gioi",
+                    kind="analysis",
+                    data={
+                        "kind": "analysis",
+                        "name": "Vang The Gioi (XAU/USD)",
+                        "symbol": "XAUUSD",
+                        "mode": mode,
+                        "analysis": output,
+                        "current_price": result.current_price,
+                        "change_percent": result.change_pct,
+                        "trend": result.trend,
+                        "recommendation": result.recommendation,
+                        "master_score": result.master_score,
+                        "rsi": result.rsi,
+                        "macd": result.macd,
+                        "adx": result.adx,
+                        "sma_20": result.sma_20,
+                        "sma_50": result.sma_50,
+                        "dxy": result.dxy,
+                        "us10y_yield": result.us10y_yield,
+                    }
+                )
+            elif mode == "SJC_ONLY":
+                result = analyzer.analyze(mode="SJC_ONLY")
+                output = analyzer.format_sjc(result)
+                return _payload(
+                    "Phan tich vang SJC",
+                    kind="analysis",
+                    data={
+                        "kind": "analysis",
+                        "name": "Vang SJC Viet Nam",
+                        "symbol": "SJC",
+                        "mode": mode,
+                        "analysis": output,
+                        "buy_price": result.sjc_buy,
+                        "sell_price": result.sjc_sell,
+                        "current_price": result.sjc_sell,
+                        "change_percent": result.sjc_change_pct,
+                        "premium": result.premium,
+                        "premium_pct": result.premium_pct,
+                        "premium_status": result.premium_status,
+                        "recommendation": result.recommendation,
+                        "master_score": result.master_score,
+                    }
+                )
+            else:  # GOLD_COMBO
+                world, sjc = analyzer.analyze(mode="GOLD_COMBO")
+                output = analyzer.format_combo(world, sjc)
+                return _payload(
+                    "Phan tich vang",
+                    kind="analysis",
+                    data={
+                        "kind": "analysis",
+                        "name": "Vang - So sanh The Gioi & SJC",
+                        "symbol": "XAUUSD/SJC",
+                        "mode": mode,
+                        "analysis": output,
+                        # World gold data
+                        "world_price": world.current_price,
+                        "world_change_pct": world.change_pct,
+                        "world_trend": world.trend,
+                        "world_recommendation": world.recommendation,
+                        "world_score": world.master_score,
+                        # SJC gold data
+                        "sjc_buy": sjc.sjc_buy,
+                        "sjc_sell": sjc.sjc_sell,
+                        "sjc_change_pct": sjc.sjc_change_pct,
+                        "premium": sjc.premium,
+                        "premium_pct": sjc.premium_pct,
+                        "premium_status": sjc.premium_status,
+                        "sjc_recommendation": sjc.recommendation,
+                        "sjc_score": sjc.master_score,
+                    }
+                )
 
-            # Format full output
-            output = analyzer.format_output(result)
-
-            return _payload(
-                "Phan tich vang SJC",
-                kind="analysis",
-                data={
-                    "kind": "analysis",
-                    "name": "Vang SJC",
-                    "symbol": "SJC",
-                    "analysis": output,
-                    "buy_price": result.buy_price if hasattr(result, 'buy_price') else 0,
-                    "sell_price": result.sell_price if hasattr(result, 'sell_price') else 0,
-                    "current_price": result.sell_price if hasattr(result, 'sell_price') else 0,
-                    "change_percent": result.change_percent if hasattr(result, 'change_percent') else 0,
-                    "trend": result.trend if hasattr(result, 'trend') else "NEUTRAL",
-                    "technical_status": result.technical_status if hasattr(result, 'technical_status') else "NEUTRAL",
-                    "master_score": result.master_score if hasattr(result, 'master_score') else 50,
-                    "rsi": result.rsi if hasattr(result, 'rsi') else 0,
-                    "macd": result.macd if hasattr(result, 'macd') else 0,
-                    "adx": result.adx if hasattr(result, 'adx') else 0,
-                    "sma_20": result.sma_20 if hasattr(result, 'sma_20') else 0,
-                    "sma_50": result.sma_50 if hasattr(result, 'sma_50') else 0,
-                    "atr": result.atr if hasattr(result, 'atr') else 0,
-                    "bollinger_upper": result.bollinger_upper if hasattr(result, 'bollinger_upper') else 0,
-                    "bollinger_lower": result.bollinger_lower if hasattr(result, 'bollinger_lower') else 0,
-                    "pivot_r1": result.pivot_r1 if hasattr(result, 'pivot_r1') else 0,
-                    "pivot_s1": result.pivot_s1 if hasattr(result, 'pivot_s1') else 0,
-                    "recommendation": result.recommendation if hasattr(result, 'recommendation') else "WATCH"
-                }
-            )
+    except Exception as e:
+        return _payload("Phan tich vang", kind="json", data={"error": str(e)})
     except Exception as exc:
         return _payload("Phan tich vang", kind="json", data={"error": f"{type(exc).__name__}: {exc}"})
 

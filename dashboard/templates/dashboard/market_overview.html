@@ -36,6 +36,33 @@
             transition: all 0.2s;
         }
         .header .nav-links a:hover { background: #334155; color: #fff; }
+        .top-picks-btn {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+            color: #fff !important;
+            font-weight: 600;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        @keyframes glow {
+            from { box-shadow: 0 0 5px #f59e0b, 0 0 10px #f59e0b; }
+            to { box-shadow: 0 0 10px #f59e0b, 0 0 20px #f59e0b; }
+        }
+        .top-picks-btn:hover {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+        }
+        .notification-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
         
         .dashboard-grid {
             display: grid;
@@ -353,12 +380,30 @@
             padding: 40px;
             color: #64748b;
         }
+        .notification-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>📊 Market Overview Dashboard</h1>
         <div class="nav-links">
+            <a href="/top-picks/" class="top-picks-btn">
+                🚀 TOP PICKS
+                <span class="notification-badge" id="alertBadge" style="display:none;">!</span>
+            </a>
             <a href="/">← Quay lại Dashboard</a>
             <a href="/overview/">Tổng quan</a>
             <a href="/history/">Lịch sử</a>
@@ -497,15 +542,23 @@
         <div class="dashboard-grid">
             <div class="card">
                 <div class="card-header">
-                    <span class="card-title">🥇 Vàng SJC</span>
+                    <span class="card-title">🥇 Phân tích Vàng</span>
                     <span class="card-badge">Phase 3</span>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Chọn loại vàng:</label>
+                    <select id="goldMode" class="form-input" style="width: 100%;">
+                        <option value="GOLD_COMBO">So sánh Thế Giới & SJC</option>
+                        <option value="WORLD_ONLY">Vàng Thế Giới (XAU/USD)</option>
+                        <option value="SJC_ONLY">Vàng SJC (Nội địa)</option>
+                    </select>
                 </div>
                 <button onclick="loadGold()" class="btn-primary" style="width: 100%; margin-bottom: 16px;">🔍 Phân tích Vàng</button>
                 <div id="goldResult" class="analysis-output">
-                    <div class="placeholder-text">Nhấn "Phân tích Vàng" để xem kết quả</div>
+                    <div class="placeholder-text">Chọn loại vàng và nhấn "Phân tích" để xem kết quả</div>
                 </div>
             </div>
-            
+
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">📊 VN30F Phái sinh</span>
@@ -743,9 +796,16 @@
 
         // Load Gold - Full Analysis
         async function loadGold() {
+            const mode = document.getElementById('goldMode')?.value || 'GOLD_COMBO';
             safeSetHTML('goldResult', '<div class="loading" style="color:#64748b;">Đang phân tích...</div>');
             try {
-                const response = await fetchWithCsrf('/run/gold_analysis/', { method: 'POST' });
+                const formData = new FormData();
+                formData.append('mode', mode);
+
+                const response = await fetchWithCsrf('/run/gold_analysis/', {
+                    method: 'POST',
+                    body: formData
+                });
                 const html = await response.text();
                 safeSetHTML('goldResult', html);
             } catch (e) {
@@ -969,7 +1029,29 @@
             const startDateInput = document.getElementById('backtestStart');
             if (endDateInput) endDateInput.value = today.toISOString().split('T')[0];
             if (startDateInput) startDateInput.value = lastMonth.toISOString().split('T')[0];
+
+            // Check for hot picks and show notification badge
+            checkHotPicks();
         });
+
+        // Check for hot picks (Master Score >= 85)
+        async function checkHotPicks() {
+            try {
+                const response = await fetch('/top-picks/api/', {
+                    method: 'GET',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const badge = document.getElementById('alertBadge');
+                    if (badge && data.has_hot_pick) {
+                        badge.style.display = 'inline-block';
+                    }
+                }
+            } catch (e) {
+                // Silently fail
+            }
+        }
     </script>
 </body>
 </html>

@@ -38,7 +38,7 @@ from .signals import (
 from .index_analyzer import IndexAnalyzer, IndexData, MarketBreadth
 
 # Gold & Futures (Phase 3)
-from .gold_analyzer import GoldAnalyzer, GoldData
+from .gold_analyzer import GoldAnalyzer, WorldGoldData, SjcGoldData
 from .futures_analyzer import FuturesAnalyzer, FuturesData
 
 # ETF, Forex, Crypto, CW (Phase 4)
@@ -49,6 +49,9 @@ from .cw_analyzer import CWAnalyzer, CWData
 
 # Bond (Final Phase)
 from .bond_analyzer import BondAnalyzer, BondData, GovBondIndexAnalyzer
+
+# VN30 Scanner
+from .vn30_scanner import VN30Scanner, StockPick, ScanResult, scan_vn30
 
 __all__ = [
     # Stock
@@ -77,7 +80,8 @@ __all__ = [
     "MarketBreadth",
     # Gold & Futures
     "GoldAnalyzer",
-    "GoldData",
+    "WorldGoldData",
+    "SjcGoldData",
     "FuturesAnalyzer",
     "FuturesData",
     # ETF, Forex, Crypto, CW
@@ -94,4 +98,9 @@ __all__ = [
     "BondAnalyzer",
     "BondData",
     "GovBondIndexAnalyzer",
+    # VN30 Scanner
+    "VN30Scanner",
+    "StockPick",
+    "ScanResult",
+    "scan_vn30",
 ]

@@ -1,10 +1,12 @@
 from django.urls import path
 
-from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest
+from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api
 
 urlpatterns = [
     path("", home, name="home"),
     path("overview/", market_overview, name="market_overview"),
+    path("top-picks/", top_picks, name="top_picks"),
+    path("top-picks/api/", scan_vn30_api, name="scan_vn30_api"),
     path("history/", history, name="history"),
     path("backtest/", backtest, name="backtest"),
     path("run/<str:function_id>/", run_function, name="run_function"),
