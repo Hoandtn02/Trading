@@ -433,15 +433,32 @@
 <body>
     <div class="header">
         <div>
-            <h1>🚀 Top Picks - VN30 Alpha Scanner v2</h1>
-            <div class="subtitle">Mua xong bán trong thời gian ngắn | T+ Swing Trading | Cần 9/10 tiêu chí</div>
+            <h1>🚀 Top Picks - Database-First Scanner v7</h1>
+            <div class="subtitle">
+                {% if scan_time and scan_time != "Chưa đồng bộ" %}
+                    Dữ liệu cập nhật: {{ scan_time }}
+                {% else %}
+                    ⚠️ Chưa có dữ liệu - Nhấn "QUÉT NGAY" để bắt đầu
+                {% endif %}
+            </div>
         </div>
         <div class="nav-links">
             <a href="/overview/">← Quay lại</a>
             <a href="/">Dashboard</a>
-            <button class="scan-btn" onclick="refreshScan()" id="scanBtn">
-                <span>🔄</span> QUÉT NGAY
+            <button class="scan-btn" onclick="triggerSync()" id="scanBtn">
+                <span id="scanBtnText">⚡ QUÉT NGAY</span>
+                <span id="scanProgress" style="display:none;">0%</span>
             </button>
+        </div>
+    </div>
+
+    <!-- Sync Progress Bar -->
+    <div id="syncProgressBar" style="display:none; margin-bottom: 20px;">
+        <div style="background:#1e293b; border-radius:8px; height:8px; overflow:hidden;">
+            <div id="progressFill" style="background:linear-gradient(90deg, #22c55e, #16a34a); height:100%; width:0%; transition:width 0.3s;"></div>
+        </div>
+        <div style="font-size:12px; color:#64748b; margin-top:4px;">
+            <span id="progressText">Đang đồng bộ dữ liệu 100 mã...</span>
         </div>
     </div>
 
@@ -489,13 +506,13 @@
             <div class="summary-label">⚡ FAST Picks</div>
         </div>
         <div class="summary-card">
-            <div class="summary-value {% if market_rsi > 80 %}bear{% elif market_rsi > 70 %}neutral{% elif market_rsi > 50 %}bull{% else %}neutral{% endif %}">
+            <div class="summary-value {% if market_rsi > 70 %}bear{% elif market_rsi > 50 %}bull{% else %}neutral{% endif %}">
                 {{ market_rsi|floatformat:0 }}
             </div>
             <div class="summary-label">VNIndex RSI</div>
         </div>
         <div class="summary-card">
-            <div class="summary-value {% if market_rsi > 80 %}bear{% elif market_status == 'STRONG_BULL' or market_status == 'BULL' %}bull{% elif market_status == 'BEAR' %}bear{% else %}neutral{% endif %}">
+            <div class="summary-value {% if market_rsi > 80 %}bear{% elif market_status == 'BULL' or market_status == 'STRONG_BULL' %}bull{% else %}neutral{% endif %}">
                 {% if market_rsi > 80 %}SELL ZONE{% else %}{{ market_status }}{% endif %}
             </div>
             <div class="summary-label">Thị trường</div>
@@ -696,65 +713,42 @@
                 </div>
                 {% else %}
                 <div class="criteria-list">
-                    {% if "RSI Sweet Spot (50-65)" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">RSI Sweet Spot</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">RSI Sweet Spot</span></div>
-                    {% endif %}
-
-                    {% if "ADX Strong (>20)" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">ADX Strong</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">ADX Strong</span></div>
-                    {% endif %}
-
-                    {% if "DI Bullish" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">+DI > -DI</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">+DI > -DI</span></div>
-                    {% endif %}
-
-                    {% if "CMF Positive" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">CMF > 0</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">CMF > 0</span></div>
-                    {% endif %}
-
-                    {% if "Volume Active" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">Volume > 1x</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Volume > 1x</span></div>
-                    {% endif %}
-
-                    {% if "Above SMA20" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">Price > SMA20</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Price > SMA20</span></div>
-                    {% endif %}
-
-                    {% if "MACD Bullish" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">MACD Bullish</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">MACD Bullish</span></div>
-                    {% endif %}
-
-                    {% if "R:R Good (>0.4)" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">R:R > 0.4</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">R:R > 0.4</span></div>
-                    {% endif %}
-
-                    {% if "F-Score OK" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">F-Score ≥ 2</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">F-Score ≥ 2</span></div>
-                    {% endif %}
-
-                    {% if "Fast Holding (<10d)" in pick.criteria_list %}
-                    <div class="criteria-item"><span class="check">✓</span><span class="text">Holding ≤ 10d</span></div>
-                    {% else %}
-                    <div class="criteria-item"><span class="cross">✗</span><span class="text">Holding ≤ 10d</span></div>
-                    {% endif %}
+                    <div class="criteria-item">
+                        <span class="{% if pick.rsi >= 50 and pick.rsi <= 65 %}check{% else %}cross{% endif %}">{% if pick.rsi >= 50 and pick.rsi <= 65 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">RSI Sweet Spot</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.adx > 20 %}check{% else %}cross{% endif %}">{% if pick.adx > 20 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">ADX Strong</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.plus_di > pick.minus_di %}check{% else %}cross{% endif %}">{% if pick.plus_di > pick.minus_di %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">+DI > -DI</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.cmf > 0 %}check{% else %}cross{% endif %}">{% if pick.cmf > 0 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">CMF > 0</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.volume_ratio > 1.0 %}check{% else %}cross{% endif %}">{% if pick.volume_ratio > 1.0 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">Volume > 1x</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.current_price > pick.sma_20 and pick.sma_20 > 0 %}check{% else %}cross{% endif %}">{% if pick.current_price > pick.sma_20 and pick.sma_20 > 0 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">Price > SMA20</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.macd > pick.macd_signal %}check{% else %}cross{% endif %}">{% if pick.macd > pick.macd_signal %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">MACD Bullish</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.risk_reward_ratio >= 1.5 %}check{% else %}cross{% endif %}">{% if pick.risk_reward_ratio >= 1.5 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">R:R ≥ 1.5</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.estimated_days_to_target <= 10 and pick.estimated_days_to_target > 0 %}check{% else %}cross{% endif %}">{% if pick.estimated_days_to_target <= 10 and pick.estimated_days_to_target > 0 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">Holding ≤ 10d</span>
+                    </div>
                 </div>
                 {% endif %}
 
@@ -867,25 +861,82 @@
             return cookieValue;
         }
 
-        async function refreshScan() {
+        async function triggerSync() {
             const btn = document.getElementById('scanBtn');
-            btn.classList.add('loading');
-            btn.innerHTML = '<span>⏳</span> ĐANG QUÉT...';
+            const btnText = document.getElementById('scanBtnText');
+            const progressBar = document.getElementById('syncProgressBar');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+
+            // Hiển thị progress bar
+            btn.disabled = true;
+            btnText.textContent = 'ĐANG ĐỒNG BỘ...';
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Đang gửi yêu cầu đồng bộ...';
 
             try {
-                const response = await fetch('/top-picks/?refresh=1');
-                if (response.ok) {
-                    location.reload();
+                // Gọi API để trigger sync
+                const csrfToken = getCsrfToken();
+                const response = await fetch('/api/scan/vn30/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'started') {
+                    progressText.textContent = data.message + ' (Dự kiến 15-20s)';
+
+                    // Poll để kiểm tra tiến trình
+                    let attempts = 0;
+                    const maxAttempts = 60; // 60 * 2s = 2 phút max
+
+                    while (attempts < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 2000)); // Check mỗi 2s
+
+                        const statusResponse = await fetch('/api/scan/vn30/');
+                        const statusData = await statusResponse.json();
+
+                        if (statusData.is_syncing) {
+                            progressFill.style.width = statusData.sync_progress + '%';
+                            progressText.textContent = `Đang đồng bộ: ${statusData.sync_progress}% (${statusData.fast_count} picks)`;
+                        } else {
+                            // Sync xong
+                            progressFill.style.width = '100%';
+                            progressText.textContent = '✅ Đồng bộ hoàn tất!';
+                            setTimeout(() => {
+                                location.reload();
+                            }, 500);
+                            return;
+                        }
+
+                        attempts++;
+                    }
+
+                    progressText.textContent = '⚠️ Quá thời gian, vui lòng refresh trang';
                 } else {
-                    alert('Lỗi khi quét. Vui lòng thử lại.');
+                    progressText.textContent = '❌ Lỗi: ' + (data.message || 'Không xác định');
                 }
             } catch (e) {
-                alert('Lỗi: ' + e.message);
+                progressText.textContent = '❌ Lỗi: ' + e.message;
             }
 
-            btn.classList.remove('loading');
-            btn.innerHTML = '<span>🔄</span> QUÉT NGAY';
+            // Reset button
+            btn.disabled = false;
+            btnText.textContent = '⚡ QUÉT NGAY';
         }
+
+        // Auto-check sync status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const isSyncing = {{ is_syncing|yesno:"true,false" }};
+            if (isSyncing) {
+                triggerSync();
+            }
+        });
     </script>
 </body>
 </html>

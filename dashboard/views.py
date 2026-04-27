@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .forms import DynamicFunctionForm
 from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset
 from .services import get_function_definition, iter_registry_functions, run_registry_function
-from .analyzers.vn30_scanner import Top100Scanner, StockPick, ScanResult, scan_top100
+from dashboard.sync_service import sync_market_data, get_top_picks_from_db, get_sync_status
 
 
 def retry_on_db_lock(max_retries: int = 3, delay: float = 0.5):
@@ -220,102 +220,123 @@ def market_overview(request: HttpRequest) -> HttpResponse:
 @csrf_exempt
 def top_picks(request: HttpRequest) -> HttpResponse:
     """
-    Top Picks Dashboard - Top 100 Liquidity Scanner v5
+    Top Picks Dashboard - Database-First Architecture v7
     Mục tiêu: Tìm mã tốt nhất để đánh T+ (Swing Trading)
 
-    v5 Features:
-    - Top 100 mã thanh khoản cao nhất HOSE
-    - R:R Ranking Priority (>=2.0 first)
-    - Smart Est. Days (RSI>80 → +3 days)
-    - High Risk label cho missing fundamental data
+    v7 Features:
+    - Database-First: Đọc từ SQLite thay vì gọi API trực tiếp
+    - Sync Engine: ThreadPoolExecutor để đồng bộ song song
+    - Status Indicator: Hiển thị thời gian cập nhật
     """
-    force_refresh = request.GET.get("refresh", "") == "1"
+    # Lấy sync status
+    sync_status = get_sync_status()
+    is_data_available = sync_status and sync_status.get("completed_at")
 
-    scanner = Top100Scanner(use_cache=True)
-    scan_result = scanner.scan(force_refresh=force_refresh)
+    if is_data_available:
+        # Đọc từ Database - CỰC NHANH
+        top_picks = get_top_picks_from_db(limit=8)
+        all_stocks = get_top_picks_from_db(limit=15)
 
-    # Serialize scan result for template
-    context = {
-        "scan_result": scan_result,
-        "top_picks": scan_result.top_picks,
-        "fast_picks": scan_result.fast_picks,
-        "slow_picks": scan_result.slow_picks,
-        "all_stocks": scan_result.stocks[:15],
-        "scan_time": scan_result.scan_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "market_status": scan_result.market_status,
-        "market_rsi": scan_result.market_rsi,
-        "bullish_count": scan_result.bullish_count,
-        "bearish_count": scan_result.bearish_count,
-        "breakout_count": scan_result.breakout_count,
-        "qualified_count": scan_result.qualified_count,
-        "fast_count": scan_result.fast_count,
-        "vetoed_count": scan_result.vetoed_count,
-        "high_risk_count": scan_result.high_risk_count,
-        "total_scanned": scan_result.total_scanned,
-        "has_conflict": scan_result.signal_conflict,
-        "conflict_message": scan_result.conflict_message,
-        "has_market_warning": scan_result.market_overbought_warning,
-        "market_warning_message": scan_result.market_warning_message,
-        "has_hot_pick": any(p.master_score >= 80 for p in scan_result.fast_picks),
-    }
+        # Thống kê
+        from .models import StockAnalysis
+        total = StockAnalysis.objects.count()
+        vetoed = StockAnalysis.objects.filter(is_vetoed=True).count()
+        fast = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
+
+        # Market RSI từ record đầu tiên
+        market_rsi = top_picks[0]["market_rsi"] if top_picks else 50
+
+        context = {
+            "top_picks": top_picks,
+            "all_stocks": all_stocks,
+            "scan_time": sync_status.get("completed_at", "")[:19] if sync_status.get("completed_at") else "N/A",
+            "market_rsi": market_rsi,
+            "market_status": "SELL ZONE" if market_rsi > 70 else "NEUTRAL",
+            "bullish_count": StockAnalysis.objects.filter(signal__in=["BUY", "STRONG_BUY"]).count(),
+            "vetoed_count": vetoed,
+            "fast_count": fast,
+            "total_scanned": total,
+            "high_risk_count": StockAnalysis.objects.filter(is_high_risk=True).count(),
+            "is_syncing": sync_status.get("is_running", False),
+            "sync_progress": sync_status.get("progress_percent", 0),
+            "has_market_warning": market_rsi > 70,
+            "market_warning_message": f"⚠️ SELL ZONE - VNIndex RSI: {market_rsi:.0f}" if market_rsi > 70 else "",
+            "has_hot_pick": any(p["master_score"] >= 80 for p in top_picks),
+        }
+    else:
+        # Không có dữ liệu
+        context = {
+            "top_picks": [],
+            "all_stocks": [],
+            "scan_time": "Chưa đồng bộ",
+            "market_rsi": 50,
+            "market_status": "NEUTRAL",
+            "bullish_count": 0,
+            "vetoed_count": 0,
+            "fast_count": 0,
+            "total_scanned": 0,
+            "high_risk_count": 0,
+            "is_syncing": False,
+            "sync_progress": 0,
+            "has_market_warning": False,
+            "market_warning_message": "",
+            "has_hot_pick": False,
+        }
 
     return render(request, "dashboard/top_picks.html", context)
 
 
 @csrf_exempt
 def scan_vn30_api(request: HttpRequest) -> HttpResponse:
-    """API endpoint for AJAX VN30 scanner refresh"""
+    """
+    API endpoint để trigger sync và lấy kết quả
+    POST: Trigger sync (chạy ngầm)
+    GET: Lấy kết quả từ DB
+    """
     import json
 
-    force_refresh = request.POST.get("refresh", "") == "1"
+    if request.method == "POST":
+        # Trigger sync in background
+        from django.contrib.auth.models import AnonymousUser
+        import threading
 
-    scanner = Top100Scanner(use_cache=True)
-    scan_result = scanner.scan(force_refresh=force_refresh)
+        def run_sync():
+            sync_market_data(force=True)
 
-    # Serialize results
-    top_picks_data = []
-    for pick in scan_result.top_picks[:5]:
-        top_picks_data.append({
-            "symbol": pick.symbol,
-            "master_score": pick.master_score,
-            "current_price": pick.current_price,
-            "change_percent": pick.change_percent,
-            "rsi": pick.rsi,
-            "adx": pick.adx,
-            "cmf": pick.cmf,
-            "atr": pick.atr,
-            "trend": pick.trend,
-            "breakout_status": pick.breakout_status,
-            "signal": pick.signal,
-            "is_short_term_qualified": pick.is_short_term_qualified,
-            "is_vetoed": pick.is_vetoed,
-            "veto_reason": pick.veto_reason,
-            "is_slow_mode": pick.is_slow_mode,
-            "estimated_days_to_target": pick.estimated_days_to_target,
-            "entry_price": pick.entry_price,
-            "stop_loss": pick.stop_loss,
-            "take_profit": pick.take_profit,
-            "risk_reward_ratio": pick.risk_reward_ratio,
-            "criteria_met": pick.criteria_met,
-            "criteria_list": pick.criteria_list,
+        thread = threading.Thread(target=run_sync)
+        thread.daemon = True
+        thread.start()
+
+        return JsonResponse({
+            "status": "started",
+            "message": "Đang đồng bộ dữ liệu 100 mã..."
         })
+
+    # GET: Lấy kết quả từ DB - CỰC NHANH
+    sync_status = get_sync_status()
+    top_picks = get_top_picks_from_db(limit=5)
+
+    from .models import StockAnalysis
+    total = StockAnalysis.objects.count()
+    vetoed = StockAnalysis.objects.filter(is_vetoed=True).count()
+    fast = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
+    market_rsi = top_picks[0]["market_rsi"] if top_picks else 50
 
     return JsonResponse({
         "status": "success",
-        "scan_time": scan_result.scan_time.isoformat(),
-        "market_status": scan_result.market_status,
-        "market_rsi": scan_result.market_rsi,
-        "top_picks": top_picks_data,
-        "bullish_count": scan_result.bullish_count,
-        "bearish_count": scan_result.bearish_count,
-        "breakout_count": scan_result.breakout_count,
-        "qualified_count": scan_result.qualified_count,
-        "fast_count": scan_result.fast_count,
-        "vetoed_count": scan_result.vetoed_count,
-        "high_risk_count": scan_result.high_risk_count,
-        "has_market_warning": scan_result.market_overbought_warning,
-        "market_warning_message": scan_result.market_warning_message,
-        "has_hot_pick": any(p.master_score >= 80 for p in scan_result.fast_picks),
+        "scan_time": sync_status.get("completed_at", "")[:19] if sync_status and sync_status.get("completed_at") else "N/A",
+        "market_status": "SELL ZONE" if market_rsi > 70 else "NEUTRAL",
+        "market_rsi": market_rsi,
+        "top_picks": top_picks,
+        "bullish_count": StockAnalysis.objects.filter(signal__in=["BUY", "STRONG_BUY"]).count(),
+        "fast_count": fast,
+        "vetoed_count": vetoed,
+        "high_risk_count": StockAnalysis.objects.filter(is_high_risk=True).count(),
+        "is_syncing": sync_status.get("is_running", False) if sync_status else False,
+        "sync_progress": sync_status.get("progress_percent", 0) if sync_status else 0,
+        "has_market_warning": market_rsi > 70,
+        "market_warning_message": f"⚠️ SELL ZONE - VNIndex RSI: {market_rsi:.0f}" if market_rsi > 70 else "",
+        "has_hot_pick": any(p["master_score"] >= 80 for p in top_picks),
     })
 
 
