@@ -236,11 +236,16 @@ class CryptoAnalyzer:
                 data.adx = float(adx.iloc[-1])
             
             # Bollinger
-            bb = indicator.bollinger_bands()
-            if bb is not None:
-                data.bollinger_upper = float(bb['upper'].iloc[-1]) if 'upper' in bb else 0
-                data.bollinger_middle = float(bb['middle'].iloc[-1]) if 'middle' in bb else 0
-                data.bollinger_lower = float(bb['lower'].iloc[-1]) if 'lower' in bb else 0
+            bb_df = indicator.bbands(length=20, std=2)
+            if bb_df is not None and hasattr(bb_df, 'columns'):
+                cols = list(bb_df.columns)
+                for col in cols:
+                    if 'BBL' in col.upper():
+                        data.bollinger_lower = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
+                    elif 'BBM' in col.upper():
+                        data.bollinger_middle = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
+                    elif 'BBU' in col.upper():
+                        data.bollinger_upper = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
             
             # VWAP
             if len(df) > 0:

@@ -143,7 +143,7 @@
             background: #0f172a;
             padding: 12px 16px;
             display: grid;
-            grid-template-columns: 60px 1fr 80px 120px 100px 100px 100px 100px 80px 80px;
+            grid-template-columns: 60px 1fr 80px 100px 90px 80px 80px 100px 80px 80px 80px;
             gap: 12px;
             font-weight: 600;
             color: #94a3b8;
@@ -153,7 +153,7 @@
         .trading-table-row {
             padding: 12px 16px;
             display: grid;
-            grid-template-columns: 60px 1fr 80px 120px 100px 100px 100px 100px 80px 80px;
+            grid-template-columns: 60px 1fr 80px 100px 90px 80px 80px 100px 80px 80px 80px;
             gap: 12px;
             border-bottom: 1px solid #1e293b;
             align-items: center;
@@ -214,6 +214,25 @@
         .rr-cell { color: #60a5fa; font-weight: 600; }
         .days-cell { color: #10b981; font-weight: 600; }
         .days-cell.slow { color: #f97316; font-weight: 600; }
+        .yield-cell { font-weight: 600; }
+        .yield-cell.up { color: #22c55e; }
+        .yield-cell.medium { color: #f59e0b; }
+        .yield-cell.down { color: #94a3b8; }
+        .profit-cell { font-weight: 600; }
+        .profit-cell.up { color: #22c55e; }
+        .profit-cell.medium { color: #f59e0b; }
+        .profit-cell.neutral { color: #94a3b8; }
+
+        .timeframe-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .timeframe-badge.fast { background: #166534; color: #4ade80; }
+        .timeframe-badge.swing { background: #1e3a5f; color: #60a5fa; }
+        .timeframe-badge.position { background: #78350f; color: #fb923c; }
 
         /* Pick Cards */
         .pick-card {
@@ -556,10 +575,11 @@
                 <div>Hạng</div>
                 <div>Mã CP</div>
                 <div>Score</div>
-                <div>Trạng thái</div>
+                <div>Timeframe</div>
+                <div>Target Yield</div>
                 <div>Est. Days</div>
                 <div>R:R</div>
-                <div>Criteria</div>
+                <div>Profit/Day</div>
                 <div>RSI</div>
                 <div>Entry</div>
                 <div>SL</div>
@@ -577,16 +597,17 @@
                     </div>
                 </div>
                 <div>
-                    <span class="breakout-badge {% if 'BREAKOUT' in stock.breakout_status %}breakout{% elif 'SLOW' in stock.breakout_status %}slow{% elif 'QUALIFIED' in stock.breakout_status %}qualified{% else %}retest{% endif %}">
-                        {{ stock.breakout_status }}
+                    <span class="timeframe-badge {% if stock.timeframe_label == 'Fast T+' %}fast{% elif stock.timeframe_label == 'Swing Pick' %}swing{% else %}position{% endif %}">
+                        {{ stock.timeframe_label|default:"N/A" }}
                     </span>
                 </div>
-                <div class="days-cell {% if stock.is_slow_mode %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
+                <div class="yield-cell {% if stock.target_yield_pct >= 5 %}up{% elif stock.target_yield_pct >= 3 %}medium{% else %}down{% endif %}">
+                    +{{ stock.target_yield_pct|floatformat:1 }}%
+                </div>
+                <div class="days-cell {% if stock.estimated_days_to_target > 15 %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
                 <div class="rr-cell">{{ stock.risk_reward_ratio|floatformat:1 }}</div>
-                <div>
-                    <span class="criteria-badge {% if stock.criteria_met >= 9 %}excellent{% elif stock.criteria_met >= 7 %}good{% else %}fair{% endif %}">
-                        {{ stock.criteria_met }}/10
-                    </span>
+                <div class="profit-cell {% if stock.profit_per_day >= 0.5 %}up{% elif stock.profit_per_day >= 0.3 %}medium{% else %}neutral{% endif %}">
+                    {{ stock.profit_per_day|floatformat:2 }}%
                 </div>
                 <div>{{ stock.rsi|floatformat:0 }}</div>
                 <div>{{ stock.entry_price|floatformat:0 }}</div>
@@ -606,10 +627,11 @@
             <div>Hạng</div>
             <div>Mã CP</div>
             <div>Score</div>
-            <div>Trạng thái</div>
+            <div>Timeframe</div>
+            <div>Target Yield</div>
             <div>Est. Days</div>
             <div>R:R</div>
-            <div>Criteria</div>
+            <div>Profit/Day</div>
             <div>RSI</div>
             <div>Entry</div>
             <div>SL</div>
@@ -627,16 +649,17 @@
                 </div>
             </div>
             <div>
-                <span class="breakout-badge {% if 'BREAKOUT' in stock.breakout_status %}breakout{% elif 'SLOW' in stock.breakout_status %}slow{% elif 'VETO' in stock.breakout_status %}veto{% elif 'QUALIFIED' in stock.breakout_status %}qualified{% else %}consolidation{% endif %}">
-                    {{ stock.breakout_status }}
+                <span class="timeframe-badge {% if stock.timeframe_label == 'Fast T+' %}fast{% elif stock.timeframe_label == 'Swing Pick' %}swing{% else %}position{% endif %}">
+                    {{ stock.timeframe_label|default:"N/A" }}
                 </span>
             </div>
-            <div class="days-cell {% if stock.is_slow_mode %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
+            <div class="yield-cell {% if stock.target_yield_pct >= 5 %}up{% elif stock.target_yield_pct >= 3 %}medium{% else %}down{% endif %}">
+                +{{ stock.target_yield_pct|floatformat:1 }}%
+            </div>
+            <div class="days-cell {% if stock.estimated_days_to_target > 15 %}slow{% endif %}">{{ stock.estimated_days_to_target|floatformat:1 }}d</div>
             <div class="rr-cell">{{ stock.risk_reward_ratio|floatformat:1 }}</div>
-            <div>
-                <span class="criteria-badge {% if stock.criteria_met >= 9 %}excellent{% elif stock.criteria_met >= 7 %}good{% else %}fair{% endif %}">
-                    {{ stock.criteria_met }}/10
-                </span>
+            <div class="profit-cell {% if stock.profit_per_day >= 0.5 %}up{% elif stock.profit_per_day >= 0.3 %}medium{% else %}neutral{% endif %}">
+                {{ stock.profit_per_day|floatformat:2 }}%
             </div>
             <div>{{ stock.rsi|floatformat:0 }}</div>
             <div>{{ stock.entry_price|floatformat:0 }}</div>
@@ -687,7 +710,6 @@
                 <div class="level-card entry">
                     <div class="level-label">Entry</div>
                     <div class="level-value">{{ pick.entry_price|floatformat:0 }}</div>
-                    <div class="level-change {% if pick.change_percent >= 0 %}up{% else %}down{% endif %}">{% if pick.change_percent >= 0 %}+{% endif %}{{ pick.change_percent|floatformat:2 }}%</div>
                 </div>
                 <div class="level-card sl">
                     <div class="level-label">Stop Loss</div>
@@ -698,8 +720,8 @@
                     <div class="level-value">{{ pick.take_profit|floatformat:0 }}</div>
                 </div>
                 <div class="level-card rr">
-                    <div class="level-label">Risk:Reward</div>
-                    <div class="level-value">{{ pick.risk_reward_ratio|floatformat:1 }}:1</div>
+                    <div class="level-label">Target Yield</div>
+                    <div class="level-value" style="color: #22c55e;">+{{ pick.target_yield_pct|floatformat:1 }}%</div>
                 </div>
                 <div class="level-card days">
                     <div class="level-label">Est. Days</div>
@@ -708,6 +730,10 @@
             </div>
 
             <div class="pick-metrics">
+                <div class="metric">
+                    <div class="metric-value" style="color: #22c55e;">{{ pick.profit_per_day|floatformat:2 }}%</div>
+                    <div class="metric-label">Profit/Day</div>
+                </div>
                 <div class="metric">
                     <div class="metric-value">{{ pick.rsi|floatformat:0 }}</div>
                     <div class="metric-label">RSI(14)</div>
@@ -724,9 +750,32 @@
                     <div class="metric-value {% if pick.volume_ratio > 1.3 %}up{% endif %}">{{ pick.volume_ratio|floatformat:1 }}x</div>
                     <div class="metric-label">Volume</div>
                 </div>
+            </div>
+
+            <div class="pick-metrics">
                 <div class="metric">
                     <div class="metric-value">{{ pick.atr|floatformat:0 }}</div>
                     <div class="metric-label">ATR(14)</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ pick.risk_reward_ratio|floatformat:1 }}:1</div>
+                    <div class="metric-label">R:R Ratio</div>
+                </div>
+                <div class="metric">
+                    <span class="timeframe-badge {% if pick.timeframe_label == 'Fast T+' %}fast{% elif pick.timeframe_label == 'Swing Pick' %}swing{% else %}position{% endif %}">
+                        {{ pick.timeframe_label|default:"N/A" }}
+                    </span>
+                    <div class="metric-label">Timeframe</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value {% if pick.profit_growth and pick.profit_growth > 0 %}up{% elif pick.profit_growth and pick.profit_growth < 0 %}down{% endif %}">
+                        {% if pick.profit_growth %}{{ pick.profit_growth|floatformat:0 }}%{% else %}N/A{% endif %}
+                    </div>
+                    <div class="metric-label">LN Growth</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value {% if pick.profit_growth and pick.profit_growth > 0 %}up{% endif %}">{{ pick.master_score }}</div>
+                    <div class="metric-label">Master Score</div>
                 </div>
             </div>
 
@@ -743,11 +792,11 @@
                 <div class="criteria-list">
                     <div class="criteria-item">
                         <span class="{% if pick.rsi >= 50 and pick.rsi <= 65 %}check{% else %}cross{% endif %}">{% if pick.rsi >= 50 and pick.rsi <= 65 %}✓{% else %}✗{% endif %}</span>
-                        <span class="text">RSI Sweet Spot</span>
+                        <span class="text">RSI Sweet Spot (50-65)</span>
                     </div>
                     <div class="criteria-item">
                         <span class="{% if pick.adx > 20 %}check{% else %}cross{% endif %}">{% if pick.adx > 20 %}✓{% else %}✗{% endif %}</span>
-                        <span class="text">ADX Strong</span>
+                        <span class="text">ADX Strong (>20)</span>
                     </div>
                     <div class="criteria-item">
                         <span class="{% if pick.plus_di > pick.minus_di %}check{% else %}cross{% endif %}">{% if pick.plus_di > pick.minus_di %}✓{% else %}✗{% endif %}</span>
@@ -762,7 +811,7 @@
                         <span class="text">Volume > 1x</span>
                     </div>
                     <div class="criteria-item">
-                        <span class="{% if pick.current_price > pick.sma_20 and pick.sma_20 > 0 %}check{% else %}cross{% endif %}">{% if pick.current_price > pick.sma_20 and pick.sma_20 > 0 %}✓{% else %}✗{% endif %}</span>
+                        <span class="{% if pick.price > pick.sma_20 and pick.sma_20 > 0 %}check{% else %}cross{% endif %}">{% if pick.price > pick.sma_20 and pick.sma_20 > 0 %}✓{% else %}✗{% endif %}</span>
                         <span class="text">Price > SMA20</span>
                     </div>
                     <div class="criteria-item">
@@ -776,6 +825,10 @@
                     <div class="criteria-item">
                         <span class="{% if pick.estimated_days_to_target <= 10 and pick.estimated_days_to_target > 0 %}check{% else %}cross{% endif %}">{% if pick.estimated_days_to_target <= 10 and pick.estimated_days_to_target > 0 %}✓{% else %}✗{% endif %}</span>
                         <span class="text">Holding ≤ 10d</span>
+                    </div>
+                    <div class="criteria-item">
+                        <span class="{% if pick.target_yield_pct >= 5 %}check{% else %}cross{% endif %}">{% if pick.target_yield_pct >= 5 %}✓{% else %}✗{% endif %}</span>
+                        <span class="text">Target Yield ≥ 5%</span>
                     </div>
                 </div>
                 {% endif %}
@@ -860,10 +913,12 @@
     {# Legend #}
     <div style="background:#1e293b;border-radius:8px;padding:16px;margin-top:20px;color:#64748b;font-size:12px;">
         <strong style="color:#94a3b8;">📖 Hướng dẫn:</strong><br>
-        • <strong>EXCELLENT (9/10)</strong>: Thỏa mãn gần như tất cả tiêu chí - Ưu tiên cao nhất<br>
-        • <strong>FAST (≤10 ngày)</strong>: Holding period ≤ 10 ngày - Phù hợp cho T+ Swing Trading<br>
-        • <strong>SLOW (>10 ngày)</strong>: Holding period > 10 ngày - Cần thận trọng hơn<br>
-        • <strong>Est. Days</strong>: Ước tính số ngày để đạt Take Profit = (TP - Entry) / ATR<br>
+        • <strong>Target Yield (%)</strong>: Lợi nhuận kỳ vọng = (Take Profit - Entry) / Entry × 100
+        <span style="color:#94a3b8;">→</span> (TP - Entry) / Entry × 100<br>
+        • <strong>Est. Days</strong>: Ước tính số ngày = (TP - Entry) / (ATR × Trend Factor)<br>
+        &nbsp;&nbsp;&nbsp;Trend Factor: ADX > 25 → 0.8 (mạnh) | ADX < 20 → 0.4 (yếu) | 20-25 → 0.6<br>
+        • <strong>Profit/Day</strong>: Target Yield / Est. Days - Mã nào cao nhất sẽ ưu tiên hiển thị<br>
+        • <strong>Timeframe</strong>: Fast T+ (≤5d) | Swing Pick (6-15d) | Position (>15d)<br>
         • <strong>R:R</strong>: Risk:Reward Ratio - Nên chọn R:R ≥ 2:1<br>
         ⚠️ <strong style="color:#f59e0b;">Lưu ý</strong>: Hệ thống này chỉ mang tính tham khảo. Hãy tự nghiên cứu trước khi đầu tư.
     </div>

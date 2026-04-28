@@ -180,6 +180,9 @@
         .badge-fast { background: #f59e0b; color: #000; }
         .badge-high-risk { background: #dc2626; color: #fff; }
         .badge-qualified { background: #8b5cf6; color: #fff; }
+        .badge-very-low { background: #10b981; color: #fff; }
+        .badge-low { background: #22c55e; color: #fff; }
+        .badge-medium { background: #f59e0b; color: #000; }
 
         .score-bar {
             width: 50px;
@@ -385,6 +388,37 @@
             margin-top: 2px;
         }
         .vwap-distance.far { color: #f59e0b; }
+
+        /* Timeframe badges */
+        .timeframe-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .timeframe-emerald {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: #fff;
+        }
+        .timeframe-sky {
+            background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+            color: #fff;
+        }
+        .timeframe-amber {
+            background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+            color: #fff;
+        }
+
+        /* Profit/Day badge */
+        .profit-badge {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .profit-high { color: #22c55e; }
+        .profit-medium { color: #3b82f6; }
+        .profit-low { color: #94a3b8; }
     </style>
 </head>
 <body>
@@ -490,18 +524,18 @@
                         <th>Mã</th>
                         <th>Nhóm</th>
                         <th>Giá</th>
-                        <th>Thay Đổi</th>
+                        <th>Target Yield</th>
+                        <th>%/Day</th>
                         <th>Score</th>
                         <th>Signal</th>
                         <th>Criteria</th>
                         <th>R:R</th>
                         <th>RSI</th>
-                        <th>ADX</th>
                         <th>CMF</th>
-                        <th>VWAP</th>
                         <th>Cloud</th>
                         <th>ROE</th>
                         <th>F-Score</th>
+                        <th>Timeframe</th>
                         <th>Trạng Thái</th>
                     </tr>
                 </thead>
@@ -514,6 +548,7 @@
                         data-market-group="{{ stock.market_group }}"
                         data-price="{{ stock.price }}"
                         data-change="{{ stock.change_percent }}"
+                        data-target-yield="{{ stock.target_yield_pct }}"
                         data-score="{{ stock.master_score }}"
                         data-tech-score="{{ stock.technical_score }}"
                         data-fund-score="{{ stock.fundamental_score }}"
@@ -536,6 +571,7 @@
                         data-pe="{{ stock.pe }}"
                         data-pb="{{ stock.pb }}"
                         data-fscore="{{ stock.f_score }}"
+                        data-profit-growth="{{ stock.profit_growth|default:'' }}"
                         data-trend="{{ stock.trend }}"
                         data-sma10="{{ stock.sma_10 }}"
                         data-sma20="{{ stock.sma_20 }}"
@@ -553,7 +589,13 @@
                         data-fast="{{ stock.is_fast_pick|yesno:'true,false' }}"
                         data-high-risk="{{ stock.is_high_risk|yesno:'true,false' }}"
                         data-days="{{ stock.estimated_days_to_target }}"
+                        data-timeframe-label="{{ stock.timeframe_label }}"
+                        data-timeframe-color="{{ stock.timeframe_color }}"
+                        data-profit-per-day="{{ stock.expected_profit_per_day }}"
+                        data-upside-per-day="{{ stock.upside_per_day }}"
                         data-market-rsi="{{ stock.market_rsi }}"
+                        data-is-market-high-risk="{{ stock.is_market_high_risk|yesno:'true,false' }}"
+                        data-stock-risk-level="{{ stock.stock_risk_level }}"
                         onclick="openStockModalFromRow(this)">
                         <td>{{ forloop.counter }}</td>
                         <td>
@@ -568,8 +610,12 @@
                             {% endif %}
                         </td>
                         <td>{{ stock.price|floatformat:1 }}</td>
-                        <td class="{% if stock.change_percent >= 0 %}positive{% else %}negative{% endif %}">
-                            {% if stock.change_percent >= 0 %}+{% endif %}{{ stock.change_percent|floatformat:2 }}%
+                        <td class="{% if stock.target_yield_pct >= 5 %}positive{% elif stock.target_yield_pct >= 3 %}neutral{% else %}negative{% endif %}">
+                            +{{ stock.target_yield_pct|floatformat:1 }}%
+                        </td>
+                        <td class="{% if stock.upside_per_day > 0 %}positive{% elif stock.upside_per_day < 0 %}negative{% endif %}">
+                            {% if stock.upside_per_day > 0 %}+{% endif %}{{ stock.upside_per_day|floatformat:2 }}%
+                            <div style="font-size: 9px; color: #64748b;">{{ stock.expected_profit_per_day|floatformat:0 }}/ngày</div>
                         </td>
                         <td>
                             <span class="score-bar">
@@ -596,9 +642,6 @@
                         <td class="{% if stock.cmf > 0 %}positive{% elif stock.cmf < 0 %}negative{% endif %}">
                             {{ stock.cmf|floatformat:3 }}
                         </td>
-                        <td class="{% if stock.vwap_status == 'above' %}positive{% elif stock.vwap_status == 'below' %}negative{% endif %}">
-                            {% if stock.vwap > 0 %}{{ stock.vwap|floatformat:0 }}{% else %}-{% endif %}
-                        </td>
                         <td>
                             {% if stock.ichimoku_status == 'bullish' %}<span class="positive">🟢</span>
                             {% elif stock.ichimoku_status == 'bearish' %}<span class="negative">🔴</span>
@@ -613,10 +656,25 @@
                             </span>
                         </td>
                         <td>
+                            {% if stock.timeframe_label %}
+                                <span class="timeframe-badge timeframe-{{ stock.timeframe_color }}">
+                                    {{ stock.timeframe_label }}
+                                </span>
+                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
+                                    {{ stock.estimated_days_to_target|floatformat:1 }} phiên
+                                </div>
+                            {% else %}
+                                {{ stock.estimated_days_to_target|floatformat:0 }}
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if stock.is_vetoed %}
                                 <span class="badge badge-veto">VETO</span>
-                            {% elif stock.is_high_risk %}
-                                <span class="badge badge-high-risk">HIGH RISK</span>
+                            {% elif stock.is_market_high_risk %}
+                                <span class="badge badge-high-risk">MKT: DANGER</span>
+                                <span class="badge badge-{{ stock.stock_risk_level|lower }}">{{ stock.stock_risk_level }}</span>
+                            {% elif stock.stock_risk_level == 'High' %}
+                                <span class="badge badge-high-risk">STOCK: HIGH</span>
                             {% elif stock.is_fast_pick %}
                                 <span class="badge badge-fast">FAST</span>
                             {% elif stock.criteria_met >= 9 %}
@@ -624,7 +682,7 @@
                             {% elif stock.criteria_met >= 7 %}
                                 <span class="badge badge-buy">QUALIFIED</span>
                             {% else %}
-                                -
+                                <span class="badge badge-wait">{{ stock.stock_risk_level }}</span>
                             {% endif %}
                         </td>
                     </tr>
@@ -659,6 +717,7 @@
                 market_group: row.dataset.marketGroup || 'MIDCAP',
                 price: parseFloat(row.dataset.price) || 0,
                 change_percent: parseFloat(row.dataset.change) || 0,
+                target_yield_pct: parseFloat(row.dataset.targetYield) || 0,
                 master_score: parseInt(row.dataset.score) || 0,
                 technical_score: parseInt(row.dataset.techScore) || 0,
                 fundamental_score: parseInt(row.dataset.fundScore) || 0,
@@ -684,6 +743,7 @@
                 pe: row.dataset.pe ? parseFloat(row.dataset.pe) : null,
                 pb: row.dataset.pb ? parseFloat(row.dataset.pb) : null,
                 f_score: parseInt(row.dataset.fscore) || 0,
+                profit_growth: row.dataset.profitGrowth ? parseFloat(row.dataset.profitGrowth) : null,
                 trend: row.dataset.trend || 'WAIT',
                 sma_10: parseFloat(row.dataset.sma10) || 0,
                 sma_20: parseFloat(row.dataset.sma20) || 0,
@@ -698,7 +758,13 @@
                 is_fast_pick: row.dataset.fast === 'true',
                 is_high_risk: row.dataset.highRisk === 'true',
                 estimated_days: parseFloat(row.dataset.days) || 0,
+                timeframe_label: row.dataset.timeframeLabel || '',
+                timeframe_color: row.dataset.timeframeColor || '',
+                expected_profit_per_day: parseFloat(row.dataset.profitPerDay) || 0,
+                upside_per_day: parseFloat(row.dataset.upsidePerDay) || 0,
                 market_rsi: parseFloat(row.dataset.marketRsi) || 50,
+                is_market_high_risk: row.dataset.isMarketHighRisk === 'true',  // NEW
+                stock_risk_level: row.dataset.stockRiskLevel || 'Medium',  // NEW
             };
             showModal(stockData);
         }
@@ -715,8 +781,10 @@
             document.getElementById('modalSymbol').textContent = stockData.symbol;
             document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
             document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
-            document.getElementById('modalChange').textContent = (stockData.change_percent >= 0 ? '+' : '') + stockData.change_percent.toFixed(2) + '%';
-            document.getElementById('modalChange').className = 'change ' + (stockData.change_percent >= 0 ? 'positive' : 'negative');
+            // Target Yield (thay vì change_percent)
+            const targetYield = stockData.target_yield_pct || 0;
+            document.getElementById('modalChange').textContent = (targetYield >= 0 ? '+' : '') + targetYield.toFixed(1) + '%';
+            document.getElementById('modalChange').className = 'change ' + (targetYield >= 0 ? 'positive' : 'negative');
 
             // Scores
             document.getElementById('modalScore').textContent = stockData.master_score + '/100';
@@ -732,6 +800,21 @@
             document.getElementById('modalSL').textContent = formatNumber(stockData.stop_loss, 1);
             document.getElementById('modalTP').textContent = formatNumber(stockData.take_profit, 1);
             document.getElementById('modalRR').textContent = stockData.risk_reward_ratio.toFixed(2);
+
+            // Investment Horizon
+            const timeframeLabelEl = document.getElementById('modalTimeframeLabel');
+            const estDaysEl = document.getElementById('modalEstDays');
+            const profitPerDayEl = document.getElementById('modalProfitPerDay');
+            const upsidePerDayEl = document.getElementById('modalUpsidePerDay');
+
+            if (stockData.timeframe_label) {
+                timeframeLabelEl.textContent = stockData.timeframe_label;
+                timeframeLabelEl.className = 'value ' + (stockData.timeframe_color === 'emerald' ? 'positive' : stockData.timeframe_color === 'sky' ? '' : '');
+                timeframeLabelEl.style.color = stockData.timeframe_color === 'emerald' ? '#22c55e' : stockData.timeframe_color === 'sky' ? '#3b82f6' : '#f59e0b';
+            }
+            estDaysEl.textContent = stockData.estimated_days > 0 ? stockData.estimated_days.toFixed(1) + ' phiên' : 'N/A';
+            profitPerDayEl.textContent = stockData.expected_profit_per_day > 0 ? '+' + formatNumber(stockData.expected_profit_per_day, 0) + '/ngày' : 'N/A';
+            upsidePerDayEl.textContent = stockData.upside_per_day > 0 ? '+' + stockData.upside_per_day.toFixed(2) + '%' : 'N/A';
 
             // Technical Indicators
             document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
@@ -785,9 +868,46 @@
             document.getElementById('modalROE').textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
             document.getElementById('modalPE').textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
             document.getElementById('modalPB').textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+            // Profit Growth
+            const profitGrowthEl = document.getElementById('modalProfitGrowth');
+            if (stockData.profit_growth !== null && stockData.profit_growth !== undefined) {
+                const pg = stockData.profit_growth;
+                profitGrowthEl.textContent = (pg >= 0 ? '+' : '') + pg.toFixed(1) + '%';
+                profitGrowthEl.className = 'value ' + (pg >= 0 ? 'positive' : 'negative');
+            } else {
+                profitGrowthEl.textContent = 'N/A';
+                profitGrowthEl.className = 'value neutral';
+            }
 
             // Market RSI
             document.getElementById('modalMarketRSI').textContent = stockData.market_rsi.toFixed(0);
+
+            // Risk Assessment
+            const marketRiskEl = document.getElementById('modalMarketRisk');
+            if (stockData.is_market_high_risk) {
+                marketRiskEl.textContent = 'Danger 🚨';
+                marketRiskEl.className = 'value negative';
+            } else {
+                marketRiskEl.textContent = 'Safe ✅';
+                marketRiskEl.className = 'value positive';
+            }
+
+            const stockRiskEl = document.getElementById('modalStockRisk');
+            stockRiskEl.textContent = stockData.stock_risk_level || 'Medium';
+            if (stockData.stock_risk_level === 'High' || stockData.stock_risk_level === 'Medium') {
+                stockRiskEl.className = 'value negative';
+            } else {
+                stockRiskEl.className = 'value positive';
+            }
+
+            // Risk Reason
+            const riskReasonEl = document.getElementById('modalRiskReason');
+            let riskReasonText = '';
+            if (stockData.is_market_high_risk) {
+                riskReasonText += '⚠️ Thị trường chung đang quá mua (VNIndex RSI > 80). ';
+            }
+            riskReasonText += '📊 Stock Risk: ' + (stockData.stock_risk_level || 'Medium');
+            riskReasonEl.textContent = riskReasonText;
 
             // AI Verdict
             const verdictEl = document.getElementById('modalVerdict');
@@ -807,23 +927,39 @@
             // Badges
             const badgesContainer = document.getElementById('modalBadges');
             badgesContainer.innerHTML = '';
+            
+            // Market Risk Badge
+            if (stockData.is_market_high_risk) {
+                badgesContainer.innerHTML += '<span class="badge badge-high-risk">Market: Danger 🚨</span>';
+            } else {
+                badgesContainer.innerHTML += '<span class="badge badge-buy">Market: Safe ✅</span>';
+            }
+            
+            // Stock Risk Badge
+            const riskColors = {
+                'Very Low': 'badge-buy',
+                'Low': 'badge-buy',
+                'Medium': 'badge-wait',
+                'High': 'badge-high-risk'
+            };
+            const riskColorClass = riskColors[stockData.stock_risk_level] || 'badge-wait';
+            badgesContainer.innerHTML += `<span class="badge ${riskColorClass}">Stock Risk: ${stockData.stock_risk_level}</span>`;
+            
+            // Veto Badge
             if (stockData.is_vetoed) {
                 badgesContainer.innerHTML += '<span class="badge badge-veto">VETO: ' + stockData.veto_reason + '</span>';
             }
+            // Fast Pick Badge
             if (stockData.is_fast_pick) {
                 badgesContainer.innerHTML += '<span class="badge badge-fast">FAST PICK</span>';
             }
-            if (stockData.is_high_risk) {
-                badgesContainer.innerHTML += '<span class="badge badge-high-risk">HIGH RISK</span>';
-            }
-            if (stockData.price < stockData.sma_50 && stockData.sma_50 > 0) {
-                badgesContainer.innerHTML += '<span class="badge badge-veto">RISKY: Below SMA50</span>';
-            }
+            // Criteria Badge
             if (stockData.criteria_met >= 9) {
                 badgesContainer.innerHTML += '<span class="badge badge-qualified">EXCELLENT</span>';
             } else if (stockData.criteria_met >= 7) {
                 badgesContainer.innerHTML += '<span class="badge badge-qualified">QUALIFIED</span>';
             }
+            // Days Badge
             if (stockData.estimated_days > 0) {
                 badgesContainer.innerHTML += '<span class="badge badge-buy">' + stockData.estimated_days.toFixed(0) + ' ngày</span>';
             }
@@ -871,6 +1007,11 @@
             closeModal();
         }
 
+        function exportDetail() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            window.location.href = '/stocks/' + symbol + '/export/';
+        }
+
         function formatNumber(num, decimals = 0) {
             if (num === null || num === undefined || isNaN(num)) return 'N/A';
             return num.toLocaleString('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
@@ -913,7 +1054,8 @@
                 </div>
                 <div class="modal-price">
                     <div class="price" id="modalPrice">95,000</div>
-                    <div class="change positive" id="modalChange">+2.5%</div>
+                    <div class="label" style="color: #94a3b8; font-size: 10px;">Target Yield</div>
+                    <div class="change positive" id="modalChange" style="font-size: 18px;">+2.5%</div>
                 </div>
             </div>
 
@@ -958,7 +1100,22 @@
                         <div class="value" id="modalMarketRSI">55</div>
                     </div>
                 </div>
-                <div class="modal-badges" id="modalBadges"></div>
+            </div>
+
+            <!-- Risk Assessment -->
+            <div class="modal-section" id="modalRiskSection">
+                <h3>Rủi Ro Đánh Giá</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Market Risk</div>
+                        <div class="value" id="modalMarketRisk">Safe ✅</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Stock Risk</div>
+                        <div class="value" id="modalStockRisk">Low</div>
+                    </div>
+                </div>
+                <div id="modalRiskReason" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; font-size: 12px; color: #94a3b8;"></div>
             </div>
 
             <!-- Criteria List -->
@@ -968,7 +1125,13 @@
                 </div>
             </div>
 
-            <!-- Trading Levels -->
+            <!-- Badges -->
+            <div class="modal-section" style="margin-bottom: 20px;">
+                <div id="modalBadges" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                </div>
+            </div>
+
+            <!-- Mức Giao Dịch & Investment Horizon -->
             <div class="modal-section">
                 <h3>Mức Giao Dịch</h3>
                 <div class="modal-grid">
@@ -988,6 +1151,32 @@
                         <div class="label">R:R Ratio</div>
                         <div class="value" id="modalRR">2.5</div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Investment Horizon -->
+            <div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="color: #f8fafc; margin-bottom: 12px;">📊 Investment Horizon</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Khung Thời Gian</div>
+                        <div class="value" id="modalTimeframeLabel" style="font-size: 16px;">Swing Trading</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Est. Days</div>
+                        <div class="value" id="modalEstDays">7.5</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Lợi Nhuận Dự Kiến</div>
+                        <div class="value positive" id="modalProfitPerDay">+850/ngày</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">% Upside / Ngày</div>
+                        <div class="value" id="modalUpsidePerDay">0.85%</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155; font-size: 11px; color: #64748b;">
+                    💡 Đưa trên biên động ATR trung bình 14 phiên
                 </div>
             </div>
 
@@ -1111,11 +1300,16 @@
                         <div class="label">P/B</div>
                         <div class="value" id="modalPB">2.1</div>
                     </div>
+                    <div class="modal-item">
+                        <div class="label">Tăng trưởng LN</div>
+                        <div class="value" id="modalProfitGrowth">+15.2%</div>
+                    </div>
                 </div>
             </div>
 
             <div class="modal-actions">
                 <button class="modal-btn primary" onclick="runAnalysis()">🔍 Phân Tích Chi Tiết</button>
+                <button class="modal-btn secondary" onclick="exportDetail()">📥 Export Detail</button>
                 <button class="modal-btn secondary" onclick="addToWatchlist()">⭐ Thêm Vào Watchlist</button>
                 <button class="modal-btn secondary" onclick="closeModal()">Đóng</button>
             </div>

@@ -65,14 +65,15 @@ def get_company_name(symbol: str) -> str:
 def get_fundamental_data(symbol: str) -> Dict[str, Any]:
     """
     Lấy dữ liệu cơ bản từ vnstock_data (Unified API) hoặc vnstock fallback
-    Returns: {roe, pe, pb, f_score, f_score_grade}
+    Returns: {roe, pe, pb, f_score, f_score_grade, profit_growth}
     """
     result = {
         "roe": None,
         "pe": None,
         "pb": None,
         "f_score": 0,
-        "f_score_grade": "N/A"
+        "f_score_grade": "N/A",
+        "profit_growth": None,  # NEW: Quý gần nhất vs cùng kỳ năm trước
     }
 
     def safe_float(val):
@@ -192,11 +193,80 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
     if result['roe'] is None and result['pe'] and result['pb'] and result['pe'] > 0:
         result['roe'] = round((result['pb'] / result['pe']) * 100, 2)
 
+    # NEW: Calculate Profit Growth from income statement (latest quarter vs same quarter last year)
+    result['profit_growth'] = calculate_profit_growth(symbol)
+
     # Calculate F-Score
     result['f_score'] = calculate_f_score(symbol, result)
     result['f_score_grade'] = get_f_score_grade(result['f_score'])
 
     return result
+
+
+def calculate_profit_growth(symbol: str) -> Optional[float]:
+    """
+    Calculate profit growth: (LNST quý gần nhất / LNST quý cùng kỳ năm trước) - 1
+    Returns growth percentage or None if unavailable
+    """
+    try:
+        from vnstock_data import Fundamental
+        import warnings as w
+        w.filterwarnings('ignore')
+
+        fun = Fundamental()
+        income = fun.equity(symbol).income_statement(limit=8)
+
+        if income is None or len(income) < 4:
+            return None
+
+        # Find net profit column
+        net_profit_col = None
+        for col in income.columns:
+            col_lower = str(col).lower()
+            if ('net' in col_lower and 'profit' in col_lower) or 'lnst' in col_lower:
+                net_profit_col = col
+                break
+
+        if net_profit_col is None:
+            return None
+
+        # Index 0 = newest, index 1 = prev quarter, index 4 = same quarter last year (roughly)
+        # Get quarter index from first row
+        latest_date = income.index[0]
+        latest_profit = income.loc[latest_date, net_profit_col]
+
+        if latest_profit is None or float(latest_profit) <= 0:
+            return None
+
+        # Find same quarter last year - iterate through rows to match quarter
+        import pandas as pd
+        if isinstance(latest_date, str):
+            latest_dt = pd.to_datetime(latest_date)
+        else:
+            latest_dt = latest_date
+
+        same_quarter_last_year = None
+        for i in range(1, min(5, len(income))):
+            row_date = income.index[i]
+            if isinstance(row_date, str):
+                row_dt = pd.to_datetime(row_date)
+            else:
+                row_dt = row_date
+
+            # Check if same quarter (quarter number should match)
+            if (latest_dt.month // 4) == (row_dt.month // 4) and latest_dt.year == row_dt.year + 1:
+                same_quarter_last_year = income.loc[row_date, net_profit_col]
+                break
+
+        if same_quarter_last_year is None or float(same_quarter_last_year) <= 0:
+            return None
+
+        growth = (float(latest_profit) / float(same_quarter_last_year)) - 1
+        return round(growth * 100, 2)  # Return as percentage
+
+    except Exception as e:
+        pass
+    return None
 
 
 def calculate_f_score(symbol: str, fund_data: dict = None) -> int:
@@ -511,15 +581,16 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
 
             # Bollinger
             try:
-                bb_df = ind.bollinger_bands()
+                bb_df = ind.bbands(length=20, std=2)
                 if bb_df is not None and len(bb_df) > 0 and hasattr(bb_df, 'columns'):
                     cols = list(bb_df.columns)
-                    if len(cols) >= 3:
-                        result["bb_lower"] = round(float(bb_df[cols[0]].iloc[-1]), 2)
-                        result["bb_middle"] = round(float(bb_df[cols[1]].iloc[-1]), 2)
-                        result["bb_upper"] = round(float(bb_df[cols[2]].iloc[-1]), 2)
-                    elif len(cols) == 1:
-                        result["bb_middle"] = round(float(bb_df[cols[0]].iloc[-1]), 2)
+                    for col in cols:
+                        if 'BBL' in col.upper():
+                            result["bb_lower"] = round(float(bb_df[col].iloc[-1]), 2)
+                        elif 'BBM' in col.upper():
+                            result["bb_middle"] = round(float(bb_df[col].iloc[-1]), 2)
+                        elif 'BBU' in col.upper():
+                            result["bb_upper"] = round(float(bb_df[col].iloc[-1]), 2)
 
                     if result["bb_upper"] > result["bb_lower"]:
                         result["bb_percent"] = round((result["price"] - result["bb_lower"]) / (result["bb_upper"] - result["bb_lower"]) * 100, 1)
@@ -724,14 +795,53 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             stop_loss = round(entry * 0.97, 2)
             take_profit = round(entry * 1.09, 2)
 
-        # Est Days
-        if atr_value > 0:
-            price_diff = take_profit - entry
-            est_days = max(price_diff / atr_value, 1)
-            if market_rsi > 80:
-                est_days += 5
+        # ========== NEW: Target Yield & Est. Days với ADX Trend Factor ==========
+        # Target Yield %: Lợi nhuận kỳ vọng từ Entry tới Take Profit
+        target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
+        
+        # Trend Factor dựa trên ADX (uy tín của xu hướng)
+        adx_val = tech["adx"]
+        if adx_val > 25:
+            trend_factor = 0.8  # Xu hướng mạnh - giá đạt mục tiêu nhanh
+        elif adx_val < 20:
+            trend_factor = 0.4  # Sideways - giá đi dắt dẻo
         else:
-            est_days = 5
+            trend_factor = 0.6  # Trung gian
+        
+        # Est. Days với Trend Factor
+        price_diff = take_profit - entry
+        if atr_value > 0 and atr_value < entry:  # Valid ATR in price units
+            est_days = price_diff / (atr_value * trend_factor)
+        elif atr_value > 0:
+            # ATR might be percentage (value >= entry means it's a ratio)
+            atr_pct = atr_value / entry if entry > 0 else 0.02
+            est_days = price_diff / (atr_value * trend_factor)  # Still use atr_value as base
+        else:
+            est_days = price_diff / (entry * 0.02 * trend_factor) if entry > 0 else 10
+        
+        # Clamp: min 1 day, max 30 days
+        est_days = min(max(est_days, 1), 30)
+        
+        # Timeframe Label dựa trên Est. Days (mới)
+        if est_days <= 5:
+            timeframe_label = "Fast T+"
+            timeframe_color = "emerald"
+        elif est_days <= 15:
+            timeframe_label = "Swing Pick"
+            timeframe_color = "sky"
+        else:
+            timeframe_label = "Position"
+            timeframe_color = "amber"
+        
+        # Profit/Day = Target Yield % / Est. Days
+        profit_per_day = round(target_yield_pct / est_days, 2) if est_days > 0 else 0
+        
+        # DEBUG: Log values for first few symbols
+        if not hasattr(analyze_stock, '_call_count'):
+            analyze_stock._call_count = 0
+        analyze_stock._call_count += 1
+        if analyze_stock._call_count <= 5:
+            print(f"[DEBUG {symbol}] Entry={entry}, TP={take_profit}, ATR={atr_value}, ADX={adx_val}, Factor={trend_factor}, TargetYield={target_yield_pct}%, EstDays={est_days}, Profit/Day={profit_per_day}")
 
         # CRITERIA - Calculate BEFORE veto
         criteria = []
@@ -894,8 +1004,34 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             elif fund_data['roe'] < 5:
                 fund_score = max(0, fund_score - 15)
 
-        # HIGH RISK - Auto when VNIndex RSI > 80 OR Price below SMA50
-        is_high_risk = market_rsi > 80 or (tech["sma_50"] > 0 and tech["price"] < tech["sma_50"])
+        # ========== RISK ASSESSMENT - SEPARATED ==========
+        # Market Risk (thị trường chung) - VNIndex RSI
+        is_market_high_risk = market_rsi > 80
+        
+        # Stock Risk (rủi ro riêng mã) - Dựa trên khoảng cách từ giá tới Stop Loss
+        # Nếu SL cách xa > 5% so với giá -> High Risk
+        sl_distance_pct = ((entry - stop_loss) / entry) * 100 if entry > 0 else 0
+        
+        if sl_distance_pct > 7:
+            stock_risk_level = "High"
+            stock_risk_reason = f"SL cách xa {sl_distance_pct:.1f}%"
+        elif sl_distance_pct > 5:
+            stock_risk_level = "Medium"
+            stock_risk_reason = f"SL cách xa {sl_distance_pct:.1f}%"
+        elif sl_distance_pct > 3:
+            stock_risk_level = "Low"
+            stock_risk_reason = f"SL cách xa {sl_distance_pct:.1f}%"
+        else:
+            stock_risk_level = "Very Low"
+            stock_risk_reason = f"SL gần {sl_distance_pct:.1f}%"
+        
+        # Additional risk check: Price below SMA50 = elevated stock risk
+        if tech["sma_50"] > 0 and tech["price"] < tech["sma_50"]:
+            stock_risk_level = "High"
+            stock_risk_reason = "Giá dưới SMA50 (xu hướng dài hạn giảm)"
+        
+        # Overall High Risk = Market High Risk OR Stock Risk is High
+        is_high_risk = stock_risk_level == "High"
 
         # SIGNAL
         is_sell_zone = market_rsi > 70
@@ -967,7 +1103,15 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "stop_loss": stop_loss,
             "take_profit": take_profit,
             "risk_reward_ratio": rr_ratio,
+            # NEW: Target Yield & Est. Days
+            "target_yield_pct": target_yield_pct,
+            "trend_factor": trend_factor,
             "estimated_days_to_target": round(est_days, 1),
+            "timeframe_label": timeframe_label,
+            "timeframe_color": timeframe_color,
+            # Expected metrics (profit/day)
+            "expected_profit_per_day": profit_per_day,
+            "upside_per_day": profit_per_day,
             # Scores
             "master_score": int(tech_score * 0.55 + fund_score * 0.45),
             "technical_score": tech_score,
@@ -980,6 +1124,9 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "is_short_term_qualified": not is_vetoed and criteria_met >= 9,
             "is_slow_mode": est_days > 10,
             "is_high_risk": is_high_risk,
+            "is_market_high_risk": is_market_high_risk,  # NEW
+            "stock_risk_level": stock_risk_level,  # NEW: Very Low/Low/Medium/High
+            "stock_risk_reason": stock_risk_reason,  # NEW: Lý do cụ thể
             "has_inverted_sl": has_inverted_sl,
             # Criteria (keep even when vetoed)
             "criteria_met": criteria_met,
@@ -996,6 +1143,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "pb": fund_data['pb'],
             "f_score": fund_data['f_score'],
             "f_score_grade": fund_data['f_score_grade'],
+            "profit_growth": fund_data.get('profit_growth'),  # NEW
         }
 
     except Exception as e:
@@ -1167,6 +1315,7 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "pb": data.get("pb"),
                     "roe": data.get("roe"),
                     "f_score": data.get("f_score", 0),
+                    "profit_growth": data.get("profit_growth"),  # NEW
                 }
             )
 
@@ -1188,8 +1337,15 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "is_short_term_qualified": data["is_short_term_qualified"],
                     "is_slow_mode": data["is_slow_mode"],
                     "is_high_risk": data["is_high_risk"],
+                    "is_market_high_risk": data.get("is_market_high_risk", False),  # NEW
+                    "stock_risk_level": data.get("stock_risk_level", "Medium"),  # NEW
                     "has_inverted_sl": data["has_inverted_sl"],
                     "estimated_days_to_target": data["estimated_days_to_target"],
+                    "timeframe_label": data.get("timeframe_label", ""),
+                    "timeframe_color": data.get("timeframe_color", ""),
+                    "expected_profit_per_day": data.get("expected_profit_per_day", 0),
+                    "upside_per_day": data.get("upside_per_day", 0),
+                    "target_yield_pct": data.get("target_yield_pct", 0),
                     "criteria_met": data["criteria_met"],
                     "criteria_list": data["criteria_list"],
                     "trend": data["trend"],
@@ -1206,30 +1362,47 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
 
 
 def get_top_picks_from_db(limit: int = 5) -> List[Dict[str, Any]]:
-    """Lấy top picks từ Database - SORTED by Volume Ratio for FAST picks"""
-    from django.db.models import F
+    """Lấy top picks từ Database - SORTED by Profit/Day for best efficiency"""
+    from django.db.models import F, ExpressionWrapper, FloatField
 
-    # Get non-vetoed stocks, sorted by: FAST picks first (by volume_ratio), then by master_score
+    # Get non-vetoed stocks, calculate profit_per_day and sort by it
+    # Profit/Day = (take_profit - entry_price) / estimated_days_to_target / entry_price * 100
     analyses = StockAnalysis.objects.select_related("symbol").filter(
-        is_vetoed=False
+        is_vetoed=False,
+        estimated_days_to_target__gt=0
+    ).annotate(
+        profit_per_day_calc=ExpressionWrapper(
+            F('take_profit') - F('entry_price'),
+            output_field=FloatField()
+        )
     ).order_by(
-        F('is_fast_pick').desc(),
-        F('symbol__volume_ratio').desc(),
+        '-profit_per_day_calc',
         '-master_score'
     )[:limit]
 
     picks = []
     for a in analyses:
         s = a.symbol
+        # Use target_yield_pct from DB if available, otherwise calculate
+        target_yield_pct = a.target_yield_pct if a.target_yield_pct else round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0
+        days = a.estimated_days_to_target or 1
+        profit_per_day = round(target_yield_pct / days, 2) if days > 0 else 0
+        
         picks.append({
             "symbol": s.symbol,
             "company_name": s.company_name,
             "price": s.price,
             "change_percent": s.change_percent,
+            # Target Yield
+            "target_yield_pct": target_yield_pct,
+            "profit_per_day": profit_per_day,
+            # Technical
             "rsi": s.rsi,
             "adx": s.adx,
             "volume_ratio": s.volume_ratio,
             "cmf": s.cmf,
+            "atr": s.atr,
+            # Scores
             "master_score": a.master_score,
             "technical_score": a.technical_score,
             "fundamental_score": a.fundamental_score,
@@ -1237,14 +1410,29 @@ def get_top_picks_from_db(limit: int = 5) -> List[Dict[str, Any]]:
             "risk_reward_ratio": a.risk_reward_ratio,
             "is_fast_pick": a.is_fast_pick,
             "criteria_met": a.criteria_met,
+            "criteria_list": a.criteria_list,
             "trend": a.trend,
             "breakout_status": a.breakout_status,
+            # Trading Levels
             "entry_price": a.entry_price,
             "stop_loss": a.stop_loss,
             "take_profit": a.take_profit,
             "estimated_days_to_target": a.estimated_days_to_target,
+            "timeframe_label": a.timeframe_label,
+            "timeframe_color": a.timeframe_color,
+            # Risk
             "is_high_risk": a.is_high_risk,
+            "is_market_high_risk": getattr(a, 'is_market_high_risk', False),
+            "stock_risk_level": getattr(a, 'stock_risk_level', 'Medium'),
+            # Meta
             "market_rsi": a.market_rsi,
+            "profit_growth": getattr(s, 'profit_growth', None),
+            # Extra for criteria check
+            "plus_di": s.plus_di,
+            "minus_di": s.minus_di,
+            "macd": s.macd,
+            "macd_signal": s.macd_signal,
+            "sma_20": s.sma_20,
         })
 
     return picks

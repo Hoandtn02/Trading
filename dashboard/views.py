@@ -704,6 +704,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "pe": s.pe,
             "pb": s.pb,
             "f_score": s.f_score,
+            "profit_growth": getattr(s, 'profit_growth', None),  # NEW
             # Analysis
             "master_score": a.master_score,
             "technical_score": a.technical_score,
@@ -712,16 +713,24 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "criteria_met": a.criteria_met,
             "criteria_list": a.criteria_list,
             "risk_reward_ratio": a.risk_reward_ratio,
+            # Target Yield - use DB field if available
+            "target_yield_pct": getattr(a, 'target_yield_pct', None) or round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0,
             "is_vetoed": a.is_vetoed,
             "veto_reason": a.veto_reason,
             "is_fast_pick": a.is_fast_pick,
             "is_high_risk": a.is_high_risk,
+            "is_market_high_risk": getattr(a, 'is_market_high_risk', False),  # NEW
+            "stock_risk_level": getattr(a, 'stock_risk_level', 'Medium'),  # NEW
             "trend": a.trend,
             "breakout_status": a.breakout_status,
             "entry_price": a.entry_price,
             "stop_loss": a.stop_loss,
             "take_profit": a.take_profit,
             "estimated_days_to_target": a.estimated_days_to_target,
+            "timeframe_label": a.timeframe_label,
+            "timeframe_color": a.timeframe_color,
+            "expected_profit_per_day": a.expected_profit_per_day,
+            "upside_per_day": a.upside_per_day,
             "market_rsi": a.market_rsi,
         })
 
@@ -770,10 +779,11 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     writer.writerow([
         "Symbol", "Company", "Industry", "Market Group", "Price", "Change%", "Volume", "Volume Ratio",
         "RSI", "ADX", "CMF", "ATR", "MFI", "SMA10", "SMA20", "SMA50", "VWAP", "Ichimoku", "SuperTrend",
-        "ROE", "P/E", "P/B", "F-Score",
+        "ROE", "P/E", "P/B", "F-Score", "Profit Growth",
         "Master Score", "Tech Score", "Fund Score", "Signal",
         "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
-        "Est. Days", "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
+        "Est. Days", "Timeframe", "Profit/Day", "%Upside/Day",
+        "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
         "Trend", "Breakout Status", "Market RSI"
     ])
 
@@ -784,15 +794,126 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
             s.price, s.change_percent,
             s.volume, s.volume_ratio,
             s.rsi, s.adx, s.cmf, s.atr, s.mfi, s.sma_10, s.sma_20, s.sma_50, s.vwap, s.ichimoku_status, s.supertrend_signal,
-            s.roe, s.pe, s.pb, s.f_score,
+            s.roe, s.pe, s.pb, s.f_score, getattr(s, 'profit_growth', None),
             a.master_score, a.technical_score, a.fundamental_score, a.signal,
             a.criteria_met, a.risk_reward_ratio,
             a.entry_price, a.stop_loss, a.take_profit,
-            a.estimated_days_to_target,
+            a.estimated_days_to_target, a.timeframe_label,
+            a.expected_profit_per_day, a.upside_per_day,
             "Yes" if a.is_vetoed else "No", a.veto_reason,
             "Yes" if a.is_fast_pick else "No",
             "Yes" if a.is_high_risk else "No",
             a.trend, a.breakout_status, a.market_rsi
         ])
+
+    return response
+
+
+def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
+    """Export chi tiết một mã cổ phiếu ra CSV"""
+    import csv
+    from django.http import HttpResponse, Http404
+    from .models import StockData, StockAnalysis
+
+    try:
+        stock = StockData.objects.get(symbol=symbol.upper())
+        analysis = StockAnalysis.objects.get(symbol=stock)
+    except (StockData.DoesNotExist, StockAnalysis.DoesNotExist):
+        raise Http404(f"Không tìm thấy mã {symbol}")
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="{symbol}_detail_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+    writer = csv.writer(response)
+
+    # Header
+    writer.writerow(["=== THÔNG TIN CƠ BẢN ==="])
+    writer.writerow(["Mã", stock.symbol])
+    writer.writerow(["Công ty", stock.company_name])
+    writer.writerow(["Ngành", stock.industry or stock.get_industry()])
+    writer.writerow(["Nhóm", stock.market_group or stock.get_market_group()])
+    writer.writerow(["Giá", stock.price])
+    writer.writerow(["Thay đổi %", stock.change_percent])
+    writer.writerow(["Khối lượng", stock.volume])
+    writer.writerow(["Tỷ lệ khối lượng", stock.volume_ratio])
+
+    writer.writerow([])
+    writer.writerow(["=== ĐIỂM PHÂN TÍCH ==="])
+    writer.writerow(["Master Score", analysis.master_score])
+    writer.writerow(["Technical Score", analysis.technical_score])
+    writer.writerow(["Fundamental Score", analysis.fundamental_score])
+    writer.writerow(["Signal", analysis.signal])
+    writer.writerow(["Xu hướng", analysis.trend])
+    writer.writerow(["Criteria đạt", analysis.criteria_met])
+    writer.writerow(["Criteria chi tiết", ", ".join(analysis.criteria_list) if analysis.criteria_list else "N/A"])
+
+    writer.writerow([])
+    writer.writerow(["=== MỨC GIAO DỊCH ==="])
+    writer.writerow(["Entry Price", analysis.entry_price])
+    writer.writerow(["Stop Loss", analysis.stop_loss])
+    writer.writerow(["Take Profit", analysis.take_profit])
+    writer.writerow(["R:R Ratio", analysis.risk_reward_ratio])
+    writer.writerow(["Est. Days", analysis.estimated_days_to_target])
+    writer.writerow(["Timeframe", analysis.timeframe_label])
+    writer.writerow(["Lợi nhuận/ngày", analysis.expected_profit_per_day])
+    writer.writerow(["% Upside/ngày", analysis.upside_per_day])
+
+    writer.writerow([])
+    writer.writerow(["=== CHỈ BÁO KỸ THUẬT ==="])
+    writer.writerow(["RSI (14)", stock.rsi])
+    writer.writerow(["ADX", stock.adx])
+    writer.writerow(["+DI", stock.plus_di])
+    writer.writerow(["-DI", stock.minus_di])
+    writer.writerow(["CMF", stock.cmf])
+    writer.writerow(["MFI", stock.mfi])
+    writer.writerow(["ATR", stock.atr])
+
+    writer.writerow([])
+    writer.writerow(["=== TRUNG BÌNH ĐỘNG ==="])
+    writer.writerow(["SMA 10", stock.sma_10])
+    writer.writerow(["SMA 20", stock.sma_20])
+    writer.writerow(["SMA 50", stock.sma_50])
+
+    writer.writerow([])
+    writer.writerow(["=== BOLLINGER BANDS ==="])
+    writer.writerow(["BB Upper", stock.bb_upper])
+    writer.writerow(["BB Middle", stock.bb_middle])
+    writer.writerow(["BB Lower", stock.bb_lower])
+    writer.writerow(["BB Position %", stock.bb_percent])
+
+    writer.writerow([])
+    writer.writerow(["=== MACD ==="])
+    writer.writerow(["MACD", stock.macd])
+    writer.writerow(["MACD Signal", stock.macd_signal])
+
+    writer.writerow([])
+    writer.writerow(["=== CHỈ BÁO NÂNG CAO ==="])
+    writer.writerow(["VWAP", stock.vwap])
+    writer.writerow(["VWAP Status", stock.vwap_status])
+    writer.writerow(["Ichimoku Tenkan", stock.ichimoku_tenkan])
+    writer.writerow(["Ichimoku Kijun", stock.ichimoku_kijun])
+    writer.writerow(["Ichimoku Status", stock.ichimoku_status])
+    writer.writerow(["SuperTrend", stock.supertrend])
+    writer.writerow(["SuperTrend Signal", stock.supertrend_signal])
+
+    writer.writerow([])
+    writer.writerow(["=== SỨC KHỎE TÀI CHÍNH ==="])
+    writer.writerow(["F-Score", stock.f_score])
+    writer.writerow(["ROE", stock.roe])
+    writer.writerow(["P/E", stock.pe])
+    writer.writerow(["P/B", stock.pb])
+    writer.writerow(["Tăng trưởng LN quý", getattr(stock, 'profit_growth', None)])
+
+    writer.writerow([])
+    writer.writerow(["=== TRẠNG THÁI ==="])
+    writer.writerow(["Is Vetoed", "Yes" if analysis.is_vetoed else "No"])
+    writer.writerow(["Veto Reason", analysis.veto_reason])
+    writer.writerow(["Is Fast Pick", "Yes" if analysis.is_fast_pick else "No"])
+    writer.writerow(["Is High Risk", "Yes" if analysis.is_high_risk else "No"])
+    writer.writerow(["Breakout Status", analysis.breakout_status])
+    writer.writerow(["Market RSI", analysis.market_rsi])
+
+    writer.writerow([])
+    writer.writerow([f"Export lúc: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
 
     return response

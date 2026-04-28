@@ -132,6 +132,7 @@ class StockData(models.Model):
     pb = models.FloatField(null=True, blank=True)
     roe = models.FloatField(null=True, blank=True)
     f_score = models.IntegerField(default=0)
+    profit_growth = models.FloatField(null=True, blank=True)  # NEW: Tăng trưởng LN quý
 
     # Meta
     updated_at = models.DateTimeField(auto_now=True)
@@ -184,9 +185,18 @@ class StockAnalysis(models.Model):
     is_slow_mode = models.BooleanField(default=False)
     is_high_risk = models.BooleanField(default=False)
     has_inverted_sl = models.BooleanField(default=False)
+    
+    # NEW: Separated Risk Assessment
+    is_market_high_risk = models.BooleanField(default=False)  # VNIndex RSI > 80
+    stock_risk_level = models.CharField(max_length=20, default="Medium")  # Very Low/Low/Medium/High
 
     # Holding
     estimated_days_to_target = models.FloatField(default=0)
+    timeframe_label = models.CharField(max_length=30, default="")
+    timeframe_color = models.CharField(max_length=20, default="")
+    expected_profit_per_day = models.FloatField(default=0)
+    upside_per_day = models.FloatField(default=0)
+    target_yield_pct = models.FloatField(default=0)  # NEW: Lợi nhuận kỳ vọng (TP - Entry) / Entry * 100
 
     # Criteria
     criteria_met = models.IntegerField(default=0)
