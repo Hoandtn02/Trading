@@ -1324,6 +1324,8 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                 symbol=stock,
                 defaults={
                     "master_score": data["master_score"],
+                    "base_master_score": data.get("base_master_score", data["master_score"]),
+                    "market_weight": data.get("market_weight", 0),
                     "technical_score": data["technical_score"],
                     "fundamental_score": data["fundamental_score"],
                     "signal": data["signal"],

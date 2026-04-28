@@ -550,6 +550,8 @@
                         data-change="{{ stock.change_percent }}"
                         data-target-yield="{{ stock.target_yield_pct }}"
                         data-score="{{ stock.master_score }}"
+                        data-base-score="{{ stock.base_master_score|default:stock.master_score }}"
+                        data-market-weight="{{ stock.market_weight|default:0 }}"
                         data-tech-score="{{ stock.technical_score }}"
                         data-fund-score="{{ stock.fundamental_score }}"
                         data-signal="{{ stock.signal }}"
@@ -719,6 +721,8 @@
                 change_percent: parseFloat(row.dataset.change) || 0,
                 target_yield_pct: parseFloat(row.dataset.targetYield) || 0,
                 master_score: parseInt(row.dataset.score) || 0,
+                base_score: parseInt(row.dataset.baseScore) || 0,
+                market_weight: parseInt(row.dataset.marketWeight) || 0,
                 technical_score: parseInt(row.dataset.techScore) || 0,
                 fundamental_score: parseInt(row.dataset.fundScore) || 0,
                 signal: row.dataset.signal || 'WAIT',
@@ -788,6 +792,19 @@
 
             // Scores
             document.getElementById('modalScore').textContent = stockData.master_score + '/100';
+            
+            // Show score breakdown if market weight was applied
+            const scoreDetailEl = document.getElementById('modalScoreDetail');
+            if (stockData.base_score && stockData.market_weight !== 0) {
+                const weightSign = stockData.market_weight > 0 ? '+' : '';
+                const mktLabel = stockData.market_weight < 0 ? 'MKT Risk' : 'MKT Oversold';
+                scoreDetailEl.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span> <span style="color:#f59e0b;">(${weightSign}${stockData.market_weight} ${mktLabel})</span>`;
+            } else if (stockData.base_score && stockData.base_score !== stockData.master_score) {
+                scoreDetailEl.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span>`;
+            } else {
+                scoreDetailEl.innerHTML = '';
+            }
+            
             document.getElementById('modalTechScore').textContent = stockData.technical_score + '/100';
             document.getElementById('modalFundScore').textContent = stockData.fundamental_score + '/100';
             document.getElementById('modalSignal').textContent = stockData.signal;
@@ -1074,6 +1091,7 @@
                     <div class="modal-item">
                         <div class="label">Master Score</div>
                         <div class="value" id="modalScore">75/100</div>
+                        <div style="font-size: 10px; color: #64748b; margin-top: 2px;" id="modalScoreDetail"></div>
                     </div>
                     <div class="modal-item">
                         <div class="label">Tech Score</div>

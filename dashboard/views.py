@@ -715,6 +715,9 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "risk_reward_ratio": a.risk_reward_ratio,
             # Target Yield - use DB field if available
             "target_yield_pct": getattr(a, 'target_yield_pct', None) or round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0,
+            # Score breakdown
+            "base_master_score": getattr(a, 'base_master_score', a.master_score),
+            "market_weight": getattr(a, 'market_weight', 0),
             "is_vetoed": a.is_vetoed,
             "veto_reason": a.veto_reason,
             "is_fast_pick": a.is_fast_pick,
