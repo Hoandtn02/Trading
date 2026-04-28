@@ -359,6 +359,32 @@
             color: #fff;
         }
         .modal-btn.secondary:hover { background: #475569; }
+
+        /* Industry badges */
+        .industry-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            background: #334155;
+            color: #94a3b8;
+        }
+        .industry-banking { background: #1e3a5f; color: #60a5fa; }
+        .industry-tech { background: #1e3a3f; color: #34d399; }
+        .industry-retail { background: #3f1e5f; color: #a78bfa; }
+        .industry-real-estate { background: #5f3f1e; color: #fbbf24; }
+        .industry-steel { background: #3f3f3f; color: #9ca3af; }
+        .industry-oil { background: #3f1e1e; color: #f87171; }
+        .industry-securities { background: #1e3f1e; color: #4ade80; }
+
+        /* VWAP distance indicator */
+        .vwap-distance {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .vwap-distance.far { color: #f59e0b; }
     </style>
 </head>
 <body>
@@ -366,6 +392,11 @@
         <div>
             <h1>📊 Danh Sách Cổ Phiếu</h1>
             <div class="subtitle">Xem chi tiết tất cả cổ phiếu đã quét</div>
+            {% if last_sync %}
+            <div class="subtitle" style="font-size: 11px; color: #64748b;">
+                🔄 Cập nhật lần cuối: {{ last_sync }}
+            </div>
+            {% endif %}
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
             <nav class="nav-links">
@@ -421,6 +452,14 @@
         </div>
 
         <div class="filter-group">
+            <label>🏛️ Nhóm:</label>
+            <button type="submit" name="market" value="all" class="filter-btn {% if current_market == 'all' %}active{% endif %}">Tất Cả</button>
+            <button type="submit" name="market" value="vn30" class="filter-btn {% if current_market == 'vn30' %}active{% endif %}">VN30</button>
+            <button type="submit" name="market" value="midcap" class="filter-btn {% if current_market == 'midcap' %}active{% endif %}">Midcap</button>
+            <button type="submit" name="market" value="small" class="filter-btn {% if current_market == 'small' %}active{% endif %}">Small</button>
+        </div>
+
+        <div class="filter-group">
             <label>📈 Score tối thiểu:</label>
             <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" style="width: 80px;">
         </div>
@@ -449,6 +488,7 @@
                     <tr>
                         <th>#</th>
                         <th>Mã</th>
+                        <th>Nhóm</th>
                         <th>Giá</th>
                         <th>Thay Đổi</th>
                         <th>Score</th>
@@ -458,15 +498,9 @@
                         <th>RSI</th>
                         <th>ADX</th>
                         <th>CMF</th>
-                        <th>MFI</th>
                         <th>VWAP</th>
                         <th>Cloud</th>
-                        <th>Entry</th>
-                        <th>Stop Loss</th>
-                        <th>Take Profit</th>
                         <th>ROE</th>
-                        <th>P/E</th>
-                        <th>P/B</th>
                         <th>F-Score</th>
                         <th>Trạng Thái</th>
                     </tr>
@@ -476,6 +510,8 @@
                     <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}"
                         data-symbol="{{ stock.symbol }}"
                         data-company="{{ stock.company_name }}"
+                        data-industry="{{ stock.industry }}"
+                        data-market-group="{{ stock.market_group }}"
                         data-price="{{ stock.price }}"
                         data-change="{{ stock.change_percent }}"
                         data-score="{{ stock.master_score }}"
@@ -490,6 +526,8 @@
                         data-mfi="{{ stock.mfi }}"
                         data-vwap="{{ stock.vwap }}"
                         data-vwap-status="{{ stock.vwap_status }}"
+                        data-ichimoku-tenkan="{{ stock.ichimoku_tenkan }}"
+                        data-ichimoku-kijun="{{ stock.ichimoku_kijun }}"
                         data-ichimoku="{{ stock.ichimoku_status }}"
                         data-entry="{{ stock.entry_price }}"
                         data-sl="{{ stock.stop_loss }}"
@@ -499,19 +537,35 @@
                         data-pb="{{ stock.pb }}"
                         data-fscore="{{ stock.f_score }}"
                         data-trend="{{ stock.trend }}"
+                        data-sma10="{{ stock.sma_10 }}"
                         data-sma20="{{ stock.sma_20 }}"
                         data-sma50="{{ stock.sma_50 }}"
-                        data-supertrend="{{ stock.supertrend_signal }}"
+                        data-supertrend="{{ stock.supertrend }}"
+                        data-supertrend-signal="{{ stock.supertrend_signal }}"
+                        data-bb-upper="{{ stock.bb_upper }}"
+                        data-bb-lower="{{ stock.bb_lower }}"
+                        data-bb-percent="{{ stock.bb_percent }}"
+                        data-macd="{{ stock.macd }}"
+                        data-macd-signal="{{ stock.macd_signal }}"
+                        data-criteria-list="{{ stock.criteria_list|json_dumps }}"
                         data-vetoed="{{ stock.is_vetoed|yesno:'true,false' }}"
                         data-veto-reason="{{ stock.veto_reason }}"
                         data-fast="{{ stock.is_fast_pick|yesno:'true,false' }}"
                         data-high-risk="{{ stock.is_high_risk|yesno:'true,false' }}"
                         data-days="{{ stock.estimated_days_to_target }}"
+                        data-market-rsi="{{ stock.market_rsi }}"
                         onclick="openStockModalFromRow(this)">
                         <td>{{ forloop.counter }}</td>
                         <td>
                             <span class="symbol-cell">{{ stock.symbol }}</span>
                             <div class="company-cell">{{ stock.company_name }}</div>
+                        </td>
+                        <td>
+                            {% if stock.market_group == 'VN30' %}
+                                <span class="badge badge-qualified">{{ stock.market_group }}</span>
+                            {% else %}
+                                <span class="industry-badge">{{ stock.market_group|default:'MIDCAP' }}</span>
+                            {% endif %}
                         </td>
                         <td>{{ stock.price|floatformat:1 }}</td>
                         <td class="{% if stock.change_percent >= 0 %}positive{% else %}negative{% endif %}">
@@ -542,9 +596,6 @@
                         <td class="{% if stock.cmf > 0 %}positive{% elif stock.cmf < 0 %}negative{% endif %}">
                             {{ stock.cmf|floatformat:3 }}
                         </td>
-                        <td class="{% if stock.mfi >= 50 %}positive{% else %}negative{% endif %}">
-                            {{ stock.mfi|floatformat:0 }}
-                        </td>
                         <td class="{% if stock.vwap_status == 'above' %}positive{% elif stock.vwap_status == 'below' %}negative{% endif %}">
                             {% if stock.vwap > 0 %}{{ stock.vwap|floatformat:0 }}{% else %}-{% endif %}
                         </td>
@@ -553,17 +604,8 @@
                             {% elif stock.ichimoku_status == 'bearish' %}<span class="negative">🔴</span>
                             {% else %}<span>🟡</span>{% endif %}
                         </td>
-                        <td>{{ stock.entry_price|floatformat:1 }}</td>
-                        <td class="negative">{{ stock.stop_loss|floatformat:1 }}</td>
-                        <td class="positive">{{ stock.take_profit|floatformat:1 }}</td>
                         <td class="{% if stock.roe >= 15 %}positive{% elif stock.roe >= 10 %}neutral{% elif stock.roe and stock.roe > 0 %}negative{% endif %}">
                             {% if stock.roe %}{{ stock.roe|floatformat:1 }}{% else %}-{% endif %}
-                        </td>
-                        <td class="{% if stock.pe and stock.pe < 15 %}positive{% elif stock.pe and stock.pe > 30 %}negative{% endif %}">
-                            {% if stock.pe %}{{ stock.pe|floatformat:1 }}{% else %}-{% endif %}
-                        </td>
-                        <td class="{% if stock.pb and stock.pb < 2 %}positive{% elif stock.pb and stock.pb > 4 %}negative{% endif %}">
-                            {% if stock.pb %}{{ stock.pb|floatformat:2 }}{% else %}-{% endif %}
                         </td>
                         <td>
                             <span class="badge {% if stock.f_score >= 7 %}badge-buy{% elif stock.f_score >= 4 %}badge-wait{% else %}badge-sell{% endif %}">
@@ -608,9 +650,13 @@
 
         // Open modal when clicking on a stock row
         function openStockModalFromRow(row) {
+            const criteriaList = row.dataset.criteriaList ? JSON.parse(row.dataset.criteriaList.replace(/'/g, '"')) : [];
+
             const stockData = {
                 symbol: row.dataset.symbol,
                 company_name: row.dataset.company,
+                industry: row.dataset.industry || 'Other',
+                market_group: row.dataset.marketGroup || 'MIDCAP',
                 price: parseFloat(row.dataset.price) || 0,
                 change_percent: parseFloat(row.dataset.change) || 0,
                 master_score: parseInt(row.dataset.score) || 0,
@@ -618,6 +664,7 @@
                 fundamental_score: parseInt(row.dataset.fundScore) || 0,
                 signal: row.dataset.signal || 'WAIT',
                 criteria_met: parseInt(row.dataset.criteria) || 0,
+                criteria_list: criteriaList,
                 risk_reward_ratio: parseFloat(row.dataset.rr) || 0,
                 rsi: parseFloat(row.dataset.rsi) || 50,
                 adx: parseFloat(row.dataset.adx) || 0,
@@ -625,7 +672,11 @@
                 mfi: parseFloat(row.dataset.mfi) || 50,
                 vwap: parseFloat(row.dataset.vwap) || 0,
                 vwap_status: row.dataset.vwapStatus || 'neutral',
+                ichimoku_tenkan: parseFloat(row.dataset.ichimokuTenkan) || 0,
+                ichimoku_kijun: parseFloat(row.dataset.ichimokuKijun) || 0,
                 ichimoku_status: row.dataset.ichimoku || 'neutral',
+                supertrend: parseFloat(row.dataset.supertrend) || 0,
+                supertrend_signal: row.dataset.supertrendSignal || 'neutral',
                 entry_price: parseFloat(row.dataset.entry) || 0,
                 stop_loss: parseFloat(row.dataset.sl) || 0,
                 take_profit: parseFloat(row.dataset.tp) || 0,
@@ -634,14 +685,20 @@
                 pb: row.dataset.pb ? parseFloat(row.dataset.pb) : null,
                 f_score: parseInt(row.dataset.fscore) || 0,
                 trend: row.dataset.trend || 'WAIT',
+                sma_10: parseFloat(row.dataset.sma10) || 0,
                 sma_20: parseFloat(row.dataset.sma20) || 0,
                 sma_50: parseFloat(row.dataset.sma50) || 0,
-                supertrend_signal: row.dataset.supertrend || 'neutral',
+                bb_upper: parseFloat(row.dataset.bbUpper) || 0,
+                bb_lower: parseFloat(row.dataset.bbLower) || 0,
+                bb_percent: parseFloat(row.dataset.bbPercent) || 50,
+                macd: parseFloat(row.dataset.macd) || 0,
+                macd_signal: parseFloat(row.dataset.macdSignal) || 0,
                 is_vetoed: row.dataset.vetoed === 'true',
                 veto_reason: row.dataset.vetoReason || '',
                 is_fast_pick: row.dataset.fast === 'true',
                 is_high_risk: row.dataset.highRisk === 'true',
                 estimated_days: parseFloat(row.dataset.days) || 0,
+                market_rsi: parseFloat(row.dataset.marketRsi) || 50,
             };
             showModal(stockData);
         }
@@ -654,40 +711,98 @@
         }
 
         function showModal(stockData) {
-            // Populate modal
+            // Populate modal header
             document.getElementById('modalSymbol').textContent = stockData.symbol;
-            document.getElementById('modalCompany').textContent = stockData.company_name;
+            document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
             document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
             document.getElementById('modalChange').textContent = (stockData.change_percent >= 0 ? '+' : '') + stockData.change_percent.toFixed(2) + '%';
             document.getElementById('modalChange').className = 'change ' + (stockData.change_percent >= 0 ? 'positive' : 'negative');
 
-            document.getElementById('modalScore').textContent = stockData.master_score;
+            // Scores
+            document.getElementById('modalScore').textContent = stockData.master_score + '/100';
+            document.getElementById('modalTechScore').textContent = stockData.technical_score + '/100';
+            document.getElementById('modalFundScore').textContent = stockData.fundamental_score + '/100';
             document.getElementById('modalSignal').textContent = stockData.signal;
             document.getElementById('modalSignal').className = 'value ' + getSignalClass(stockData.signal);
             document.getElementById('modalTrend').textContent = stockData.trend;
             document.getElementById('modalCriteria').textContent = stockData.criteria_met + '/12';
 
+            // Trading Levels
             document.getElementById('modalEntry').textContent = formatNumber(stockData.entry_price, 1);
             document.getElementById('modalSL').textContent = formatNumber(stockData.stop_loss, 1);
             document.getElementById('modalTP').textContent = formatNumber(stockData.take_profit, 1);
             document.getElementById('modalRR').textContent = stockData.risk_reward_ratio.toFixed(2);
 
+            // Technical Indicators
             document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
             document.getElementById('modalRSI').className = 'value ' + getRSIClass(stockData.rsi);
             document.getElementById('modalADX').textContent = stockData.adx.toFixed(0);
             document.getElementById('modalCMF').textContent = (stockData.cmf >= 0 ? '+' : '') + stockData.cmf.toFixed(3);
             document.getElementById('modalCMF').className = 'value ' + (stockData.cmf >= 0 ? 'positive' : 'negative');
             document.getElementById('modalMFI').textContent = stockData.mfi.toFixed(0);
-            document.getElementById('modalVWAP').textContent = stockData.vwap > 0 ? formatNumber(stockData.vwap, 1) : 'N/A';
+            document.getElementById('modalMFI').className = 'value ' + (stockData.mfi >= 50 ? 'positive' : 'negative');
+
+            // VWAP with distance
+            const vwapEl = document.getElementById('modalVWAP');
+            if (stockData.vwap > 0) {
+                vwapEl.textContent = formatNumber(stockData.vwap, 1);
+                const distance = ((stockData.price - stockData.vwap) / stockData.vwap * 100).toFixed(2);
+                vwapEl.className = 'value ' + (Math.abs(distance) > 3 ? (distance > 0 ? 'positive' : 'negative') : 'neutral');
+            } else {
+                vwapEl.textContent = 'N/A';
+                vwapEl.className = 'value neutral';
+            }
+
+            // Ichimoku
             document.getElementById('modalIchimoku').textContent = stockData.ichimoku_status.toUpperCase();
             document.getElementById('modalIchimoku').className = 'value ' + (stockData.ichimoku_status === 'bullish' ? 'positive' : stockData.ichimoku_status === 'bearish' ? 'negative' : 'neutral');
-            document.getElementById('modalST').textContent = stockData.supertrend_signal.toUpperCase();
-            document.getElementById('modalSMA20').textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
+            document.getElementById('modalTenkan').textContent = stockData.ichimoku_tenkan > 0 ? formatNumber(stockData.ichimoku_tenkan, 1) : 'N/A';
+            document.getElementById('modalKijun').textContent = stockData.ichimoku_kijun > 0 ? formatNumber(stockData.ichimoku_kijun, 1) : 'N/A';
 
+            // SuperTrend
+            document.getElementById('modalST').textContent = stockData.supertrend_signal.toUpperCase();
+            document.getElementById('modalST').className = 'value ' + (stockData.supertrend_signal === 'buy' ? 'positive' : stockData.supertrend_signal === 'sell' ? 'negative' : 'neutral');
+            document.getElementById('modalSTValue').textContent = stockData.supertrend > 0 ? formatNumber(stockData.supertrend, 1) : 'N/A';
+
+            // Moving Averages
+            document.getElementById('modalSMA10').textContent = stockData.sma_10 > 0 ? formatNumber(stockData.sma_10, 1) : 'N/A';
+            document.getElementById('modalSMA20').textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
+            document.getElementById('modalSMA50').textContent = stockData.sma_50 > 0 ? formatNumber(stockData.sma_50, 1) : 'N/A';
+
+            // Bollinger Bands
+            document.getElementById('modalBBUpper').textContent = stockData.bb_upper > 0 ? formatNumber(stockData.bb_upper, 1) : 'N/A';
+            document.getElementById('modalBBLower').textContent = stockData.bb_lower > 0 ? formatNumber(stockData.bb_lower, 1) : 'N/A';
+            document.getElementById('modalBBPercent').textContent = stockData.bb_percent.toFixed(0) + '%';
+
+            // MACD
+            document.getElementById('modalMACD').textContent = (stockData.macd >= 0 ? '+' : '') + stockData.macd.toFixed(2);
+            document.getElementById('modalMACD').className = 'value ' + (stockData.macd > 0 ? 'positive' : 'negative');
+            document.getElementById('modalMACDSignal').textContent = (stockData.macd_signal >= 0 ? '+' : '') + stockData.macd_signal.toFixed(2);
+
+            // Fundamental
             document.getElementById('modalFScore').textContent = stockData.f_score + '/9';
+            document.getElementById('modalFScore').className = 'value ' + (stockData.f_score >= 7 ? 'positive' : stockData.f_score >= 4 ? 'neutral' : 'negative');
             document.getElementById('modalROE').textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
             document.getElementById('modalPE').textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
             document.getElementById('modalPB').textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+
+            // Market RSI
+            document.getElementById('modalMarketRSI').textContent = stockData.market_rsi.toFixed(0);
+
+            // AI Verdict
+            const verdictEl = document.getElementById('modalVerdict');
+            verdictEl.innerHTML = generateAIVerdict(stockData);
+
+            // Criteria List
+            const criteriaEl = document.getElementById('modalCriteriaList');
+            if (stockData.criteria_list && stockData.criteria_list.length > 0) {
+                criteriaEl.innerHTML = stockData.criteria_list.map(c => {
+                    const passed = c.includes('✓') || c.includes('PASS');
+                    return `<span class="criteria-item ${passed ? 'passed' : 'failed'}">${c}</span>`;
+                }).join('');
+            } else {
+                criteriaEl.innerHTML = '<span class="neutral">No criteria data</span>';
+            }
 
             // Badges
             const badgesContainer = document.getElementById('modalBadges');
@@ -701,6 +816,9 @@
             if (stockData.is_high_risk) {
                 badgesContainer.innerHTML += '<span class="badge badge-high-risk">HIGH RISK</span>';
             }
+            if (stockData.price < stockData.sma_50 && stockData.sma_50 > 0) {
+                badgesContainer.innerHTML += '<span class="badge badge-veto">RISKY: Below SMA50</span>';
+            }
             if (stockData.criteria_met >= 9) {
                 badgesContainer.innerHTML += '<span class="badge badge-qualified">EXCELLENT</span>';
             } else if (stockData.criteria_met >= 7) {
@@ -712,6 +830,30 @@
 
             // Show modal
             document.getElementById('stockModal').classList.add('active');
+        }
+
+        function generateAIVerdict(s) {
+            const techRating = s.technical_score >= 70 ? 'Mạnh' : s.technical_score >= 50 ? 'Trung bình' : 'Yếu';
+            const fundRating = s.fundamental_score >= 70 ? 'Tốt' : s.fundamental_score >= 50 ? 'Trung bình' : 'Yếu';
+            let verdict = `Kỹ thuật: ${techRating} (${s.technical_score}/100) | Tài chính: ${fundRating} (${s.fundamental_score}/100). `;
+
+            if (s.is_vetoed) {
+                verdict += 'CẢNH BÁO: ' + s.veto_reason + '. ';
+            }
+            if (s.is_fast_pick) {
+                verdict += 'Có thể đánh T+ nhanh. ';
+            }
+            if (s.price < s.sma_50 && s.sma_50 > 0) {
+                verdict += 'CẢNH BÁO: Giá dưới SMA50 (xu hướng dài hạn giảm). ';
+            }
+            if (s.criteria_met >= 9) {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - CỰC MẠNH.';
+            } else if (s.criteria_met >= 7) {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - Khả quan.';
+            } else {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - Chờ thêm tín hiệu.';
+            }
+            return verdict;
         }
 
         function closeModal() {
@@ -775,13 +917,29 @@
                 </div>
             </div>
 
+            <!-- AI Verdict -->
+            <div class="modal-section" style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <div class="label" style="color: #60a5fa; margin-bottom: 8px;">📊 AI Verdict</div>
+                <div id="modalVerdict" style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">
+                    Kỹ thuật: Mạnh (85/100) | Tài chính: Tốt (80/100). Có thể đánh T+ nhanh.
+                </div>
+            </div>
+
             <!-- Signal & Score -->
             <div class="modal-section">
                 <h3>Đánh Giá Tổng Quan</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
                         <div class="label">Master Score</div>
-                        <div class="value" id="modalScore">75</div>
+                        <div class="value" id="modalScore">75/100</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tech Score</div>
+                        <div class="value" id="modalTechScore">80/100</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Fund Score</div>
+                        <div class="value" id="modalFundScore">70/100</div>
                     </div>
                     <div class="modal-item">
                         <div class="label">Signal</div>
@@ -795,8 +953,19 @@
                         <div class="label">Criteria Đạt</div>
                         <div class="value" id="modalCriteria">8/12</div>
                     </div>
+                    <div class="modal-item">
+                        <div class="label">Market RSI</div>
+                        <div class="value" id="modalMarketRSI">55</div>
+                    </div>
                 </div>
                 <div class="modal-badges" id="modalBadges"></div>
+            </div>
+
+            <!-- Criteria List -->
+            <div class="modal-section">
+                <h3>Chi Tiết Criteria</h3>
+                <div id="modalCriteriaList" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                </div>
             </div>
 
             <!-- Trading Levels -->
@@ -842,6 +1011,13 @@
                         <div class="label">MFI</div>
                         <div class="value" id="modalMFI">58</div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Advanced TA -->
+            <div class="modal-section">
+                <h3>Chỉ Báo Nâng Cao</h3>
+                <div class="modal-grid">
                     <div class="modal-item">
                         <div class="label">VWAP</div>
                         <div class="value" id="modalVWAP">94,500</div>
@@ -851,19 +1027,73 @@
                         <div class="value" id="modalIchimoku">BULLISH</div>
                     </div>
                     <div class="modal-item">
+                        <div class="label">Tenkan</div>
+                        <div class="value" id="modalTenkan">95,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Kijun</div>
+                        <div class="value" id="modalKijun">94,000</div>
+                    </div>
+                    <div class="modal-item">
                         <div class="label">SuperTrend</div>
                         <div class="value" id="modalST">BUY</div>
                     </div>
                     <div class="modal-item">
+                        <div class="label">ST Value</div>
+                        <div class="value" id="modalSTValue">94,500</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Moving Averages & MACD -->
+            <div class="modal-section">
+                <h3>Trung Bình Động & MACD</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">SMA 10</div>
+                        <div class="value" id="modalSMA10">94,000</div>
+                    </div>
+                    <div class="modal-item">
                         <div class="label">SMA 20</div>
                         <div class="value" id="modalSMA20">92,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SMA 50</div>
+                        <div class="value" id="modalSMA50">90,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MACD</div>
+                        <div class="value" id="modalMACD">+150</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MACD Signal</div>
+                        <div class="value" id="modalMACDSignal">+120</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bollinger Bands -->
+            <div class="modal-section">
+                <h3>Bollinger Bands</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">BB Upper</div>
+                        <div class="value" id="modalBBUpper">97,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">BB Lower</div>
+                        <div class="value" id="modalBBLower">91,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">BB Position</div>
+                        <div class="value" id="modalBBPercent">55%</div>
                     </div>
                 </div>
             </div>
 
             <!-- Fundamental -->
             <div class="modal-section">
-                <h3>Phân Tích Cơ Bản</h3>
+                <h3>Sức Khỏe Tài Chính</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
                         <div class="label">F-Score</div>

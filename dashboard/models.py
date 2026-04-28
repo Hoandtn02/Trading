@@ -49,10 +49,41 @@ class ExecutionResult(models.Model):
 
 # ============== STOCK DATA MODELS (Database-First Architecture) ==============
 
+# VN30 Symbols (hardcoded for quick lookup)
+VN30_SYMBOLS = {
+    'ACB', 'BCM', 'BID', 'BVH', 'CTG', 'FPT', 'GAS', 'GVR', 'HDB', 'HPG',
+    'MBB', 'MSN', 'MWG', 'NVL', 'PDR', 'PHB', 'PLX', 'PNJ', 'POW', 'SAB',
+    'SSI', 'STB', 'TCB', 'TPB', 'VCB', 'VCB', 'VHM', 'VIB', 'VIC', 'VJC',
+    'VNM', 'VPB', 'VRE'
+}
+
+# Industry mapping (simplified)
+INDUSTRY_MAP = {
+    'VCB': 'Banking', 'BID': 'Banking', 'CTG': 'Banking', 'TCB': 'Banking',
+    'ACB': 'Banking', 'VPB': 'Banking', 'MBB': 'Banking', 'STB': 'Banking',
+    'HDB': 'Banking', 'LPB': 'Banking', 'OCB': 'Banking', 'VIB': 'Banking',
+    'SHB': 'Banking', 'EIB': 'Banking', 'MSB': 'Banking', 'TPB': 'Banking',
+    'FPT': 'Technology', 'SSI': 'Securities', 'VND': 'Securities',
+    'HCM': 'Securities', 'VCI': 'Securities', 'CTS': 'Securities',
+    'MBS': 'Securities', 'SHS': 'Securities', 'BSR': 'Oil & Gas',
+    'PLX': 'Oil & Gas', 'POW': 'Oil & Gas', 'GAS': 'Oil & Gas',
+    'VNM': 'FMCG', 'MWG': 'Retail', 'PNJ': 'Retail', 'DGW': 'Retail',
+    'PET': 'Retail', 'SBT': 'FMCG', 'VHC': 'FMCG', 'ANV': 'FMCG',
+    'VHM': 'Real Estate', 'NVL': 'Real Estate', 'KDH': 'Real Estate',
+    'DIG': 'Real Estate', 'HDG': 'Real Estate', 'DXG': 'Real Estate',
+    'Nam Long': 'Real Estate', 'PDR': 'Real Estate', 'C21': 'Real Estate',
+    'HPG': 'Steel', 'HSG': 'Steel', 'NKG': 'Steel', ' SMC': 'Steel',
+    'VIC': 'Conglomerate', 'VRE': 'Real Estate', 'MSN': 'Conglomerate',
+    'GVR': 'Rubber', 'DRC': 'Tire', 'CMG': 'Technology', 'ELC': 'Technology',
+}
+
+
 class StockData(models.Model):
     """Lưu trữ dữ liệu kỹ thuật của mã cổ phiếu"""
     symbol = models.CharField(max_length=10, unique=True, db_index=True)
     company_name = models.CharField(max_length=200, blank=True, default="")
+    industry = models.CharField(max_length=50, blank=True, default="")
+    market_group = models.CharField(max_length=20, blank=True, default="")  # VN30, MIDCAP, SMALL
 
     # Price
     price = models.FloatField(default=0)
@@ -112,6 +143,19 @@ class StockData(models.Model):
 
     def __str__(self):
         return f"{self.symbol}: {self.price}"
+
+    def get_market_group(self):
+        """Determine market group based on symbol"""
+        if self.symbol in VN30_SYMBOLS:
+            return "VN30"
+        elif self.avg_volume_value >= 5:  # > 5 tỷ/ngày
+            return "MIDCAP"
+        else:
+            return "SMALL"
+
+    def get_industry(self):
+        """Get industry from mapping"""
+        return INDUSTRY_MAP.get(self.symbol, "Other")
 
 
 class StockAnalysis(models.Model):

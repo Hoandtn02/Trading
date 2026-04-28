@@ -12,7 +12,7 @@ from django.db import OperationalError
 from django.views.decorators.csrf import csrf_exempt
 
 from .forms import DynamicFunctionForm
-from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset
+from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset, VN30_SYMBOLS
 from .services import get_function_definition, iter_registry_functions, run_registry_function
 from dashboard.sync_service import sync_market_data, get_top_picks_from_db, get_sync_status
 
@@ -617,11 +617,12 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     sort_by = request.GET.get("sort", "master_score")
     search = request.GET.get("search", "").upper()
     min_score = int(request.GET.get("min_score", 0))
+    market_filter = request.GET.get("market", "all")  # VN30, MIDCAP, SMALL, ALL
 
     # Query cơ bản
     analyses = StockAnalysis.objects.select_related("symbol").all()
 
-    # Filter
+    # Filter by signal/type
     if filter_type == "buy":
         analyses = analyses.filter(signal__in=["BUY", "STRONG_BUY"])
     elif filter_type == "veto":
@@ -632,6 +633,14 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         analyses = analyses.filter(is_high_risk=True)
     elif filter_type == "qualified":
         analyses = analyses.filter(criteria_met__gte=7)
+
+    # Filter by market group (VN30, MIDCAP, SMALL)
+    if market_filter == "vn30":
+        analyses = analyses.filter(symbol__symbol__in=list(VN30_SYMBOLS))
+    elif market_filter == "midcap":
+        analyses = analyses.filter(symbol__market_group="MIDCAP")
+    elif market_filter == "small":
+        analyses = analyses.filter(symbol__market_group="SMALL")
 
     # Search
     if search:
@@ -661,6 +670,8 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         stocks.append({
             "symbol": s.symbol,
             "company_name": s.company_name or s.symbol,
+            "industry": s.industry or s.get_industry(),
+            "market_group": s.market_group or s.get_market_group(),
             "price": s.price,
             "change_percent": s.change_percent,
             "volume": s.volume,
@@ -670,16 +681,23 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "adx": s.adx,
             "cmf": s.cmf,
             "atr": s.atr,
+            "sma_10": s.sma_10,
             "sma_20": s.sma_20,
+            "sma_50": s.sma_50,
             "macd": s.macd,
             "macd_signal": s.macd_signal,
             "bb_upper": s.bb_upper,
+            "bb_middle": s.bb_middle,
             "bb_lower": s.bb_lower,
+            "bb_percent": s.bb_percent,
             # Advanced TA
             "mfi": s.mfi,
             "vwap": s.vwap,
             "vwap_status": s.vwap_status,
+            "ichimoku_tenkan": s.ichimoku_tenkan,
+            "ichimoku_kijun": s.ichimoku_kijun,
             "ichimoku_status": s.ichimoku_status,
+            "supertrend": s.supertrend,
             "supertrend_signal": s.supertrend_signal,
             # Fundamental
             "roe": s.roe,
@@ -692,6 +710,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "fundamental_score": a.fundamental_score,
             "signal": a.signal,
             "criteria_met": a.criteria_met,
+            "criteria_list": a.criteria_list,
             "risk_reward_ratio": a.risk_reward_ratio,
             "is_vetoed": a.is_vetoed,
             "veto_reason": a.veto_reason,
@@ -703,6 +722,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "stop_loss": a.stop_loss,
             "take_profit": a.take_profit,
             "estimated_days_to_target": a.estimated_days_to_target,
+            "market_rsi": a.market_rsi,
         })
 
     # Summary stats
@@ -711,6 +731,11 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     veto_count = StockAnalysis.objects.filter(is_vetoed=True).count()
     fast_count = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
     qualified_count = StockAnalysis.objects.filter(criteria_met__gte=7).count()
+
+    # Get last sync time
+    from .models import SyncStatus
+    last_sync_obj = SyncStatus.objects.order_by('-started_at').first()
+    last_sync = last_sync_obj.started_at.strftime('%H:%M:%S - %d/%m/%Y') if last_sync_obj else None
 
     context = {
         "stocks": stocks,
@@ -721,8 +746,10 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         "qualified_count": qualified_count,
         "current_filter": filter_type,
         "current_sort": sort_by,
+        "current_market": market_filter,
         "search_value": search,
         "min_score_value": min_score,
+        "last_sync": last_sync,
     }
 
     return render(request, "dashboard/stock_list.html", context)
@@ -741,21 +768,22 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
     writer = csv.writer(response)
     writer.writerow([
-        "Symbol", "Company", "Price", "Change%", "Volume", "Volume Ratio",
-        "RSI", "ADX", "CMF", "ATR", "MFI", "SMA20", "VWAP", "Ichimoku", "SuperTrend",
+        "Symbol", "Company", "Industry", "Market Group", "Price", "Change%", "Volume", "Volume Ratio",
+        "RSI", "ADX", "CMF", "ATR", "MFI", "SMA10", "SMA20", "SMA50", "VWAP", "Ichimoku", "SuperTrend",
         "ROE", "P/E", "P/B", "F-Score",
         "Master Score", "Tech Score", "Fund Score", "Signal",
         "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
         "Est. Days", "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
-        "Trend", "Breakout Status"
+        "Trend", "Breakout Status", "Market RSI"
     ])
 
     for a in analyses:
         s = a.symbol
         writer.writerow([
-            s.symbol, s.company_name, s.price, s.change_percent,
+            s.symbol, s.company_name, s.industry or s.get_industry(), s.market_group or s.get_market_group(),
+            s.price, s.change_percent,
             s.volume, s.volume_ratio,
-            s.rsi, s.adx, s.cmf, s.atr, s.mfi, s.sma_20, s.vwap, s.ichimoku_status, s.supertrend_signal,
+            s.rsi, s.adx, s.cmf, s.atr, s.mfi, s.sma_10, s.sma_20, s.sma_50, s.vwap, s.ichimoku_status, s.supertrend_signal,
             s.roe, s.pe, s.pb, s.f_score,
             a.master_score, a.technical_score, a.fundamental_score, a.signal,
             a.criteria_met, a.risk_reward_ratio,
@@ -764,7 +792,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
             "Yes" if a.is_vetoed else "No", a.veto_reason,
             "Yes" if a.is_fast_pick else "No",
             "Yes" if a.is_high_risk else "No",
-            a.trend, a.breakout_status
+            a.trend, a.breakout_status, a.market_rsi
         ])
 
     return response

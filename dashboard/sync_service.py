@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any
 import pandas as pd
 
 from django.utils import timezone
-from dashboard.models import StockData, StockAnalysis, SyncStatus
+from dashboard.models import StockData, StockAnalysis, SyncStatus, VN30_SYMBOLS
 
 
 # ============== CONSTANTS ==============
@@ -808,6 +808,10 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         elif fund_data['f_score'] < 3:
             is_vetoed = True
             veto_reason = f"F-Score: {fund_data['f_score']}/9"
+        # VETO if Price < SMA50 (downtrend long-term) - NOT override existing veto
+        elif tech["sma_50"] > 0 and tech["price"] < tech["sma_50"]:
+            is_vetoed = True
+            veto_reason = "Below SMA50"
 
         # SCORES
         tech_score = 50
@@ -890,8 +894,8 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             elif fund_data['roe'] < 5:
                 fund_score = max(0, fund_score - 15)
 
-        # HIGH RISK - Auto when VNIndex RSI > 80
-        is_high_risk = market_rsi > 80
+        # HIGH RISK - Auto when VNIndex RSI > 80 OR Price below SMA50
+        is_high_risk = market_rsi > 80 or (tech["sma_50"] > 0 and tech["price"] < tech["sma_50"])
 
         # SIGNAL
         is_sell_zone = market_rsi > 70
@@ -1108,13 +1112,27 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
     """Lưu kết quả vào Database"""
     saved = 0
 
+    # Get VN30 list
+    try:
+        from vnstock_data import Reference
+        ref = Reference()
+        vn30_list = list(ref.equity.list_by_group(group="VN30")['symbol'].str.upper())
+    except:
+        vn30_list = list(VN30_SYMBOLS)
+
     for data in results:
         try:
+            symbol = data["symbol"]
+            industry = data.get("industry", "")
+            market_group = "VN30" if symbol in vn30_list else ("MIDCAP" if data.get("avg_volume_value", 0) >= 5 else "SMALL")
+
             # Save StockData
             stock, _ = StockData.objects.update_or_create(
-                symbol=data["symbol"],
+                symbol=symbol,
                 defaults={
-                    "company_name": data.get("company_name", data["symbol"]),
+                    "company_name": data.get("company_name", symbol),
+                    "industry": industry,
+                    "market_group": market_group,
                     "price": data["price"],
                     "change_percent": data["change_percent"],
                     "volume": data["volume"],
