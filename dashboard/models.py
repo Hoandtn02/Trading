@@ -86,10 +86,21 @@ class StockData(models.Model):
     # Volume
     volume_ratio = models.FloatField(default=1.0)
 
+    # Advanced TA
+    mfi = models.FloatField(default=50)  # Money Flow Index
+    vwap = models.FloatField(default=0)
+    vwap_status = models.CharField(max_length=20, default="neutral")
+    ichimoku_tenkan = models.FloatField(default=0)
+    ichimoku_kijun = models.FloatField(default=0)
+    ichimoku_status = models.CharField(max_length=20, default="neutral")
+    supertrend = models.FloatField(default=0)
+    supertrend_signal = models.CharField(max_length=20, default="neutral")
+
     # Fundamental (optional, may be None)
     pe = models.FloatField(null=True, blank=True)
     pb = models.FloatField(null=True, blank=True)
     roe = models.FloatField(null=True, blank=True)
+    f_score = models.IntegerField(default=0)
 
     # Meta
     updated_at = models.DateTimeField(auto_now=True)

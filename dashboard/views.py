@@ -675,10 +675,17 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "macd_signal": s.macd_signal,
             "bb_upper": s.bb_upper,
             "bb_lower": s.bb_lower,
+            # Advanced TA
+            "mfi": s.mfi,
+            "vwap": s.vwap,
+            "vwap_status": s.vwap_status,
+            "ichimoku_status": s.ichimoku_status,
+            "supertrend_signal": s.supertrend_signal,
             # Fundamental
             "roe": s.roe,
             "pe": s.pe,
             "pb": s.pb,
+            "f_score": s.f_score,
             # Analysis
             "master_score": a.master_score,
             "technical_score": a.technical_score,
@@ -735,8 +742,8 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     writer = csv.writer(response)
     writer.writerow([
         "Symbol", "Company", "Price", "Change%", "Volume", "Volume Ratio",
-        "RSI", "ADX", "CMF", "ATR", "SMA20", "MACD", "MACD Signal",
-        "ROE", "P/E", "P/B",
+        "RSI", "ADX", "CMF", "ATR", "MFI", "SMA20", "VWAP", "Ichimoku", "SuperTrend",
+        "ROE", "P/E", "P/B", "F-Score",
         "Master Score", "Tech Score", "Fund Score", "Signal",
         "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
         "Est. Days", "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
@@ -748,8 +755,8 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         writer.writerow([
             s.symbol, s.company_name, s.price, s.change_percent,
             s.volume, s.volume_ratio,
-            s.rsi, s.adx, s.cmf, s.atr, s.sma_20, s.macd, s.macd_signal,
-            s.roe, s.pe, s.pb,
+            s.rsi, s.adx, s.cmf, s.atr, s.mfi, s.sma_20, s.vwap, s.ichimoku_status, s.supertrend_signal,
+            s.roe, s.pe, s.pb, s.f_score,
             a.master_score, a.technical_score, a.fundamental_score, a.signal,
             a.criteria_met, a.risk_reward_ratio,
             a.entry_price, a.stop_loss, a.take_profit,

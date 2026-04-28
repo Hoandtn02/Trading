@@ -236,6 +236,129 @@
         }
         .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
         .empty-state p { font-size: 14px; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 24px;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: #334155;
+            border: none;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { background: #475569; }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #334155;
+        }
+        .modal-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .modal-company { font-size: 14px; color: #94a3b8; margin-top: 4px; }
+        .modal-price {
+            text-align: right;
+        }
+        .modal-price .price { font-size: 32px; font-weight: 700; color: #fff; }
+        .modal-price .change { font-size: 16px; margin-top: 4px; }
+        .modal-section {
+            margin-bottom: 20px;
+        }
+        .modal-section h3 {
+            font-size: 14px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .modal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .modal-item {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .modal-item .label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+        .modal-item .value { font-size: 18px; font-weight: 600; color: #fff; }
+        .modal-item .value.positive { color: #22c55e; }
+        .modal-item .value.negative { color: #ef4444; }
+        .modal-item .value.neutral { color: #94a3b8; }
+        .modal-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #334155;
+        }
+        .modal-btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .modal-btn.primary {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .modal-btn.primary:hover { background: #2563eb; }
+        .modal-btn.secondary {
+            background: #334155;
+            color: #fff;
+        }
+        .modal-btn.secondary:hover { background: #475569; }
     </style>
 </head>
 <body>
@@ -335,21 +458,56 @@
                         <th>RSI</th>
                         <th>ADX</th>
                         <th>CMF</th>
-                        <th>Vol Ratio</th>
+                        <th>MFI</th>
+                        <th>VWAP</th>
+                        <th>Cloud</th>
                         <th>Entry</th>
                         <th>Stop Loss</th>
                         <th>Take Profit</th>
-                        <th>Est. Days</th>
                         <th>ROE</th>
                         <th>P/E</th>
                         <th>P/B</th>
+                        <th>F-Score</th>
                         <th>Trạng Thái</th>
-                        <th>Trend</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for stock in stocks %}
-                    <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}">
+                    <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}"
+                        data-symbol="{{ stock.symbol }}"
+                        data-company="{{ stock.company_name }}"
+                        data-price="{{ stock.price }}"
+                        data-change="{{ stock.change_percent }}"
+                        data-score="{{ stock.master_score }}"
+                        data-tech-score="{{ stock.technical_score }}"
+                        data-fund-score="{{ stock.fundamental_score }}"
+                        data-signal="{{ stock.signal }}"
+                        data-criteria="{{ stock.criteria_met }}"
+                        data-rr="{{ stock.risk_reward_ratio }}"
+                        data-rsi="{{ stock.rsi }}"
+                        data-adx="{{ stock.adx }}"
+                        data-cmf="{{ stock.cmf }}"
+                        data-mfi="{{ stock.mfi }}"
+                        data-vwap="{{ stock.vwap }}"
+                        data-vwap-status="{{ stock.vwap_status }}"
+                        data-ichimoku="{{ stock.ichimoku_status }}"
+                        data-entry="{{ stock.entry_price }}"
+                        data-sl="{{ stock.stop_loss }}"
+                        data-tp="{{ stock.take_profit }}"
+                        data-roe="{{ stock.roe }}"
+                        data-pe="{{ stock.pe }}"
+                        data-pb="{{ stock.pb }}"
+                        data-fscore="{{ stock.f_score }}"
+                        data-trend="{{ stock.trend }}"
+                        data-sma20="{{ stock.sma_20 }}"
+                        data-sma50="{{ stock.sma_50 }}"
+                        data-supertrend="{{ stock.supertrend_signal }}"
+                        data-vetoed="{{ stock.is_vetoed|yesno:'true,false' }}"
+                        data-veto-reason="{{ stock.veto_reason }}"
+                        data-fast="{{ stock.is_fast_pick|yesno:'true,false' }}"
+                        data-high-risk="{{ stock.is_high_risk|yesno:'true,false' }}"
+                        data-days="{{ stock.estimated_days_to_target }}"
+                        onclick="openStockModalFromRow(this)">
                         <td>{{ forloop.counter }}</td>
                         <td>
                             <span class="symbol-cell">{{ stock.symbol }}</span>
@@ -373,7 +531,7 @@
                         </td>
                         <td>
                             <span class="badge {% if stock.criteria_met >= 9 %}badge-qualified{% elif stock.criteria_met >= 7 %}badge-buy{% else %}badge-wait{% endif %}">
-                                {{ stock.criteria_met }}/10
+                                {{ stock.criteria_met }}/12
                             </span>
                         </td>
                         <td>{{ stock.risk_reward_ratio|floatformat:2 }}</td>
@@ -384,13 +542,20 @@
                         <td class="{% if stock.cmf > 0 %}positive{% elif stock.cmf < 0 %}negative{% endif %}">
                             {{ stock.cmf|floatformat:3 }}
                         </td>
-                        <td class="{% if stock.volume_ratio >= 1.3 %}positive{% elif stock.volume_ratio >= 1 %}neutral{% else %}negative{% endif %}">
-                            {{ stock.volume_ratio|floatformat:1 }}x
+                        <td class="{% if stock.mfi >= 50 %}positive{% else %}negative{% endif %}">
+                            {{ stock.mfi|floatformat:0 }}
+                        </td>
+                        <td class="{% if stock.vwap_status == 'above' %}positive{% elif stock.vwap_status == 'below' %}negative{% endif %}">
+                            {% if stock.vwap > 0 %}{{ stock.vwap|floatformat:0 }}{% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if stock.ichimoku_status == 'bullish' %}<span class="positive">🟢</span>
+                            {% elif stock.ichimoku_status == 'bearish' %}<span class="negative">🔴</span>
+                            {% else %}<span>🟡</span>{% endif %}
                         </td>
                         <td>{{ stock.entry_price|floatformat:1 }}</td>
                         <td class="negative">{{ stock.stop_loss|floatformat:1 }}</td>
                         <td class="positive">{{ stock.take_profit|floatformat:1 }}</td>
-                        <td>{{ stock.estimated_days_to_target|floatformat:0 }}d</td>
                         <td class="{% if stock.roe >= 15 %}positive{% elif stock.roe >= 10 %}neutral{% elif stock.roe and stock.roe > 0 %}negative{% endif %}">
                             {% if stock.roe %}{{ stock.roe|floatformat:1 }}{% else %}-{% endif %}
                         </td>
@@ -399,6 +564,11 @@
                         </td>
                         <td class="{% if stock.pb and stock.pb < 2 %}positive{% elif stock.pb and stock.pb > 4 %}negative{% endif %}">
                             {% if stock.pb %}{{ stock.pb|floatformat:2 }}{% else %}-{% endif %}
+                        </td>
+                        <td>
+                            <span class="badge {% if stock.f_score >= 7 %}badge-buy{% elif stock.f_score >= 4 %}badge-wait{% else %}badge-sell{% endif %}">
+                                {{ stock.f_score }}/9
+                            </span>
                         </td>
                         <td>
                             {% if stock.is_vetoed %}
@@ -415,7 +585,6 @@
                                 -
                             {% endif %}
                         </td>
-                        <td>{{ stock.trend }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -436,6 +605,291 @@
                 this.form.submit();
             }
         });
+
+        // Open modal when clicking on a stock row
+        function openStockModalFromRow(row) {
+            const stockData = {
+                symbol: row.dataset.symbol,
+                company_name: row.dataset.company,
+                price: parseFloat(row.dataset.price) || 0,
+                change_percent: parseFloat(row.dataset.change) || 0,
+                master_score: parseInt(row.dataset.score) || 0,
+                technical_score: parseInt(row.dataset.techScore) || 0,
+                fundamental_score: parseInt(row.dataset.fundScore) || 0,
+                signal: row.dataset.signal || 'WAIT',
+                criteria_met: parseInt(row.dataset.criteria) || 0,
+                risk_reward_ratio: parseFloat(row.dataset.rr) || 0,
+                rsi: parseFloat(row.dataset.rsi) || 50,
+                adx: parseFloat(row.dataset.adx) || 0,
+                cmf: parseFloat(row.dataset.cmf) || 0,
+                mfi: parseFloat(row.dataset.mfi) || 50,
+                vwap: parseFloat(row.dataset.vwap) || 0,
+                vwap_status: row.dataset.vwapStatus || 'neutral',
+                ichimoku_status: row.dataset.ichimoku || 'neutral',
+                entry_price: parseFloat(row.dataset.entry) || 0,
+                stop_loss: parseFloat(row.dataset.sl) || 0,
+                take_profit: parseFloat(row.dataset.tp) || 0,
+                roe: row.dataset.roe ? parseFloat(row.dataset.roe) : null,
+                pe: row.dataset.pe ? parseFloat(row.dataset.pe) : null,
+                pb: row.dataset.pb ? parseFloat(row.dataset.pb) : null,
+                f_score: parseInt(row.dataset.fscore) || 0,
+                trend: row.dataset.trend || 'WAIT',
+                sma_20: parseFloat(row.dataset.sma20) || 0,
+                sma_50: parseFloat(row.dataset.sma50) || 0,
+                supertrend_signal: row.dataset.supertrend || 'neutral',
+                is_vetoed: row.dataset.vetoed === 'true',
+                veto_reason: row.dataset.vetoReason || '',
+                is_fast_pick: row.dataset.fast === 'true',
+                is_high_risk: row.dataset.highRisk === 'true',
+                estimated_days: parseFloat(row.dataset.days) || 0,
+            };
+            showModal(stockData);
+        }
+
+        function openStockModal(symbol) {
+            const row = document.querySelector(`tr[data-symbol="${symbol}"]`);
+            if (row) {
+                openStockModalFromRow(row);
+            }
+        }
+
+        function showModal(stockData) {
+            // Populate modal
+            document.getElementById('modalSymbol').textContent = stockData.symbol;
+            document.getElementById('modalCompany').textContent = stockData.company_name;
+            document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
+            document.getElementById('modalChange').textContent = (stockData.change_percent >= 0 ? '+' : '') + stockData.change_percent.toFixed(2) + '%';
+            document.getElementById('modalChange').className = 'change ' + (stockData.change_percent >= 0 ? 'positive' : 'negative');
+
+            document.getElementById('modalScore').textContent = stockData.master_score;
+            document.getElementById('modalSignal').textContent = stockData.signal;
+            document.getElementById('modalSignal').className = 'value ' + getSignalClass(stockData.signal);
+            document.getElementById('modalTrend').textContent = stockData.trend;
+            document.getElementById('modalCriteria').textContent = stockData.criteria_met + '/12';
+
+            document.getElementById('modalEntry').textContent = formatNumber(stockData.entry_price, 1);
+            document.getElementById('modalSL').textContent = formatNumber(stockData.stop_loss, 1);
+            document.getElementById('modalTP').textContent = formatNumber(stockData.take_profit, 1);
+            document.getElementById('modalRR').textContent = stockData.risk_reward_ratio.toFixed(2);
+
+            document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
+            document.getElementById('modalRSI').className = 'value ' + getRSIClass(stockData.rsi);
+            document.getElementById('modalADX').textContent = stockData.adx.toFixed(0);
+            document.getElementById('modalCMF').textContent = (stockData.cmf >= 0 ? '+' : '') + stockData.cmf.toFixed(3);
+            document.getElementById('modalCMF').className = 'value ' + (stockData.cmf >= 0 ? 'positive' : 'negative');
+            document.getElementById('modalMFI').textContent = stockData.mfi.toFixed(0);
+            document.getElementById('modalVWAP').textContent = stockData.vwap > 0 ? formatNumber(stockData.vwap, 1) : 'N/A';
+            document.getElementById('modalIchimoku').textContent = stockData.ichimoku_status.toUpperCase();
+            document.getElementById('modalIchimoku').className = 'value ' + (stockData.ichimoku_status === 'bullish' ? 'positive' : stockData.ichimoku_status === 'bearish' ? 'negative' : 'neutral');
+            document.getElementById('modalST').textContent = stockData.supertrend_signal.toUpperCase();
+            document.getElementById('modalSMA20').textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
+
+            document.getElementById('modalFScore').textContent = stockData.f_score + '/9';
+            document.getElementById('modalROE').textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
+            document.getElementById('modalPE').textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
+            document.getElementById('modalPB').textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+
+            // Badges
+            const badgesContainer = document.getElementById('modalBadges');
+            badgesContainer.innerHTML = '';
+            if (stockData.is_vetoed) {
+                badgesContainer.innerHTML += '<span class="badge badge-veto">VETO: ' + stockData.veto_reason + '</span>';
+            }
+            if (stockData.is_fast_pick) {
+                badgesContainer.innerHTML += '<span class="badge badge-fast">FAST PICK</span>';
+            }
+            if (stockData.is_high_risk) {
+                badgesContainer.innerHTML += '<span class="badge badge-high-risk">HIGH RISK</span>';
+            }
+            if (stockData.criteria_met >= 9) {
+                badgesContainer.innerHTML += '<span class="badge badge-qualified">EXCELLENT</span>';
+            } else if (stockData.criteria_met >= 7) {
+                badgesContainer.innerHTML += '<span class="badge badge-qualified">QUALIFIED</span>';
+            }
+            if (stockData.estimated_days > 0) {
+                badgesContainer.innerHTML += '<span class="badge badge-buy">' + stockData.estimated_days.toFixed(0) + ' ngày</span>';
+            }
+
+            // Show modal
+            document.getElementById('stockModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('stockModal').classList.remove('active');
+        }
+
+        function runAnalysis() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            window.location.href = '/?function=stock_analysis&symbol=' + symbol;
+        }
+
+        function addToWatchlist() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            alert('Đã thêm ' + symbol + ' vào watchlist!');
+            closeModal();
+        }
+
+        function formatNumber(num, decimals = 0) {
+            if (num === null || num === undefined || isNaN(num)) return 'N/A';
+            return num.toLocaleString('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        }
+
+        function getSignalClass(signal) {
+            if (signal === 'BUY' || signal === 'STRONG_BUY' || signal === 'ACCUMULATE') return 'positive';
+            if (signal === 'SELL') return 'negative';
+            return 'neutral';
+        }
+
+        function getRSIClass(rsi) {
+            if (rsi >= 70) return 'negative';
+            if (rsi <= 30) return 'positive';
+            return 'neutral';
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // Close modal on click outside
+        document.getElementById('stockModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
     </script>
+    <!-- Modal for stock details -->
+    <div id="stockModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" id="modalSymbol">VCB</div>
+                    <div class="modal-company" id="modalCompany">Ngân hàng TMCP Ngoại Thương Việt Nam</div>
+                </div>
+                <div class="modal-price">
+                    <div class="price" id="modalPrice">95,000</div>
+                    <div class="change positive" id="modalChange">+2.5%</div>
+                </div>
+            </div>
+
+            <!-- Signal & Score -->
+            <div class="modal-section">
+                <h3>Đánh Giá Tổng Quan</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Master Score</div>
+                        <div class="value" id="modalScore">75</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Signal</div>
+                        <div class="value positive" id="modalSignal">BUY</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Xu hướng</div>
+                        <div class="value" id="modalTrend">UPTREND</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Criteria Đạt</div>
+                        <div class="value" id="modalCriteria">8/12</div>
+                    </div>
+                </div>
+                <div class="modal-badges" id="modalBadges"></div>
+            </div>
+
+            <!-- Trading Levels -->
+            <div class="modal-section">
+                <h3>Mức Giao Dịch</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Entry Price</div>
+                        <div class="value positive" id="modalEntry">95,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Stop Loss</div>
+                        <div class="value negative" id="modalSL">91,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Take Profit</div>
+                        <div class="value positive" id="modalTP">100,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">R:R Ratio</div>
+                        <div class="value" id="modalRR">2.5</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Technical Indicators -->
+            <div class="modal-section">
+                <h3>Chỉ Báo Kỹ Thuật</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">RSI (14)</div>
+                        <div class="value" id="modalRSI">55</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">ADX</div>
+                        <div class="value" id="modalADX">28</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">CMF</div>
+                        <div class="value" id="modalCMF">+0.15</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MFI</div>
+                        <div class="value" id="modalMFI">58</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">VWAP</div>
+                        <div class="value" id="modalVWAP">94,500</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Ichimoku</div>
+                        <div class="value" id="modalIchimoku">BULLISH</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SuperTrend</div>
+                        <div class="value" id="modalST">BUY</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SMA 20</div>
+                        <div class="value" id="modalSMA20">92,000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fundamental -->
+            <div class="modal-section">
+                <h3>Phân Tích Cơ Bản</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">F-Score</div>
+                        <div class="value" id="modalFScore">7/9</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">ROE</div>
+                        <div class="value" id="modalROE">22.5%</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">P/E</div>
+                        <div class="value" id="modalPE">12.5</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">P/B</div>
+                        <div class="value" id="modalPB">2.1</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn primary" onclick="runAnalysis()">🔍 Phân Tích Chi Tiết</button>
+                <button class="modal-btn secondary" onclick="addToWatchlist()">⭐ Thêm Vào Watchlist</button>
+                <button class="modal-btn secondary" onclick="closeModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
