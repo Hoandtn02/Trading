@@ -335,13 +335,14 @@
                         <th>RSI</th>
                         <th>ADX</th>
                         <th>CMF</th>
-                        <th>Volume Ratio</th>
-                        <th>SMA20</th>
-                        <th>MACD</th>
+                        <th>Vol Ratio</th>
                         <th>Entry</th>
                         <th>Stop Loss</th>
                         <th>Take Profit</th>
                         <th>Est. Days</th>
+                        <th>ROE</th>
+                        <th>P/E</th>
+                        <th>P/B</th>
                         <th>Trạng Thái</th>
                         <th>Trend</th>
                     </tr>
@@ -386,19 +387,19 @@
                         <td class="{% if stock.volume_ratio >= 1.3 %}positive{% elif stock.volume_ratio >= 1 %}neutral{% else %}negative{% endif %}">
                             {{ stock.volume_ratio|floatformat:1 }}x
                         </td>
-                        <td>
-                            {% if stock.sma_20 > 0 %}
-                                {% if stock.price > stock.sma_20 %}<span class="positive">▲</span>{% else %}<span class="negative">▼</span>{% endif %}
-                                {{ stock.sma_20|floatformat:1 }}
-                            {% else %}-{% endif %}
-                        </td>
-                        <td>
-                            {% if stock.macd > stock.macd_signal %}<span class="positive">▲</span>{% else %}<span class="negative">▼</span>{% endif %}
-                        </td>
                         <td>{{ stock.entry_price|floatformat:1 }}</td>
                         <td class="negative">{{ stock.stop_loss|floatformat:1 }}</td>
                         <td class="positive">{{ stock.take_profit|floatformat:1 }}</td>
                         <td>{{ stock.estimated_days_to_target|floatformat:0 }}d</td>
+                        <td class="{% if stock.roe >= 15 %}positive{% elif stock.roe >= 10 %}neutral{% elif stock.roe and stock.roe > 0 %}negative{% endif %}">
+                            {% if stock.roe %}{{ stock.roe|floatformat:1 }}{% else %}-{% endif %}
+                        </td>
+                        <td class="{% if stock.pe and stock.pe < 15 %}positive{% elif stock.pe and stock.pe > 30 %}negative{% endif %}">
+                            {% if stock.pe %}{{ stock.pe|floatformat:1 }}{% else %}-{% endif %}
+                        </td>
+                        <td class="{% if stock.pb and stock.pb < 2 %}positive{% elif stock.pb and stock.pb > 4 %}negative{% endif %}">
+                            {% if stock.pb %}{{ stock.pb|floatformat:2 }}{% else %}-{% endif %}
+                        </td>
                         <td>
                             {% if stock.is_vetoed %}
                                 <span class="badge badge-veto">VETO</span>

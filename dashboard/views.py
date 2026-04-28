@@ -290,26 +290,43 @@ def top_picks(request: HttpRequest) -> HttpResponse:
 def scan_vn30_api(request: HttpRequest) -> HttpResponse:
     """
     API endpoint để trigger sync và lấy kết quả
-    POST: Trigger sync (chạy ngầm)
+    POST: Trigger sync với mode (full/data_only/analyze)
     GET: Lấy kết quả từ DB
     """
     import json
 
     if request.method == "POST":
+        # Get mode from request
+        try:
+            body = json.loads(request.body) if request.body else {}
+            mode = body.get("mode", "full")
+        except:
+            mode = "full"
+
+        # Validate mode
+        if mode not in ["full", "data_only", "analyze"]:
+            mode = "full"
+
         # Trigger sync in background
-        from django.contrib.auth.models import AnonymousUser
         import threading
 
         def run_sync():
-            sync_market_data(force=True)
+            sync_market_data(mode=mode)
 
         thread = threading.Thread(target=run_sync)
         thread.daemon = True
         thread.start()
 
+        mode_labels = {
+            "full": "Đồng bộ + Phân tích",
+            "data_only": "Chỉ lấy dữ liệu",
+            "analyze": "Chỉ phân tích lại"
+        }
+
         return JsonResponse({
             "status": "started",
-            "message": "Đang đồng bộ dữ liệu 100 mã..."
+            "mode": mode,
+            "message": f"Đang {mode_labels.get(mode, 'đồng bộ')}..."
         })
 
     # GET: Lấy kết quả từ DB - CỰC NHANH
@@ -658,6 +675,10 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "macd_signal": s.macd_signal,
             "bb_upper": s.bb_upper,
             "bb_lower": s.bb_lower,
+            # Fundamental
+            "roe": s.roe,
+            "pe": s.pe,
+            "pb": s.pb,
             # Analysis
             "master_score": a.master_score,
             "technical_score": a.technical_score,
@@ -715,6 +736,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     writer.writerow([
         "Symbol", "Company", "Price", "Change%", "Volume", "Volume Ratio",
         "RSI", "ADX", "CMF", "ATR", "SMA20", "MACD", "MACD Signal",
+        "ROE", "P/E", "P/B",
         "Master Score", "Tech Score", "Fund Score", "Signal",
         "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
         "Est. Days", "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
@@ -727,6 +749,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
             s.symbol, s.company_name, s.price, s.change_percent,
             s.volume, s.volume_ratio,
             s.rsi, s.adx, s.cmf, s.atr, s.sma_20, s.macd, s.macd_signal,
+            s.roe, s.pe, s.pb,
             a.master_score, a.technical_score, a.fundamental_score, a.signal,
             a.criteria_met, a.risk_reward_ratio,
             a.entry_price, a.stop_loss, a.take_profit,

@@ -1,6 +1,11 @@
 """
-Sync Engine v7 - Database-First Architecture
-Tốc độ: < 20s cho 100 mã với ThreadPoolExecutor
+Sync Engine v8 - Database-First Architecture (FIXED)
+- Fix Company name, Change%
+- Add Fundamental data (ROE, P/E, P/B)
+- Fix R:R calculation with ATR-based SL
+- Keep criteria when vetoed
+- Auto High Risk when VNIndex RSI > 80
+- Sort FAST picks by Volume Ratio
 """
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,19 +18,19 @@ from dashboard.models import StockData, StockAnalysis, SyncStatus
 
 
 # ============== CONSTANTS ==============
-MAX_WORKERS = 10  # Số luồng song song
-UNIVERSE_SIZE = 100  # Số mã quét
-MIN_LIQUIDITY_BILLION = 15  # Thanh khoản tối thiểu (tỷ VND)
-MIN_PRICE = 10000  # Giá tối thiểu
+MAX_WORKERS = 10
+UNIVERSE_SIZE = 100
+MIN_LIQUIDITY_BILLION = 15
+MIN_PRICE = 10000
 
 
 def get_market_rsi() -> float:
     """Lấy RSI của VNIndex"""
     try:
         from vnstock import Quote
-        q = Quote(symbol="VNINDEX", source="vci")
+        q = Quote(symbol="VNINDEX")
         df = q.history(
-            start=(datetime.now().replace(hour=0, minute=0, second=0) - pd.Timedelta(days=60)).strftime("%Y-%m-%d"),
+            start=(datetime.now() - pd.Timedelta(days=60)).strftime("%Y-%m-%d"),
             end=datetime.now().strftime("%Y-%m-%d"),
             interval="1D"
         )
@@ -42,28 +47,63 @@ def get_market_rsi() -> float:
     return 50.0
 
 
+def get_company_name(symbol: str) -> str:
+    """Lấy tên công ty từ vnstock"""
+    try:
+        from vnstock import Company
+        company = Company(symbol=symbol, source="vci")
+        info = company.overview()
+        if info is not None and not info.empty:
+            if 'company_name' in info.columns:
+                return str(info['company_name'].iloc[0])
+            elif 'name' in info.columns:
+                return str(info['name'].iloc[0])
+    except:
+        pass
+    return symbol  # Fallback về mã
+
+
+def get_fundamental_data(symbol: str) -> Dict[str, float]:
+    """Lấy dữ liệu cơ bản: ROE, P/E, P/B"""
+    result = {"roe": None, "pe": None, "pb": None}
+    try:
+        from vnstock import Finance
+        fin = Finance(symbol=symbol, source="vci")
+        ratios = fin.ratio(period="quarter")
+        if ratios is not None and not ratios.empty:
+            # Try different column names
+            for col in ratios.columns:
+                col_lower = col.lower()
+                if 'roe' in col_lower:
+                    result['roe'] = float(ratios[col].iloc[0])
+                elif 'pe' in col_lower or 'p/e' in col_lower:
+                    result['pe'] = float(ratios[col].iloc[0])
+                elif 'pb' in col_lower or 'p/b' in col_lower:
+                    result['pb'] = float(ratios[col].iloc[0])
+    except:
+        pass
+    return result
+
+
 def get_top_symbols_by_liquidity() -> List[str]:
     """Lấy Top 100 mã thanh khoản cao nhất"""
     warnings.filterwarnings('ignore')
 
+    candidates = [
+        "VNM", "VCB", "VHM", "VIC", "VPB", "BID", "TCB", "CTG", "MBB", "ACB",
+        "STB", "HPG", "FPT", "MWG", "PNJ", "TPB", "SHB", "SSI", "MSN", "GAS",
+        "PLX", "VRE", "VIB", "VJC", "SAB", "HDB", "LPB", "SSB", "GVR", "DGC",
+        "KDH", "GMD", "SBT", "DGW", "CMG", "IMP", "VHC", "REE", "NT2", "BCM",
+        "POW", "HAG", "NVL", "DIG", "ASM", "DRC", "HCM", "PVI", "BSR", "PVD",
+        "VND", "OCB", "EIB", "KBS", "SHS", "VDS", "BVS", "TVS", "VIG", "VFM",
+        "BCM", "MSB", "NAB", "EIB", "STB", "HCM", "CTS", "VCI", "SHS", "VND",
+        "TPB", "MBB", "ACB", "VPB", "CTG", "TCB", "BID", "VCB", "SHB", "LPB",
+        "SSB", "OCB", "HDB", "VIB", "MSB", "STB", "PGB", "KLB", "BAB", "BID",
+        "NVL", "DPG", "DXG", "KDH", "HDG", "IDJ", "SJS", "FPT", "CMG", "ELC",
+    ]
+
     try:
-        from vnstock import Quote, Listing
-
-        # Lấy danh sách mã từ HOSE
-        candidates = [
-            "VNM", "VCB", "VHM", "VIC", "VPB", "BID", "TCB", "CTG", "MBB", "ACB",
-            "STB", "HPG", "FPT", "MWG", "PNJ", "TPB", "SHB", "SSI", "MSN", "GAS",
-            "PLX", "VRE", "VIB", "VJC", "SAB", "HDB", "LPB", "SSB", "GVR", "DGC",
-            "KDH", "GMD", "SBT", "DGW", "CMG", "IMP", "VHC", "REE", "NT2", "BCM",
-            "POW", "HAG", "NVL", "DIG", "ASM", "DRC", "HCM", "PVI", "BSR", "PVD",
-            "VND", "OCB", "EIB", "KBS", "SHS", "VDS", "BVS", "TVS", "VIG", "VFM",
-            "BCM", "MSB", "NAB", "EIB", "STB", "HCM", "CTS", "VCI", "SHS", "VND",
-            "TPB", "MBB", "ACB", "VPB", "CTG", "TCB", "BID", "VCB", "SHB", "LPB",
-            "SSB", "OCB", "HDB", "VIB", "MSB", "STB", "PGB", "KLB", "BAB", "BID",
-            "NVL", "DPG", "DXG", "KDH", "HDG", "IDJ", "SJS", "FPT", "CMG", "ELC",
-        ]
-
-        # Tính thanh khoản cho từng mã
+        from vnstock import Quote
         liquidity_data = []
         for symbol in candidates:
             try:
@@ -83,14 +123,11 @@ def get_top_symbols_by_liquidity() -> List[str]:
             except:
                 continue
 
-        # Sort và lấy top 100
         liquidity_data.sort(key=lambda x: x[1], reverse=True)
         top_symbols = [s[0] for s in liquidity_data[:UNIVERSE_SIZE]]
 
-        # Fallback nếu không đủ mã
         if len(top_symbols) < 5:
             print(f"[Sync] Fallback: Chỉ có {len(top_symbols)} mã đủ thanh khoản")
-            # Dùng tất cả candidates đã định nghĩa
             top_symbols = candidates[:UNIVERSE_SIZE]
 
         return top_symbols
@@ -106,6 +143,9 @@ def get_top_symbols_by_liquidity() -> List[str]:
 def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, float]:
     """Tính toán các chỉ báo kỹ thuật từ OHLCV data"""
     result = {
+        "price": 0.0,
+        "change_percent": 0.0,
+        "volume": 0,
         "rsi": 50.0,
         "adx": 25.0,
         "plus_di": 0.0,
@@ -135,6 +175,9 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, float]:
     try:
         # Current values
         result["price"] = float(close.iloc[-1])
+        result["volume"] = int(volume.iloc[-1]) if 'volume' in df.columns else 0
+
+        # Change Percent - FIX: Tính đúng
         if len(close) > 1:
             prev = float(close.iloc[-2])
             if prev > 0:
@@ -154,7 +197,7 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, float]:
             atr_series = tr.rolling(14).mean()
             result["atr"] = round(float(atr_series.iloc[-1]), 2)
             if result["atr"] <= 0:
-                result["atr"] = round(result["price"] * 0.02, 2)  # Fallback 2%
+                result["atr"] = round(result["price"] * 0.02, 2)
 
             high_diff = high.diff()
             low_diff = -low.diff()
@@ -229,29 +272,24 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         import warnings as w
         w.filterwarnings('ignore')
 
-        # Lấy dữ liệu giá
+        # Get Company Name - NEW
+        company_name = get_company_name(symbol)
+
+        # Get Fundamental Data - NEW
+        fund_data = get_fundamental_data(symbol)
+
+        # Get Price Data
         df = None
         try:
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.equity(symbol).ohlcv(
+            from vnstock import Quote
+            q = Quote(symbol=symbol)
+            df = q.history(
                 start=(datetime.now() - pd.Timedelta(days=100)).strftime("%Y-%m-%d"),
-                end=datetime.now().strftime("%Y-%m-%d")
+                end=datetime.now().strftime("%Y-%m-%d"),
+                interval="1D"
             )
         except:
-            pass
-
-        if df is None:
-            try:
-                from vnstock import Quote
-                q = Quote(symbol=symbol, source="vci")
-                df = q.history(
-                    start=(datetime.now() - pd.Timedelta(days=100)).strftime("%Y-%m-%d"),
-                    end=datetime.now().strftime("%Y-%m-%d"),
-                    interval="1D"
-                )
-            except:
-                return None
+            return None
 
         if df is None or len(df) < 20:
             return None
@@ -259,84 +297,98 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         # Calculate indicators
         tech = calculate_technical_indicators(df)
 
-        # Trading Levels - FIX INVERTED SL
+        # Trading Levels - FIX: ATR-based Stop Loss
         entry = tech["price"]
-        min_distance = entry * 0.03  # 3% minimum
+        min_distance_pct = 0.03  # 3%
+        min_distance = entry * min_distance_pct
 
-        # Find support
-        supports = [s for s in [tech["bb_lower"], tech["sma_20"], entry - (tech["atr"] * 2)] if s > 0]
-        raw_sl = max(supports) if supports else entry * 0.95
+        # ATR-based Stop Loss (safer)
+        atr_value = tech["atr"] if tech["atr"] > 0 else entry * 0.02
+        raw_sl = entry - (atr_value * 1.5)  # 1.5 ATR distance
 
-        # Ensure SL < Entry and >= 3% distance
-        if entry - raw_sl < min_distance:
-            raw_sl = entry - min_distance
+        # Ensure SL < Entry
         if raw_sl >= entry:
-            raw_sl = entry * 0.95
+            raw_sl = entry * (1 - min_distance_pct)
             has_inverted_sl = True
         else:
             has_inverted_sl = False
 
         stop_loss = round(raw_sl, 2)
-        take_profit = round(max(tech["bb_upper"], entry * 1.10), 2)
+        take_profit = round(entry + (atr_value * 3), 2)  # 3 ATR target
 
-        # R:R
+        # R:R - FIX: Always calculate even if vetoed
         risk = entry - stop_loss
         reward = take_profit - entry
-        if risk >= min_distance:
+        if risk > 0:
             rr_ratio = round(reward / risk, 2)
         else:
-            rr_ratio = 0
+            # Fallback: use 3% risk
+            risk = entry * 0.03
+            reward = entry * 0.09  # 9% target = 3:1 R:R
+            rr_ratio = 3.0
+            stop_loss = round(entry * 0.97, 2)
+            take_profit = round(entry * 1.09, 2)
 
         # Est Days
-        if tech["atr"] > 0:
+        if atr_value > 0:
             price_diff = take_profit - entry
-            est_days = max(price_diff / tech["atr"], 1)
+            est_days = max(price_diff / atr_value, 1)
             if market_rsi > 80:
-                est_days += 3
+                est_days += 5  # Adjust for overbought market
         else:
             est_days = 5
 
-        # VETO CHECK
+        # CRITERIA - FIX: Calculate BEFORE veto check
+        criteria = []
+        # RSI Sweet Spot
+        if 50 <= tech["rsi"] <= 65:
+            criteria.append("RSI Sweet Spot")
+        # ADX Strong
+        if tech["adx"] > 20:
+            criteria.append("ADX Strong")
+        # DI Bullish
+        if tech["plus_di"] > tech["minus_di"]:
+            criteria.append("DI Bullish")
+        # CMF Positive
+        if tech["cmf"] > 0:
+            criteria.append("CMF Positive")
+        # Volume Active
+        if tech["volume_ratio"] > 1.0:
+            criteria.append("Volume Active")
+        # Above SMA20
+        if tech["sma_20"] > 0 and tech["price"] > tech["sma_20"]:
+            criteria.append("Above SMA20")
+        # MACD Bullish
+        if tech["macd"] > tech["macd_signal"]:
+            criteria.append("MACD Bullish")
+        # R:R Good
+        if rr_ratio >= 2.0:
+            criteria.append("R:R >= 2.0")
+        elif rr_ratio >= 1.5:
+            criteria.append("R:R >= 1.5")
+        # Fast Holding
+        if est_days <= 10:
+            criteria.append("Fast Holding")
+
+        criteria_met = len(criteria)
+
+        # VETO CHECK - AFTER criteria calculation
         is_vetoed = False
         veto_reason = ""
         if tech["cmf"] < 0:
             is_vetoed = True
             veto_reason = "CMF Negative"
-        elif rr_ratio == 0:
-            is_vetoed = True
-            veto_reason = "R:R = 0"
         elif tech["atr"] <= 0:
             is_vetoed = True
             veto_reason = "ATR = 0"
-
-        # CRITERIA
-        criteria = []
-        if not is_vetoed:
-            if 50 <= tech["rsi"] <= 65:
-                criteria.append("RSI Sweet Spot")
-            if tech["adx"] > 20:
-                criteria.append("ADX Strong")
-            if tech["plus_di"] > tech["minus_di"]:
-                criteria.append("DI Bullish")
-            if tech["cmf"] > 0:
-                criteria.append("CMF Positive")
-            if tech["volume_ratio"] > 1.0:
-                criteria.append("Volume Active")
-            if tech["sma_20"] > 0 and tech["price"] > tech["sma_20"]:
-                criteria.append("Above SMA20")
-            if tech["macd"] > tech["macd_signal"]:
-                criteria.append("MACD Bullish")
-            if rr_ratio >= 2.0:
-                criteria.append("R:R >= 2.0")
-            elif rr_ratio >= 1.5:
-                criteria.append("R:R >= 1.5")
-            if est_days <= 10:
-                criteria.append("Fast Holding")
-
-        criteria_met = len(criteria)
+        elif entry <= 0:
+            is_vetoed = True
+            veto_reason = "Invalid Price"
 
         # SCORES
         tech_score = 50
+        fund_score = 50  # Will be updated with real data
+
         if not is_vetoed:
             # RSI
             if 50 <= tech["rsi"] <= 65:
@@ -345,6 +397,8 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
                 tech_score -= 15
             elif tech["rsi"] > 65:
                 tech_score -= 8
+            elif tech["rsi"] < 40:
+                tech_score += 5
 
             # ADX
             if tech["adx"] > 25:
@@ -378,17 +432,32 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             if has_inverted_sl:
                 tech_score -= 10
 
-            # FAST
+            # FAST PICK - Sorted by Volume Ratio
             if tech["adx"] > 18 and tech["volume_ratio"] > 0.8:
                 is_fast_pick = True
             else:
                 is_fast_pick = False
         else:
-            tech_score = 35
+            tech_score = max(25, tech_score - 30)
             is_fast_pick = False
 
         tech_score = max(0, min(100, tech_score))
-        fund_score = 50  # Simplified
+
+        # Fund Score - FIX: Use real data
+        if fund_data['roe'] is not None:
+            if fund_data['roe'] > 20:
+                fund_score = 75
+            elif fund_data['roe'] > 15:
+                fund_score = 65
+            elif fund_data['roe'] > 10:
+                fund_score = 55
+            elif fund_data['roe'] > 5:
+                fund_score = 45
+            else:
+                fund_score = 35
+
+        # HIGH RISK - FIX: Auto set when VNIndex RSI > 80
+        is_high_risk = market_rsi > 80
 
         # SIGNAL
         is_sell_zone = market_rsi > 70
@@ -422,8 +491,10 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
 
         return {
             "symbol": symbol,
+            "company_name": company_name,
             "price": tech["price"],
             "change_percent": tech["change_percent"],
+            "volume": tech["volume"],
             "rsi": tech["rsi"],
             "adx": tech["adx"],
             "plus_di": tech["plus_di"],
@@ -440,14 +511,13 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "macd": tech["macd"],
             "macd_signal": tech["macd_signal"],
             "volume_ratio": tech["volume_ratio"],
-            "volume": int(df['volume'].iloc[-1]) if 'volume' in df.columns else 0,
             "avg_volume_value": round(tech["volume_ratio"] * tech["price"] * df['volume'].tail(20).mean() / 1e9, 1) if 'volume' in df.columns else 0,
             "entry_price": entry,
             "stop_loss": stop_loss,
             "take_profit": take_profit,
             "risk_reward_ratio": rr_ratio,
             "estimated_days_to_target": round(est_days, 1),
-            "master_score": int(tech_score * 0.7 + fund_score * 0.3),
+            "master_score": int(tech_score * 0.6 + fund_score * 0.4),  # Updated weights
             "technical_score": tech_score,
             "fundamental_score": fund_score,
             "signal": signal,
@@ -456,13 +526,17 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "is_fast_pick": is_fast_pick,
             "is_short_term_qualified": not is_vetoed and criteria_met >= 9,
             "is_slow_mode": est_days > 10,
-            "is_high_risk": False,
+            "is_high_risk": is_high_risk,
             "has_inverted_sl": has_inverted_sl,
-            "criteria_met": criteria_met,
+            "criteria_met": criteria_met,  # Keep even when vetoed
             "criteria_list": criteria,
             "trend": trend,
-            "breakout_status": "🚨 BREAKOUT" if is_fast_pick and not is_vetoed else ("🛑 VETO" if is_vetoed else "⏳ WAIT"),
+            "breakout_status": "BREAKOUT" if is_fast_pick and not is_vetoed else ("VETO" if is_vetoed else "WAIT"),
             "market_rsi": market_rsi,
+            # Fundamental data
+            "roe": fund_data['roe'],
+            "pe": fund_data['pe'],
+            "pb": fund_data['pb'],
         }
 
     except Exception as e:
@@ -489,16 +563,15 @@ def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0) -> Dict[str, 
     return {"results": results, "count": len(results)}
 
 
-def sync_market_data(force: bool = False) -> Dict[str, Any]:
+def sync_market_data(mode: str = "full") -> Dict[str, Any]:
     """
     Đồng bộ toàn bộ dữ liệu thị trường
-    - Lấy Top 100 mã theo thanh khoản
-    - Tính indicators cho từng mã song song
-    - Lưu vào Database
+
+    Args:
+        mode: "full" = Lấy dữ liệu + Phân tích, "data_only" = Chỉ lấy dữ liệu mới, "analyze" = Chỉ phân tích lại
     """
     start_time = datetime.now()
 
-    # Tạo hoặc cập nhật sync status
     sync_record, created = SyncStatus.objects.get_or_create(
         id=1,
         defaults={
@@ -512,39 +585,85 @@ def sync_market_data(force: bool = False) -> Dict[str, Any]:
     sync_record.started_at = timezone.now()
     sync_record.save()
 
-    try:
-        # Bước 1: Lấy danh sách Top 100
-        print(f"[Sync] Getting top {UNIVERSE_SIZE} symbols by liquidity...")
+    print(f"[Sync] Starting sync in '{mode}' mode...")
+
+    # Lấy Market RSI
+    market_rsi = get_market_rsi()
+    print(f"[Sync] Market RSI: {market_rsi:.2f}")
+
+    if mode == "analyze":
+        # Chỉ phân tích lại từ dữ liệu đã có
+        print(f"[Sync] Analyze mode: Re-analyzing existing data...")
+        symbols = list(StockData.objects.values_list('symbol', flat=True))
+        print(f"[Sync] Found {len(symbols)} existing symbols")
+    else:
+        # Lấy danh sách mã mới
+        print(f"[Sync] Getting top symbols by liquidity...")
         symbols = get_top_symbols_by_liquidity()
-        sync_record.total_symbols = len(symbols)
+        print(f"[Sync] Got {len(symbols)} symbols")
+
+    # Process in batches
+    batch_size = 20
+    all_results = []
+
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i+batch_size]
+        print(f"[Sync] Processing batch {i//batch_size + 1}: {batch[:5]}...")
+
+        batch_result = sync_stock_batch(batch, market_rsi)
+        all_results.extend(batch_result["results"])
+
+        # Update progress
+        sync_record.processed_symbols = min(i + batch_size, len(symbols))
         sync_record.save()
 
-        # Bước 2: Lấy Market RSI
-        market_rsi = get_market_rsi()
-        print(f"[Sync] Market RSI: {market_rsi}")
+    # Save to Database
+    print(f"[Sync] Saving {len(all_results)} results to database...")
+    saved_count = save_results_to_db(all_results)
 
-        # Bước 3: Đồng bộ song song
-        print(f"[Sync] Syncing {len(symbols)} symbols with {MAX_WORKERS} workers...")
-        batch_result = sync_stock_batch(symbols, market_rsi)
-        results = batch_result["results"]
+    # Validation: Top 5 ROE
+    if all_results:
+        valid_roe = [r for r in all_results if r.get('roe') is not None]
+        if valid_roe:
+            top_roe = sorted(valid_roe, key=lambda x: x.get('roe') or 0, reverse=True)[:5]
+            print(f"[Sync] Top 5 by ROE:")
+            for r in top_roe:
+                print(f"  {r['symbol']}: ROE={r.get('roe')}, PE={r.get('pe')}, PB={r.get('pb')}")
 
-        # Bước 4: Lưu vào Database
-        print(f"[Sync] Saving {len(results)} results to database...")
+    elapsed = (datetime.now() - start_time).total_seconds()
 
-        StockData.objects.all().delete()  # Xóa cũ
-        StockAnalysis.objects.all().delete()  # Xóa cũ
+    sync_record.status = "completed"
+    sync_record.completed_at = timezone.now()
+    sync_record.save()
 
-        for data in results:
-            symbol = data["symbol"]
+    result = {
+        "status": "success",
+        "mode": mode,
+        "total": len(all_results),
+        "saved": saved_count,
+        "market_rsi": market_rsi,
+        "elapsed_seconds": elapsed,
+    }
 
-            # Create StockData
+    print(f"[Sync] Completed in {elapsed:.1f}s. Saved {saved_count}/{len(all_results)} results")
+    return result
+
+
+def save_results_to_db(results: List[Dict[str, Any]]) -> int:
+    """Lưu kết quả vào Database"""
+    saved = 0
+
+    for data in results:
+        try:
+            # Save StockData
             stock, _ = StockData.objects.update_or_create(
-                symbol=symbol,
+                symbol=data["symbol"],
                 defaults={
+                    "company_name": data.get("company_name", data["symbol"]),
                     "price": data["price"],
                     "change_percent": data["change_percent"],
                     "volume": data["volume"],
-                    "avg_volume_value": data["avg_volume_value"],
+                    "avg_volume_value": data.get("avg_volume_value", 0),
                     "rsi": data["rsi"],
                     "adx": data["adx"],
                     "plus_di": data["plus_di"],
@@ -561,10 +680,14 @@ def sync_market_data(force: bool = False) -> Dict[str, Any]:
                     "macd": data["macd"],
                     "macd_signal": data["macd_signal"],
                     "volume_ratio": data["volume_ratio"],
+                    # Fundamental
+                    "pe": data.get("pe"),
+                    "pb": data.get("pb"),
+                    "roe": data.get("roe"),
                 }
             )
 
-            # Create StockAnalysis
+            # Save StockAnalysis
             StockAnalysis.objects.update_or_create(
                 symbol=stock,
                 defaults={
@@ -591,96 +714,72 @@ def sync_market_data(force: bool = False) -> Dict[str, Any]:
                     "market_rsi": data["market_rsi"],
                 }
             )
+            saved += 1
 
-            sync_record.processed_symbols += 1
-            sync_record.save()
+        except Exception as e:
+            print(f"[Sync] Error saving {data.get('symbol')}: {e}")
 
-        # Update sync status
-        sync_record.status = "completed"
-        sync_record.completed_at = timezone.now()
-        sync_record.save()
-
-        elapsed = (datetime.now() - start_time).total_seconds()
-        print(f"[Sync] Completed in {elapsed:.1f}s")
-
-        return {
-            "status": "success",
-            "total": len(results),
-            "vetoed": sum(1 for r in results if r["is_vetoed"]),
-            "fast_picks": sum(1 for r in results if r["is_fast_pick"] and not r["is_vetoed"]),
-            "elapsed_seconds": elapsed,
-            "market_rsi": market_rsi,
-        }
-
-    except Exception as e:
-        sync_record.status = "failed"
-        sync_record.error_message = str(e)
-        sync_record.completed_at = timezone.now()
-        sync_record.save()
-        print(f"[Sync] Failed: {e}")
-        return {"status": "error", "message": str(e)}
+    return saved
 
 
-def get_top_picks_from_db(limit: int = 10) -> List[Dict]:
-    """Lấy Top Picks từ Database - cực nhanh"""
-    analyses = StockAnalysis.objects.select_related('symbol').filter(
+def get_top_picks_from_db(limit: int = 5) -> List[Dict[str, Any]]:
+    """Lấy top picks từ Database - SORTED by Volume Ratio for FAST picks"""
+    from django.db.models import F
+
+    # Get non-vetoed stocks, sorted by: FAST picks first (by volume_ratio), then by master_score
+    analyses = StockAnalysis.objects.select_related("symbol").filter(
         is_vetoed=False
-    ).order_by('-risk_reward_ratio', '-master_score')[:limit]
+    ).order_by(
+        # FAST picks first, then by volume_ratio descending
+        F('is_fast_pick').desc(),
+        F('symbol__volume_ratio').desc(),
+        '-master_score'
+    )[:limit]
 
-    results = []
+    picks = []
     for a in analyses:
-        results.append({
-            "symbol": a.symbol.symbol,
-            "company_name": a.symbol.company_name,
-            "current_price": a.symbol.price,
-            "price": a.symbol.price,
-            "change_percent": a.symbol.change_percent,
-            "rsi": a.symbol.rsi,
-            "adx": a.symbol.adx,
-            "plus_di": a.symbol.plus_di,
-            "minus_di": a.symbol.minus_di,
-            "cmf": a.symbol.cmf,
-            "atr": a.symbol.atr,
-            "sma_20": a.symbol.sma_20,
-            "macd": a.symbol.macd,
-            "macd_signal": a.symbol.macd_signal,
-            "volume_ratio": a.symbol.volume_ratio,
-            "entry_price": a.entry_price,
-            "stop_loss": a.stop_loss,
-            "take_profit": a.take_profit,
-            "risk_reward_ratio": a.risk_reward_ratio,
-            "estimated_days_to_target": a.estimated_days_to_target,
+        s = a.symbol
+        picks.append({
+            "symbol": s.symbol,
+            "company_name": s.company_name,
+            "price": s.price,
+            "change_percent": s.change_percent,
+            "rsi": s.rsi,
+            "adx": s.adx,
+            "volume_ratio": s.volume_ratio,
+            "cmf": s.cmf,
             "master_score": a.master_score,
             "technical_score": a.technical_score,
             "fundamental_score": a.fundamental_score,
             "signal": a.signal,
+            "risk_reward_ratio": a.risk_reward_ratio,
             "is_fast_pick": a.is_fast_pick,
-            "is_vetoed": a.is_vetoed,
-            "veto_reason": a.veto_reason,
-            "is_high_risk": a.is_high_risk,
-            "is_slow_mode": a.is_slow_mode,
             "criteria_met": a.criteria_met,
-            "criteria_list": a.criteria_list or [],
             "trend": a.trend,
             "breakout_status": a.breakout_status,
+            "entry_price": a.entry_price,
+            "stop_loss": a.stop_loss,
+            "take_profit": a.take_profit,
+            "estimated_days_to_target": a.estimated_days_to_target,
+            "is_high_risk": a.is_high_risk,
             "market_rsi": a.market_rsi,
         })
 
-    return results
+    return picks
 
 
-def get_sync_status() -> Optional[Dict]:
+def get_sync_status() -> Optional[Dict[str, Any]]:
     """Lấy trạng thái sync cuối cùng"""
     try:
         sync = SyncStatus.objects.get(id=1)
         return {
             "status": sync.status,
+            "is_running": sync.is_running,
+            "progress_percent": sync.progress_percent,
             "total_symbols": sync.total_symbols,
             "processed_symbols": sync.processed_symbols,
-            "progress_percent": sync.progress_percent,
-            "is_running": sync.is_running,
-            "started_at": sync.started_at.isoformat() if sync.started_at else None,
-            "completed_at": sync.completed_at.isoformat() if sync.completed_at else None,
+            "started_at": str(sync.started_at) if sync.started_at else None,
+            "completed_at": str(sync.completed_at) if sync.completed_at else None,
             "error_message": sync.error_message,
         }
     except:
