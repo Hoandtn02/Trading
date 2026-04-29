@@ -36,6 +36,7 @@
         }
         .nav-links a:hover { background: #334155; color: #fff; }
         .nav-links a.active { background: #3b82f6; color: #fff; }
+        .nav-links a.lab { background: #7c3aed; color: #fff; }
 
         .scan-btn {
             background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
@@ -485,6 +486,7 @@
             <a href="/overview/">← Quay lại</a>
             <a href="/">Dashboard</a>
             <a href="{% url 'stock_list' %}">📊 Danh Sách</a>
+            <a href="/strategy-lab/" class="lab">🧪 Strategy Lab</a>
             <div class="sync-buttons">
                 <button class="sync-btn" onclick="triggerSync('full')" id="syncFullBtn" title="Lấy dữ liệu mới + Phân tích lại">
                     ⚡ Full Sync

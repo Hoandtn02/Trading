@@ -704,7 +704,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "pe": s.pe,
             "pb": s.pb,
             "f_score": s.f_score,
-            "profit_growth": getattr(s, 'profit_growth', None),  # NEW
+            "profit_growth": getattr(s, 'profit_growth', None),
             # Analysis
             "master_score": a.master_score,
             "technical_score": a.technical_score,
@@ -713,7 +713,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "criteria_met": a.criteria_met,
             "criteria_list": a.criteria_list,
             "risk_reward_ratio": a.risk_reward_ratio,
-            # Target Yield - use DB field if available
+            # Target Yield
             "target_yield_pct": getattr(a, 'target_yield_pct', None) or round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0,
             # Score breakdown
             "base_master_score": getattr(a, 'base_master_score', a.master_score),
@@ -722,8 +722,21 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "veto_reason": a.veto_reason,
             "is_fast_pick": a.is_fast_pick,
             "is_high_risk": a.is_high_risk,
-            "is_market_high_risk": getattr(a, 'is_market_high_risk', False),  # NEW
-            "stock_risk_level": getattr(a, 'stock_risk_level', 'Medium'),  # NEW
+            "is_market_high_risk": getattr(a, 'is_market_high_risk', False),
+            "stock_risk_level": getattr(a, 'stock_risk_level', 'Medium'),
+            "stock_risk_reason": getattr(a, 'stock_risk_reason', ''),
+            "is_safe_entry": getattr(a, 'is_safe_entry', False),
+            "has_high_resistance": getattr(a, 'has_high_resistance', False),
+            "avg_volume_value": getattr(a, 'avg_volume_value', 0),
+            "trend_factor": getattr(a, 'trend_factor', 0.6),
+            # Smart Money & Industry
+            "foreign_buy_streak": getattr(a, 'foreign_buy_streak', 0),
+            "foreign_bonus": getattr(a, 'foreign_bonus', 0),
+            "industry_performance": getattr(a, 'industry_performance', 0),
+            "is_industry_leader": getattr(a, 'is_industry_leader', True),
+            # Real R:R
+            "hard_risk_pct": getattr(a, 'hard_risk_pct', 0),
+            "support_price": getattr(a, 'support_price', 0),
             "trend": a.trend,
             "breakout_status": a.breakout_status,
             "entry_price": a.entry_price,
@@ -735,6 +748,11 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "expected_profit_per_day": a.expected_profit_per_day,
             "upside_per_day": a.upside_per_day,
             "market_rsi": a.market_rsi,
+            # Early Exit & Money Management
+            "pe_industry_avg": getattr(a, 'pe_industry_avg', 0),
+            "early_exit_trigger_pct": getattr(a, 'early_exit_trigger_pct', 2.0),
+            "early_exit_drop_pct": getattr(a, 'early_exit_drop_pct', 0.7),
+            "optimal_position_size": getattr(a, 'optimal_position_size', 0),
         })
 
     # Summary stats
@@ -780,33 +798,43 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
     writer = csv.writer(response)
     writer.writerow([
-        "Symbol", "Company", "Industry", "Market Group", "Price", "Change%", "Volume", "Volume Ratio",
+        "Symbol", "Company", "Industry", "Market Group", "Price", "Change%", "Volume (B)", "Volume Ratio",
         "RSI", "ADX", "CMF", "ATR", "MFI", "SMA10", "SMA20", "SMA50", "VWAP", "Ichimoku", "SuperTrend",
         "ROE", "P/E", "P/B", "F-Score", "Profit Growth",
-        "Master Score", "Tech Score", "Fund Score", "Signal",
-        "Criteria Met", "R:R Ratio", "Entry", "Stop Loss", "Take Profit",
-        "Est. Days", "Timeframe", "Profit/Day", "%Upside/Day",
-        "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is High Risk",
-        "Trend", "Breakout Status", "Market RSI"
+        "Master Score", "Base Score", "Market Weight", "Tech Score", "Fund Score", "Signal",
+        "Target Yield %", "R:R Ratio", "Hard Risk %", "Est. Days", "Timeframe", "Trend Factor",
+        "Entry", "Stop Loss", "Take Profit", "Support Price", "Profit/Day",
+        "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is Safe Entry", "Has High Resistance",
+        "Foreign Streak", "Foreign Bonus", "Industry Perf", "Is Industry Leader",
+        "Is Market High Risk", "Stock Risk Level", "Stock Risk Reason",
+        "Market RSI", "Trend", "Breakout Status"
     ])
 
     for a in analyses:
         s = a.symbol
+        avg_vol_b = getattr(a, 'avg_volume_value', 0) or (s.volume_ratio * s.price * 1e6 / 1e9 if s.volume_ratio and s.price else 0)
         writer.writerow([
             s.symbol, s.company_name, s.industry or s.get_industry(), s.market_group or s.get_market_group(),
             s.price, s.change_percent,
-            s.volume, s.volume_ratio,
+            f"{avg_vol_b:.1f}", s.volume_ratio,
             s.rsi, s.adx, s.cmf, s.atr, s.mfi, s.sma_10, s.sma_20, s.sma_50, s.vwap, s.ichimoku_status, s.supertrend_signal,
             s.roe, s.pe, s.pb, s.f_score, getattr(s, 'profit_growth', None),
-            a.master_score, a.technical_score, a.fundamental_score, a.signal,
-            a.criteria_met, a.risk_reward_ratio,
-            a.entry_price, a.stop_loss, a.take_profit,
-            a.estimated_days_to_target, a.timeframe_label,
-            a.expected_profit_per_day, a.upside_per_day,
+            a.master_score, getattr(a, 'base_master_score', a.master_score), getattr(a, 'market_weight', 0),
+            a.technical_score, a.fundamental_score, a.signal,
+            getattr(a, 'target_yield_pct', 0) or round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0,
+            a.risk_reward_ratio, getattr(a, 'hard_risk_pct', 0),
+            a.estimated_days_to_target, a.timeframe_label, getattr(a, 'trend_factor', 0.6),
+            a.entry_price, a.stop_loss, a.take_profit, getattr(a, 'support_price', 0), a.expected_profit_per_day,
             "Yes" if a.is_vetoed else "No", a.veto_reason,
             "Yes" if a.is_fast_pick else "No",
-            "Yes" if a.is_high_risk else "No",
-            a.trend, a.breakout_status, a.market_rsi
+            "Yes" if getattr(a, 'is_safe_entry', False) else "No",
+            "Yes" if getattr(a, 'has_high_resistance', False) else "No",
+            getattr(a, 'foreign_buy_streak', 0), getattr(a, 'foreign_bonus', 0),
+            getattr(a, 'industry_performance', 0), "Yes" if getattr(a, 'is_industry_leader', True) else "No",
+            "Yes" if getattr(a, 'is_market_high_risk', False) else "No",
+            getattr(a, 'stock_risk_level', 'Medium'),
+            getattr(a, 'stock_risk_reason', ''),
+            a.market_rsi, a.trend, a.breakout_status
         ])
 
     return response
@@ -920,3 +948,233 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow([f"Export lúc: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
 
     return response
+
+
+def strategy_lab(request: HttpRequest) -> HttpResponse:
+    """Strategy Lab - Live Simulation & Backtesting"""
+    return render(request, "dashboard/strategy_lab.html")
+
+
+def api_simulate(request: HttpRequest) -> JsonResponse:
+    """
+    API endpoint for Live Simulation.
+    Kết nối trực tiếp với simulator.py (Logic V4).
+    """
+    try:
+        from .models import StockData, StockAnalysis
+        from .analyzers.simulator import SimParams, simulate_trade, result_to_dict
+        
+        symbol = request.GET.get("symbol", "").strip().upper()
+        if not symbol:
+            return JsonResponse({"error": "Symbol is required"}, status=400)
+        
+        # Lấy override params từ sliders
+        params = SimParams()
+        
+        price_adj = request.GET.get("price_adj")  # -20 to +20
+        if price_adj:
+            params.price_adj_pct = float(price_adj)
+        
+        cmf_val = request.GET.get("cmf")  # -1.0 to 1.0
+        if cmf_val:
+            params.cmf = float(cmf_val)
+        
+        rsi_val = request.GET.get("rsi")  # 20 to 90
+        if rsi_val:
+            params.rsi = float(rsi_val)
+        
+        adx_val = request.GET.get("adx")  # 0 to 60
+        if adx_val:
+            params.adx = float(adx_val)
+        
+        market_rsi_val = request.GET.get("market_rsi")  # 20 to 90
+        if market_rsi_val:
+            params.market_rsi = float(market_rsi_val)
+        
+        f_score_val = request.GET.get("f_score")  # 0 to 9
+        if f_score_val:
+            params.f_score = int(f_score_val)
+        
+        roe_val = request.GET.get("roe")  # 0 to 50
+        if roe_val:
+            params.roe = float(roe_val)
+        
+        # Lấy base data từ DB
+        try:
+            stock = StockData.objects.get(symbol=symbol)
+        except StockData.DoesNotExist:
+            return JsonResponse({"error": f"Symbol {symbol} not found in database"}, status=404)
+        
+        # Build base_data dict
+        base_data = {
+            "price": stock.price,
+            "cmf": stock.cmf or 0.0,
+            "rsi": stock.rsi or 50.0,
+            "adx": stock.adx or 25.0,
+            "atr": stock.atr or (stock.price * 0.02),
+            "sma_20": stock.sma_20 or 0.0,
+            "sma_50": stock.sma_50 or 0.0,
+            "sma_200": getattr(stock, 'sma_200', 0.0) or 0.0,
+            "volume_ratio": stock.volume_ratio or 1.0,
+            "f_score": stock.f_score or 5,
+            "roe": stock.roe or 10.0,
+            "pe": stock.pe or 15.0,
+            "pb": stock.pb or 1.5,
+        }
+        
+        # Lấy market RSI từ analysis
+        try:
+            analysis = StockAnalysis.objects.get(symbol=stock)
+            base_data["market_rsi"] = analysis.market_rsi or 50.0
+        except StockAnalysis.DoesNotExist:
+            base_data["market_rsi"] = 50.0
+        
+        # Chạy simulation
+        result = simulate_trade(symbol, base_data, params)
+        return JsonResponse(result_to_dict(result))
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)
+
+
+def api_backtest(request: HttpRequest) -> JsonResponse:
+    """
+    API endpoint for Historical Backtesting.
+    Runs analysis at a past date and compares with actual results.
+    """
+    try:
+        from datetime import timedelta
+        import pandas as pd
+        from django.http import JsonResponse
+        from .models import StockData
+        from .sync_service import calculate_technical_indicators, get_stock_data_from_vnstock
+        
+        symbol = request.GET.get("symbol", "").strip().upper()
+        start_date = request.GET.get("start_date", "").strip()  # Format: YYYY-MM-DD
+        lookback_days = int(request.GET.get("lookback", 60))  # Days of history needed
+        forward_days = int(request.GET.get("forward", 20))  # Days to forward test
+        
+        if not symbol:
+            return JsonResponse({"error": "Symbol is required"}, status=400)
+        
+        if not start_date:
+            return JsonResponse({"error": "start_date is required (YYYY-MM-DD)"}, status=400)
+        
+        # Parse start date
+        try:
+            from datetime import datetime
+            backtest_date = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+        
+        # Calculate date range for historical data
+        data_start = backtest_date - timedelta(days=lookback_days)
+        
+        # Get historical price data
+        df = get_stock_data_from_vnstock(
+            symbol,
+            start=data_start.strftime("%Y-%m-%d"),
+            end=backtest_date.strftime("%Y-%m-%d")
+        )
+        
+        if df is None or len(df) < 50:
+            return JsonResponse({"error": f"Insufficient historical data for {symbol}"}, status=404)
+        
+        # Get the last available data point on or before backtest_date
+        df['time'] = pd.to_datetime(df['time'])
+        df = df[df['time'] <= backtest_date].sort_values('time')
+        
+        if len(df) < 20:
+            return JsonResponse({"error": f"Not enough data points before {start_date}"}, status=404)
+        
+        # Calculate indicators at that point
+        tech = calculate_technical_indicators(df)
+        
+        entry_price = tech["price"]
+        support_price = tech["sma_50"] if tech["sma_50"] > 0 else entry_price * 0.97
+        hard_risk_pct = ((entry_price - support_price) / entry_price) * 100 if entry_price > 0 else 3
+        
+        # Target = entry + 5%
+        target_price = entry_price * 1.05
+        
+        # Stop loss = support
+        stop_loss = support_price
+        
+        # Get forward data to check results
+        forward_end = backtest_date + timedelta(days=forward_days)
+        df_forward = get_stock_data_from_vnstock(
+            symbol,
+            start=backtest_date.strftime("%Y-%m-%d"),
+            end=forward_end.strftime("%Y-%m-%d")
+        )
+        
+        results = {
+            "symbol": symbol,
+            "backtest_date": start_date,
+            "entry_price": entry_price,
+            "target_price": round(target_price, 2),
+            "stop_loss": round(stop_loss, 2),
+            "hard_risk_pct": round(hard_risk_pct, 2),
+            "entry_tech": {
+                "rsi": tech["rsi"],
+                "cmf": tech["cmf"],
+                "adx": tech["adx"],
+                "sma_50": tech["sma_50"],
+                "atr": tech["atr"],
+            },
+            "forward_test": {}
+        }
+        
+        if df_forward is not None and len(df_forward) > 1:
+            df_forward['time'] = pd.to_datetime(df_forward['time'])
+            df_forward = df_forward[df_forward['time'] > backtest_date].sort_values('time')
+            
+            forward_highs = df_forward['close'].cummax()
+            forward_lows = df_forward['close'].cummin()
+            
+            # Check outcomes
+            hit_target_idx = df_forward[forward_highs >= target_price].index
+            hit_stop_idx = df_forward[forward_lows <= stop_loss].index
+            
+            days_to_target = None
+            days_to_stop = None
+            outcome = "NO_RESULT"
+            
+            if len(hit_target_idx) > 0 and len(hit_stop_idx) > 0:
+                if hit_target_idx[0] < hit_stop_idx[0]:
+                    outcome = "WIN_TARGET"
+                    days_to_target = (pd.to_datetime(df_forward.loc[hit_target_idx[0], 'time']) - backtest_date).days
+                else:
+                    outcome = "LOSS_STOP"
+                    days_to_stop = (pd.to_datetime(df_forward.loc[hit_stop_idx[0], 'time']) - backtest_date).days
+            elif len(hit_target_idx) > 0:
+                outcome = "WIN_TARGET"
+                days_to_target = (pd.to_datetime(df_forward.loc[hit_target_idx[0], 'time']) - backtest_date).days
+            elif len(hit_stop_idx) > 0:
+                outcome = "LOSS_STOP"
+                days_to_stop = (pd.to_datetime(df_forward.loc[hit_stop_idx[0], 'time']) - backtest_date).days
+            else:
+                # Price still in between
+                final_price = df_forward['close'].iloc[-1]
+                if final_price > entry_price:
+                    outcome = "PENDING_PROFIT"
+                else:
+                    outcome = "PENDING_LOSS"
+            
+            results["forward_test"] = {
+                "outcome": outcome,
+                "days_to_target": days_to_target,
+                "days_to_stop": days_to_stop,
+                "final_price": round(df_forward['close'].iloc[-1], 2),
+                "final_date": df_forward['time'].iloc[-1].strftime("%Y-%m-%d"),
+                "max_profit_pct": round((df_forward['close'].max() - entry_price) / entry_price * 100, 2),
+                "max_loss_pct": round((entry_price - df_forward['close'].min()) / entry_price * 100, 2),
+                "price_history": df_forward[['time', 'close']].to_dict('records')
+            }
+        
+        return JsonResponse(results)
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)

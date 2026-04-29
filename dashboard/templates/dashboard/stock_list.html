@@ -598,6 +598,18 @@
                         data-market-rsi="{{ stock.market_rsi }}"
                         data-is-market-high-risk="{{ stock.is_market_high_risk|yesno:'true,false' }}"
                         data-stock-risk-level="{{ stock.stock_risk_level }}"
+                        data-stock-risk-reason="{{ stock.stock_risk_reason }}"
+                        data-is-safe-entry="{{ stock.is_safe_entry|yesno:'true,false' }}"
+                        data-has-high-resistance="{{ stock.has_high_resistance|yesno:'true,false' }}"
+                        data-trend-factor="{{ stock.trend_factor }}"
+                        data-veto-reason="{{ stock.veto_reason }}"
+                        data-avg-volume="{{ stock.avg_volume_value|floatformat:0 }}"
+                        data-foreign-streak="{{ stock.foreign_buy_streak|default:'0' }}"
+                        data-foreign-bonus="{{ stock.foreign_bonus|default:'0' }}"
+                        data-industry-perf="{{ stock.industry_performance|default:'0' }}"
+                        data-is-industry-leader="{{ stock.is_industry_leader|yesno:'true,false' }}"
+                        data-hard-risk-pct="{{ stock.hard_risk_pct|default:'0' }}"
+                        data-support-price="{{ stock.support_price|default:'0' }}"
                         onclick="openStockModalFromRow(this)">
                         <td>{{ forloop.counter }}</td>
                         <td>
@@ -767,8 +779,21 @@
                 expected_profit_per_day: parseFloat(row.dataset.profitPerDay) || 0,
                 upside_per_day: parseFloat(row.dataset.upsidePerDay) || 0,
                 market_rsi: parseFloat(row.dataset.marketRsi) || 50,
-                is_market_high_risk: row.dataset.isMarketHighRisk === 'true',  // NEW
-                stock_risk_level: row.dataset.stockRiskLevel || 'Medium',  // NEW
+                is_market_high_risk: row.dataset.isMarketHighRisk === 'true',
+                stock_risk_level: row.dataset.stockRiskLevel || 'Medium',
+                stock_risk_reason: row.dataset.stockRiskReason || '',
+                is_safe_entry: row.dataset.isSafeEntry === 'true',
+                has_high_resistance: row.dataset.hasHighResistance === 'true',
+                trend_factor: parseFloat(row.dataset.trendFactor) || 0.6,
+                avg_volume_value: parseFloat(row.dataset.avgVolume) || 0,
+                // Smart Money & Industry
+                foreign_buy_streak: parseInt(row.dataset.foreignStreak) || 0,
+                foreign_bonus: parseInt(row.dataset.foreignBonus) || 0,
+                industry_performance: parseFloat(row.dataset.industryPerf) || 0,
+                is_industry_leader: row.dataset.isIndustryLeader === 'true',
+                // Real R:R
+                hard_risk_pct: parseFloat(row.dataset.hardRiskPct) || 0,
+                support_price: parseFloat(row.dataset.supportPrice) || 0,
             };
             showModal(stockData);
         }
@@ -832,6 +857,33 @@
             estDaysEl.textContent = stockData.estimated_days > 0 ? stockData.estimated_days.toFixed(1) + ' phiên' : 'N/A';
             profitPerDayEl.textContent = stockData.expected_profit_per_day > 0 ? '+' + formatNumber(stockData.expected_profit_per_day, 0) + '/ngày' : 'N/A';
             upsidePerDayEl.textContent = stockData.upside_per_day > 0 ? '+' + stockData.upside_per_day.toFixed(2) + '%' : 'N/A';
+
+            // 5% Progress Bar
+            const entryPrice = stockData.entry_price || stockData.price;
+            const targetPrice = entryPrice * 1.05; // Target = Entry + 5%
+            const currentPrice = stockData.price;
+            const targetYieldPct = stockData.target_yield_pct || 0;
+            
+            document.getElementById('modalTargetPct').textContent = '+' + targetYieldPct.toFixed(1) + '%';
+            document.getElementById('modalEntryPrice').textContent = formatNumber(entryPrice, 0);
+            document.getElementById('modalTargetPrice').textContent = formatNumber(targetPrice, 0);
+            document.getElementById('modalProgressText').textContent = 'Entry → Target';
+            
+            // Calculate progress (0-100%) based on target yield
+            const progressPct = Math.min(100, (targetYieldPct / 5) * 100);
+            document.getElementById('modalProgressBar').style.width = progressPct + '%';
+            
+            // Early Exit Sensor visibility
+            const earlyExitSection = document.getElementById('modalEarlyExitSection');
+            if (targetYieldPct >= 2) {
+                earlyExitSection.style.display = 'block';
+                const triggerPct = stockData.early_exit_trigger_pct || 2;
+                const dropPct = stockData.early_exit_drop_pct || 0.7;
+                document.getElementById('modalEarlyExitDetail').textContent = 
+                    'Lãi ≥' + triggerPct + '% → Sụt ' + dropPct + '% = Bán ngay';
+            } else {
+                earlyExitSection.style.display = 'none';
+            }
 
             // Technical Indicators
             document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
@@ -924,7 +976,26 @@
                 riskReasonText += '⚠️ Thị trường chung đang quá mua (VNIndex RSI > 80). ';
             }
             riskReasonText += '📊 Stock Risk: ' + (stockData.stock_risk_level || 'Medium');
+            if (stockData.stock_risk_reason) {
+                riskReasonText += ' - ' + stockData.stock_risk_reason;
+            }
+            if (stockData.is_safe_entry) {
+                riskReasonText += ' | ✅ Vùng giá an toàn (SMA20 ±2%)';
+            } else {
+                riskReasonText += ' | ⚠️ Giá ngoài vùng an toàn';
+            }
+            if (stockData.has_high_resistance) {
+                riskReasonText += ' | ⚠️ Kháng cự mạnh (TP trên Bollinger Upper)';
+            }
             riskReasonEl.textContent = riskReasonText;
+            
+            // Trend Factor
+            if (typeof stockData.trend_factor === 'number' && stockData.trend_factor > 0) {
+                let tfLabel = 'Sideways';
+                if (stockData.trend_factor >= 0.8) tfLabel = 'Strong Trend';
+                else if (stockData.trend_factor <= 0.4) tfLabel = 'Weak';
+                riskReasonEl.innerHTML += `<br><span style="color:#60a5fa;">Trend Factor: ${stockData.trend_factor} (${tfLabel})</span>`;
+            }
 
             // AI Verdict
             const verdictEl = document.getElementById('modalVerdict');
@@ -1172,7 +1243,7 @@
                 </div>
             </div>
 
-            <!-- Investment Horizon -->
+            <!-- Investment Horizon & Progress Bar -->
             <div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                 <h3 style="color: #f8fafc; margin-bottom: 12px;">📊 Investment Horizon</h3>
                 <div class="modal-grid">
@@ -1193,6 +1264,34 @@
                         <div class="value" id="modalUpsidePerDay">0.85%</div>
                     </div>
                 </div>
+                
+                <!-- 5% Progress Bar -->
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #334155;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="color: #f8fafc; font-size: 13px;">🎯 Target 5% Progress</span>
+                        <span id="modalTargetPct" style="color: #22c55e; font-weight: bold;">0%</span>
+                    </div>
+                    <div style="background: #0f172a; border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
+                        <div id="modalProgressBar" style="background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%); height: 100%; width: 0%; transition: width 0.5s ease; border-radius: 8px;"></div>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 11px; font-weight: bold;" id="modalProgressText">Entry → Target</div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #64748b;">
+                        <span id="modalEntryPrice">Entry</span>
+                        <span id="modalTargetPrice">Target 5%</span>
+                    </div>
+                </div>
+                
+                <!-- Early Exit Sensor -->
+                <div id="modalEarlyExitSection" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; display: none;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">🚨</span>
+                        <div>
+                            <div style="color: #f59e0b; font-weight: bold; font-size: 12px;" id="modalEarlyExitLabel">Early Exit Alert</div>
+                            <div style="color: #94a3b8; font-size: 11px;" id="modalEarlyExitDetail">Lãi ≥2% → Sụt 0.7% = Bán ngay</div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155; font-size: 11px; color: #64748b;">
                     💡 Đưa trên biên động ATR trung bình 14 phiên
                 </div>

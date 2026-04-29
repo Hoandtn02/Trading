@@ -1,0 +1,998 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strategy Lab - Live Simulation & Backtesting</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07101f; --panel:#0e1a31; --panel2:#0b1526; --border:#23324d; --text:#e8f0ff; --muted:#8fa5c8; --accent:#60a5fa; --ready:#34d399; --partial:#f59e0b; --disabled:#94a3b8; --planned:#a78bfa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: radial-gradient(circle at top, #163055 0, var(--bg) 50%); color: var(--text); min-height: 100vh; }
+    a { color: var(--accent); text-decoration: none; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .header h1 { margin: 0; font-size: 24px; }
+    .nav-links { display: flex; gap: 12px; }
+    .nav-links a { color: var(--muted); padding: 8px 16px; border-radius: 8px; background: var(--panel); transition: all 0.2s; }
+    .nav-links a:hover { background: var(--panel2); color: var(--text); }
+    .nav-links a.lab { background: #7c3aed; color: #fff; }
+    .nav-links a.active { background: var(--accent); color: var(--bg); }
+    
+    .lab-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .lab-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 16px;
+        margin-bottom: 30px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .lab-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .lab-header p {
+        margin: 0;
+        opacity: 0.8;
+        font-size: 14px;
+    }
+    
+    .lab-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-bottom: 30px;
+    }
+    
+    @media (max-width: 1024px) {
+        .lab-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    .lab-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+    
+    .card-header h2 {
+        margin: 0;
+        font-size: 18px;
+        color: #1a1a2e;
+    }
+    
+    .card-header .icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+    }
+    
+    .simulation-card .icon {
+        background: #e3f2fd;
+        color: #1565c0;
+    }
+    
+    .backtest-card .icon {
+        background: #fff3e0;
+        color: #e65100;
+    }
+    
+    /* Symbol Input */
+    .symbol-input-group {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+    
+    .symbol-input-group input {
+        flex: 1;
+        padding: 14px 18px;
+        font-size: 16px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        text-transform: uppercase;
+        transition: all 0.3s;
+    }
+    
+    .symbol-input-group input:focus {
+        border-color: #1565c0;
+        outline: none;
+        box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.1);
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #1565c0, #1976d2);
+        color: white;
+        border: none;
+        padding: 14px 28px;
+        border-radius: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(21, 101, 192, 0.3);
+    }
+    
+    .btn-secondary {
+        background: linear-gradient(135deg, #e65100, #ff6d00);
+        color: white;
+        border: none;
+        padding: 14px 28px;
+        border-radius: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .btn-secondary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(230, 81, 0, 0.3);
+    }
+    
+    /* Sliders */
+    .param-group {
+        margin-bottom: 20px;
+    }
+    
+    .param-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    
+    .param-name {
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+    }
+    
+    .param-value {
+        background: #f5f5f5;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 700;
+        color: #1565c0;
+        font-size: 14px;
+        min-width: 60px;
+        text-align: center;
+    }
+    
+    .param-value.negative {
+        color: #c62828;
+    }
+    
+    .param-value.warning {
+        color: #ef6c00;
+    }
+    
+    input[type="range"] {
+        width: 100%;
+        height: 8px;
+        border-radius: 4px;
+        background: #e0e0e0;
+        outline: none;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #1565c0, #1976d2);
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(21, 101, 192, 0.4);
+        transition: all 0.2s;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.1);
+    }
+    
+    .slider-range {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: #999;
+        margin-top: 5px;
+    }
+    
+    /* Results Panel */
+    .results-panel {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+    }
+    
+    .result-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .result-row:last-child {
+        border-bottom: none;
+    }
+    
+    .result-label {
+        color: #666;
+        font-size: 14px;
+    }
+    
+    .result-value {
+        font-weight: 700;
+        font-size: 15px;
+    }
+    
+    .result-value.good {
+        color: #2e7d32;
+    }
+    
+    .result-value.bad {
+        color: #c62828;
+    }
+    
+    .result-value.neutral {
+        color: #666;
+    }
+    
+    .result-value.warning {
+        color: #ef6c00;
+    }
+    
+    /* Veto Status */
+    .veto-status {
+        padding: 16px;
+        border-radius: 10px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 16px;
+        margin-top: 15px;
+    }
+    
+    .veto-status.pass {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 2px solid #4caf50;
+    }
+    
+    .veto-status.fail {
+        background: #ffebee;
+        color: #c62828;
+        border: 2px solid #f44336;
+    }
+    
+    .veto-status.warning {
+        background: #fff3e0;
+        color: #e65100;
+        border: 2px solid #ff9800;
+    }
+    
+    /* Master Score Circle */
+    .score-circle {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 20px auto;
+        font-size: 32px;
+        font-weight: 800;
+        color: white;
+        position: relative;
+    }
+    
+    .score-circle.excellent {
+        background: linear-gradient(135deg, #2e7d32, #43a047);
+    }
+    
+    .score-circle.good {
+        background: linear-gradient(135deg, #1976d2, #42a5f5);
+    }
+    
+    .score-circle.neutral {
+        background: linear-gradient(135deg, #666, #999);
+    }
+    
+    .score-circle.poor {
+        background: linear-gradient(135deg, #c62828, #ef5350);
+    }
+    
+    /* Backtest Results */
+    .backtest-results {
+        margin-top: 20px;
+    }
+    
+    .backtest-stats {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .stat-box {
+        background: white;
+        padding: 16px;
+        border-radius: 10px;
+        text-align: center;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .stat-box.win {
+        border-color: #4caf50;
+        background: #f1f8e9;
+    }
+    
+    .stat-box.loss {
+        border-color: #f44336;
+        background: #ffebee;
+    }
+    
+    .stat-number {
+        font-size: 28px;
+        font-weight: 800;
+    }
+    
+    .stat-number.win {
+        color: #2e7d32;
+    }
+    
+    .stat-number.loss {
+        color: #c62828;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+    
+    /* Chart Container */
+    .chart-container {
+        background: #fafafa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-top: 20px;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #999;
+        font-style: italic;
+    }
+    
+    /* Date Picker */
+    .date-input {
+        padding: 12px 16px;
+        font-size: 14px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        width: 100%;
+        margin-bottom: 20px;
+    }
+    
+    .date-input:focus {
+        border-color: #e65100;
+        outline: none;
+    }
+    
+    /* Veto Checks Table */
+    .veto-table {
+        width: 100%;
+        margin-top: 15px;
+        font-size: 13px;
+    }
+    
+    .veto-table th {
+        text-align: left;
+        padding: 10px;
+        background: #f5f5f5;
+        color: #333;
+    }
+    
+    .veto-table td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    
+    .status-badge.pass {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+    
+    .status-badge.fail {
+        background: #ffebee;
+        color: #c62828;
+    }
+    
+    .status-badge.warn {
+        background: #fff3e0;
+        color: #e65100;
+    }
+    
+    /* Loading */
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #1565c0;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 15px;
+    }
+    
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🧪 Strategy Lab</h1>
+        <div class="nav-links">
+            <a href="/">Dashboard</a>
+            <a href="/overview/">📊 Overview</a>
+            <a href="/top-picks/">🚀 Top Picks</a>
+            <a href="/strategy-lab/" class="lab active">🧪 Lab</a>
+        </div>
+    </div>
+</div>
+
+<div class="lab-container">
+    <!-- Header -->
+    <div class="lab-header">
+        <h1>
+            <span>🧪</span>
+            Strategy Lab
+        </h1>
+        <p>Phòng thí nghiệm chiến lược - Kiểm tra và tối ưu hóa hệ thống trước khi áp dụng thực tế</p>
+    </div>
+    
+    <div class="lab-grid">
+        <!-- Live Simulation Card -->
+        <div class="lab-card simulation-card">
+            <div class="card-header">
+                <div class="icon">⚡</div>
+                <h2>Live Simulation</h2>
+            </div>
+            
+            <div class="symbol-input-group">
+                <input type="text" id="sim-symbol" placeholder="Nhập mã CP (VD: HDB, VCB)" value="">
+                <button class="btn-primary" onclick="runSimulation()">
+                    <span>▶</span> Chạy Sim
+                </button>
+            </div>
+            
+            <!-- Parameters Sliders -->
+            <div id="params-panel" style="display: none;">
+                <h4 style="margin: 0 0 15px 0; color: #333;">Điều chỉnh thông số</h4>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">Giá (±%)</span>
+                        <span class="param-value" id="val-price">--</span>
+                    </div>
+                    <input type="range" id="slider-price" min="-20" max="20" value="0" oninput="updateSimulation()">
+                    <div class="slider-range"><span>-20%</span><span>+20%</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">CMF (Dòng tiền)</span>
+                        <span class="param-value" id="val-cmf">--</span>
+                    </div>
+                    <input type="range" id="slider-cmf" min="-100" max="100" value="0" oninput="updateSimulation()">
+                    <div class="slider-range"><span>-1.0 (Rút tiền)</span><span>+1.0 (Đổ tiền)</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">RSI (14)</span>
+                        <span class="param-value" id="val-rsi">--</span>
+                    </div>
+                    <input type="range" id="slider-rsi" min="20" max="90" value="50" oninput="updateSimulation()">
+                    <div class="slider-range"><span>20 (Quá bán)</span><span>90 (Quá mua)</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">ADX (Xu hướng)</span>
+                        <span class="param-value" id="val-adx">--</span>
+                    </div>
+                    <input type="range" id="slider-adx" min="0" max="60" value="25" oninput="updateSimulation()">
+                    <div class="slider-range"><span>0 (Yếu)</span><span>60 (Mạnh)</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">VNIndex RSI</span>
+                        <span class="param-value" id="val-vnindex">--</span>
+                    </div>
+                    <input type="range" id="slider-vnindex" min="20" max="90" value="50" oninput="updateSimulation()">
+                    <div class="slider-range"><span>20 (Sập)</span><span>90 (Hưng phấn)</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">F-Score (Tài chính)</span>
+                        <span class="param-value" id="val-fscore">--</span>
+                    </div>
+                    <input type="range" id="slider-fscore" min="0" max="9" value="5" oninput="updateSimulation()">
+                    <div class="slider-range"><span>0 (Yếu)</span><span>9 (Tốt)</span></div>
+                </div>
+                
+                <div class="param-group">
+                    <div class="param-label">
+                        <span class="param-name">ROE (%)</span>
+                        <span class="param-value" id="val-roe">--</span>
+                    </div>
+                    <input type="range" id="slider-roe" min="0" max="40" value="15" oninput="updateSimulation()">
+                    <div class="slider-range"><span>0%</span><span>40%</span></div>
+                </div>
+            </div>
+            
+            <!-- Results -->
+            <div id="sim-results" class="results-panel" style="display: none;">
+                <div class="score-circle" id="score-circle">--</div>
+                
+                <div class="veto-status" id="veto-status">Đang kiểm tra...</div>
+                
+                <table class="veto-table">
+                    <thead>
+                        <tr>
+                            <th>Check</th>
+                            <th>Value</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="veto-tbody">
+                    </tbody>
+                </table>
+                
+                <div style="margin-top: 20px;">
+                    <div class="result-row">
+                        <span class="result-label">Master Score</span>
+                        <span class="result-value" id="res-master">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">R:R Ratio</span>
+                        <span class="result-value" id="res-rr">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Target Yield</span>
+                        <span class="result-value" id="res-yield">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Est. Days</span>
+                        <span class="result-value" id="res-days">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Entry Price</span>
+                        <span class="result-value" id="res-entry">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Support (SMA50)</span>
+                        <span class="result-value" id="res-support">--</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Hard Risk</span>
+                        <span class="result-value" id="res-risk">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="sim-loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <div>Đang tải dữ liệu...</div>
+            </div>
+        </div>
+        
+        <!-- Backtesting Card -->
+        <div class="lab-card backtest-card">
+            <div class="card-header">
+                <div class="icon">📈</div>
+                <h2>Historical Backtest</h2>
+            </div>
+            
+            <div class="symbol-input-group">
+                <input type="text" id="bt-symbol" placeholder="Nhập mã CP (VD: HDB)" value="">
+            </div>
+            
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Chọn ngày bắt đầu</label>
+            <input type="date" id="bt-date" class="date-input" value="">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <div>
+                    <label style="font-size: 12px; color: #666;">Ngày lookback</label>
+                    <input type="number" id="bt-lookback" class="date-input" value="60" style="margin-bottom: 0;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; color: #666;">Ngày forward test</label>
+                    <input type="number" id="bt-forward" class="date-input" value="20" style="margin-bottom: 0;">
+                </div>
+            </div>
+            
+            <button class="btn-secondary" onclick="runBacktest()" style="width: 100%;">
+                <span>⏪</span> Chạy Backtest
+            </button>
+            
+            <div id="bt-results" class="backtest-results" style="display: none;">
+                <h4 style="margin: 20px 0 15px 0;">Kết quả Backtest</h4>
+                
+                <div class="backtest-stats">
+                    <div class="stat-box">
+                        <div class="stat-number" id="bt-entry">--</div>
+                        <div class="stat-label">Entry Price</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="bt-target">--</div>
+                        <div class="stat-label">Target (+5%)</div>
+                    </div>
+                    <div class="stat-box" id="box-outcome">
+                        <div class="stat-number" id="bt-outcome">--</div>
+                        <div class="stat-label">Kết quả</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number" id="bt-days">--</div>
+                        <div class="stat-label">Ngày đạt</div>
+                    </div>
+                </div>
+                
+                <div class="result-row">
+                    <span class="result-label">Stop Loss</span>
+                    <span class="result-value" id="bt-stop">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Hard Risk</span>
+                    <span class="result-value" id="bt-risk">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">RSI lúc vào</span>
+                    <span class="result-value" id="bt-rsi">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">CMF lúc vào</span>
+                    <span class="result-value" id="bt-cmf">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Max Profit</span>
+                    <span class="result-value good" id="bt-maxprofit">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">Max Loss</span>
+                    <span class="result-value bad" id="bt-maxloss">--</span>
+                </div>
+                
+                <div id="bt-chart" class="chart-container">
+                    Biểu đồ sẽ hiển thị ở đây
+                </div>
+            </div>
+            
+            <div id="bt-loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <div>Đang chạy backtest...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentSymbol = '';
+let baseData = null;
+
+// Run Live Simulation
+async function runSimulation() {
+    const symbol = document.getElementById('sim-symbol').value.trim().toUpperCase();
+    if (!symbol) {
+        alert('Vui lòng nhập mã cổ phiếu');
+        return;
+    }
+    
+    currentSymbol = symbol;
+    document.getElementById('params-panel').style.display = 'none';
+    document.getElementById('sim-results').style.display = 'none';
+    document.getElementById('sim-loading').style.display = 'block';
+    
+    try {
+        // Lấy base data trước (không có overrides)
+        const response = await fetch(`/api/simulate/?symbol=${symbol}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            alert('Lỗi: ' + data.error);
+            document.getElementById('sim-loading').style.display = 'none';
+            return;
+        }
+        
+        baseData = data;
+        
+        // Set slider values from actual base data
+        document.getElementById('slider-price').value = 0;  // 0 = không thay đổi
+        document.getElementById('slider-cmf').value = Math.round((data.sim_params.cmf || 0) * 100);
+        document.getElementById('slider-rsi').value = Math.round(data.sim_params.rsi || 50);
+        document.getElementById('slider-adx').value = Math.round(data.sim_params.adx || 25);
+        document.getElementById('slider-vnindex').value = Math.round(data.sim_params.market_rsi || 50);
+        document.getElementById('slider-fscore').value = data.base_params.f_score || 5;
+        document.getElementById('slider-roe').value = data.base_params.roe || 15;
+        
+        document.getElementById('params-panel').style.display = 'block';
+        document.getElementById('sim-loading').style.display = 'none';
+        document.getElementById('sim-results').style.display = 'block';
+        
+        updateSimulation();
+        
+    } catch (err) {
+        alert('Lỗi kết nối: ' + err.message);
+        document.getElementById('sim-loading').style.display = 'none';
+    }
+}
+
+// Update Simulation with slider values - gọi API real-time
+async function updateSimulation() {
+    if (!currentSymbol || !baseData) return;
+    
+    const priceAdj = document.getElementById('slider-price').value;
+    const cmf = (document.getElementById('slider-cmf').value / 100).toFixed(3);
+    const rsi = document.getElementById('slider-rsi').value;
+    const adx = document.getElementById('slider-adx').value;
+    const vnindex = document.getElementById('slider-vnindex').value;
+    const fscore = document.getElementById('slider-fscore').value;
+    const roe = document.getElementById('slider-roe').value;
+    
+    // Update displayed values
+    const basePrice = baseData.base_params.price;
+    const newPrice = basePrice * (1 + priceAdj / 100);
+    document.getElementById('val-price').textContent = (priceAdj >= 0 ? '+' : '') + priceAdj + '%';
+    document.getElementById('val-price').className = 'param-value' + (parseInt(priceAdj) < -10 ? ' negative' : '');
+    
+    document.getElementById('val-cmf').textContent = parseFloat(cmf).toFixed(3);
+    document.getElementById('val-cmf').className = 'param-value' + (parseFloat(cmf) < 0 ? ' negative' : '');
+    
+    document.getElementById('val-rsi').textContent = rsi;
+    document.getElementById('val-rsi').className = 'param-value' + (parseInt(rsi) > 70 ? ' warning' : '');
+    
+    document.getElementById('val-adx').textContent = adx;
+    document.getElementById('val-vnindex').textContent = vnindex;
+    document.getElementById('val-vnindex').className = 'param-value' + (parseInt(vnindex) > 75 ? ' warning' : '');
+    
+    document.getElementById('val-fscore').textContent = fscore + '/9';
+    document.getElementById('val-roe').textContent = roe + '%';
+    
+    // Call API với overrides
+    try {
+        const params = new URLSearchParams({
+            symbol: currentSymbol,
+            price_adj: priceAdj,
+            cmf: cmf,
+            rsi: rsi,
+            adx: adx,
+            market_rsi: vnindex,
+            f_score: fscore,
+            roe: roe
+        });
+        
+        const response = await fetch(`/api/simulate/?${params}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('API error:', data);
+            return;
+        }
+        
+        // Update results
+        updateResults(data);
+        
+    } catch (err) {
+        console.error('Simulation error:', err);
+    }
+}
+
+function updateResults(data) {
+    // Score circle
+    const scoreEl = document.getElementById('score-circle');
+    scoreEl.textContent = data.master_score;
+    scoreEl.className = 'score-circle ' + (
+        data.master_score >= 75 ? 'excellent' :
+        data.master_score >= 60 ? 'good' :
+        data.master_score >= 45 ? 'neutral' : 'poor'
+    );
+    
+    // Signal badge
+    const signalEl = document.getElementById('veto-status');
+    if (data.is_vetoed) {
+        signalEl.className = 'veto-status fail';
+        signalEl.textContent = '❌ VETO: ' + data.veto_reason;
+    } else {
+        const signalColors = {
+            'BUY': 'veto-status pass',
+            'WATCH': 'veto-status warning',
+            'HOLD': 'veto-status warning',
+            'SELL': 'veto-status fail'
+        };
+        signalEl.className = signalColors[data.signal] || 'veto-status warning';
+        signalEl.textContent = '📌 ' + data.signal;
+    }
+    
+    // Veto table
+    const tbody = document.getElementById('veto-tbody');
+    tbody.innerHTML = '';
+    data.veto_checks.forEach(check => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${check.check}</td>
+            <td>${typeof check.value === 'number' ? check.value.toFixed(2) : check.value}</td>
+            <td><span class="status-badge ${check.status.toLowerCase()}">${check.status}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    // Result values
+    const setVal = (id, val, isGood, isBad) => {
+        const el = document.getElementById(id);
+        el.textContent = val;
+        el.className = 'result-value ' + (isGood ? 'good' : isBad ? 'bad' : 'neutral');
+    };
+    
+    setVal('res-master', data.master_score + '/100', data.master_score >= 60, data.master_score < 45);
+    setVal('res-rr', data.risk_reward_ratio.toFixed(2) + ':1', data.risk_reward_ratio >= 2, data.risk_reward_ratio < 1.5);
+    setVal('res-yield', data.upside_pct.toFixed(2) + '%', data.upside_pct >= 5, data.upside_pct < 2);
+    setVal('res-days', data.est_days + ' ngày');
+    setVal('res-entry', formatPrice(data.entry_price));
+    setVal('res-support', formatPrice(data.support_price));
+    
+    // Calculate hard_risk_pct
+    const hardRiskPct = data.entry_price > 0 ? ((data.entry_price - data.support_price) / data.entry_price * 100).toFixed(2) : '0.00';
+    setVal('res-risk', hardRiskPct + '%', parseFloat(hardRiskPct) <= 3, parseFloat(hardRiskPct) > 5);
+    
+    // Hiển thị thêm signal
+    const signalRow = document.createElement('div');
+    signalRow.className = 'result-row';
+    signalRow.innerHTML = `
+        <span class="result-label">Signal</span>
+        <span class="result-value ${data.is_vetoed ? 'bad' : data.signal === 'BUY' ? 'good' : ''}">${data.signal}</span>
+    `;
+}
+
+function formatPrice(val) {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
+}
+
+// Run Backtest
+async function runBacktest() {
+    const symbol = document.getElementById('bt-symbol').value.trim().toUpperCase();
+    const date = document.getElementById('bt-date').value;
+    const lookback = document.getElementById('bt-lookback').value || 60;
+    const forward = document.getElementById('bt-forward').value || 20;
+    
+    if (!symbol || !date) {
+        alert('Vui lòng nhập mã cổ phiếu và chọn ngày');
+        return;
+    }
+    
+    document.getElementById('bt-results').style.display = 'none';
+    document.getElementById('bt-loading').style.display = 'block';
+    
+    try {
+        const params = new URLSearchParams({
+            symbol: symbol,
+            start_date: date,
+            lookback: lookback,
+            forward: forward
+        });
+        
+        const response = await fetch(`/api/backtest/?${params}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            alert('Lỗi: ' + data.error);
+            document.getElementById('bt-loading').style.display = 'none';
+            return;
+        }
+        
+        // Update results
+        document.getElementById('bt-entry').textContent = formatPrice(data.entry_price);
+        document.getElementById('bt-target').textContent = formatPrice(data.target_price);
+        document.getElementById('bt-stop').textContent = formatPrice(data.stop_loss);
+        document.getElementById('bt-risk').textContent = data.hard_risk_pct.toFixed(2) + '%';
+        document.getElementById('bt-rsi').textContent = data.entry_tech.rsi;
+        document.getElementById('bt-cmf').textContent = data.entry_tech.cmf.toFixed(2);
+        
+        // Outcome
+        const outcomeEl = document.getElementById('bt-outcome');
+        const boxOutcome = document.getElementById('box-outcome');
+        
+        if (data.forward_test.outcome) {
+            const outcomeMap = {
+                'WIN_TARGET': { text: 'WIN ✓', cls: 'win' },
+                'LOSS_STOP': { text: 'LOSS ✗', cls: 'loss' },
+                'PENDING_PROFIT': { text: 'PENDING ↑', cls: '' },
+                'PENDING_LOSS': { text: 'PENDING ↓', cls: '' },
+                'NO_RESULT': { text: 'NO RESULT', cls: '' }
+            };
+            
+            const outcome = outcomeMap[data.forward_test.outcome] || { text: data.forward_test.outcome, cls: '' };
+            outcomeEl.textContent = outcome.text;
+            outcomeEl.className = 'stat-number ' + outcome.cls;
+            boxOutcome.className = 'stat-box ' + (outcome.cls ? outcome.cls : '');
+        }
+        
+        document.getElementById('bt-days').textContent = data.forward_test.days_to_target || 
+                                                        data.forward_test.days_to_stop || '--';
+        
+        document.getElementById('bt-maxprofit').textContent = (data.forward_test.max_profit_pct || 0).toFixed(2) + '%';
+        document.getElementById('bt-maxloss').textContent = (data.forward_test.max_loss_pct || 0).toFixed(2) + '%';
+        
+        document.getElementById('bt-loading').style.display = 'none';
+        document.getElementById('bt-results').style.display = 'block';
+        
+    } catch (err) {
+        alert('Lỗi kết nối: ' + err.message);
+        document.getElementById('bt-loading').style.display = 'none';
+    }
+}
+
+// Set default date to 30 days ago
+document.addEventListener('DOMContentLoaded', function() {
+    const dateInput = document.getElementById('bt-date');
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    dateInput.value = thirtyDaysAgo.toISOString().split('T')[0];
+});
+</script>
+</body>
+</html>

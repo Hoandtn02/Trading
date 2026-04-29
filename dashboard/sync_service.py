@@ -71,6 +71,7 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
         "roe": None,
         "pe": None,
         "pb": None,
+        "pe_industry_avg": None,  # P/E trung bình ngành
         "f_score": 0,
         "f_score_grade": "N/A",
         "profit_growth": None,  # NEW: Quý gần nhất vs cùng kỳ năm trước
@@ -196,11 +197,243 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
     # NEW: Calculate Profit Growth from income statement (latest quarter vs same quarter last year)
     result['profit_growth'] = calculate_profit_growth(symbol)
 
+    # NEW: Get Industry Average P/E for comparison
+    result['pe_industry_avg'] = get_industry_pe_average(symbol)
+
     # Calculate F-Score
     result['f_score'] = calculate_f_score(symbol, result)
     result['f_score_grade'] = get_f_score_grade(result['f_score'])
 
+    # NEW: Get Smart Money (Foreign Net Buying) - returns number of consecutive buy sessions
+    result['foreign_buy_streak'] = get_foreign_buy_streak(symbol)
+    
+    # NEW: Get Industry Performance - returns stock vs industry performance
+    # Note: df is not available here, so call without it (will use API to get price data internally)
+    result['industry_performance'] = get_industry_performance(symbol, None)
+    result['is_industry_leader'] = result['industry_performance'] >= 0  # Stock >= Industry average
+
     return result
+
+
+def get_industry_pe_average(symbol: str) -> Optional[float]:
+    """
+    Lấy P/E trung bình ngành của mã cổ phiếu
+    Sử dụng vnstock_data Market để lấy P/E thị trường hoặc tính trung bình ngành
+    """
+    try:
+        # Lấy thông tin ngành của mã
+        from .models import StockData
+        try:
+            stock = StockData.objects.get(symbol=symbol.upper())
+            industry = stock.industry
+        except:
+            industry = None
+        
+        if not industry:
+            # Fallback: lấy P/E thị trường VNINDEX
+            try:
+                from vnstock_data import Market
+                mkt = Market()
+                pe_data = mkt.pe(duration="1Y")
+                if pe_data is not None and len(pe_data) > 0:
+                    return round(float(pe_data['pe'].iloc[-1]), 2)
+            except:
+                pass
+            return None
+        
+        # Tính P/E trung bình của ngành từ top gainers
+        # (Đây là ước lượng vì API không có direct industry PE)
+        try:
+            from vnstock_data import TopStock
+            insights = TopStock()
+            gainers = insights.gainer(limit=20)
+            
+            if gainers is not None and len(gainers) > 0:
+                # Lấy P/E của các mã top - sử dụng Fundamential
+                from vnstock_data import Fundamental
+                fun = Fundamental()
+                
+                pe_sum = 0
+                pe_count = 0
+                
+                for idx, row in gainers.head(10).iterrows():
+                    sym = row.get('symbol')
+                    if sym:
+                        try:
+                            ratios = fun.equity(sym).ratio(period="year")
+                            if ratios is not None and len(ratios) > 0:
+                                for col in ['pe', 'PE', 'P/E']:
+                                    if col in ratios.columns:
+                                        pe_val = float(ratios[col].iloc[0])
+                                        if 0 < pe_val < 100:
+                                            pe_sum += pe_val
+                                            pe_count += 1
+                                            break
+                        except:
+                            continue
+                
+                if pe_count > 0:
+                    return round(pe_sum / pe_count, 2)
+        except:
+            pass
+        
+        # Fallback cuối: P/E thị trường
+        try:
+            from vnstock_data import Market
+            mkt = Market()
+            pe_data = mkt.pe(duration="1Y")
+            if pe_data is not None and len(pe_data) > 0:
+                return round(float(pe_data['pe'].iloc[-1]), 2)
+        except:
+            pass
+            
+    except Exception as e:
+        pass
+    
+    return None
+
+
+def calculate_optimal_position(
+    account_balance: float,
+    risk_tolerance: float,
+    entry_price: float,
+    support_price: float
+) -> float:
+    """
+    Tính số tiền giải ngân tối ưu dựa trên công thức:
+    Vốn giải ngân = (Số dư × % Rủi ro) / (Entry - SMA50)
+    
+    Args:
+        account_balance: Số dư tài khoản (VND)
+        risk_tolerance: % rủi ro chấp nhận (ví dụ: 2.0 = 2%)
+        entry_price: Giá mua (VND)
+        support_price: Giá hỗ trợ cứng SMA50 (VND)
+    
+    Returns:
+        Số tiền nên giải ngân (VND)
+    """
+    try:
+        if entry_price <= 0 or support_price <= 0 or entry_price <= support_price:
+            return 0
+        
+        # Risk amount = Số dư × % rủi ro
+        risk_amount = account_balance * (risk_tolerance / 100)
+        
+        # Khoảng cách từ Entry đến Support (Hard Risk)
+        hard_risk_per_share = entry_price - support_price
+        
+        # Số cổ phiếu tối đa = Risk Amount / Hard Risk per share
+        shares = risk_amount / hard_risk_per_share
+        
+        # Vốn giải ngân = Số cổ phiếu × Giá mua
+        position_value = shares * entry_price
+        
+        return round(position_value, -3)  # Làm tròn đến 1000 VND gần nhất
+    except Exception as e:
+        return 0
+
+
+def get_foreign_buy_streak(symbol: str, lookback: int = 5) -> int:
+    """
+    Lấy số phiên liên tiếp khối ngoại mua ròng từ vnstock_data
+    Returns: Số phiên mua ròng liên tiếp (0 = không có)
+    """
+    try:
+        from vnstock_data import TopStock
+        insights = TopStock()
+        
+        # Lấy dữ liệu foreign buy gần đây
+        foreign_buy = insights.foreign_buy(limit=lookback)
+        
+        # Lấy dữ liệu foreign sell gần đây
+        foreign_sell = insights.foreign_sell(limit=lookback)
+        
+        if foreign_buy is None or foreign_sell is None:
+            return 0
+        
+        # Tạo dict để tracking
+        buy_dates = set()
+        sell_dates = set()
+        
+        # Parse foreign buy
+        if len(foreign_buy) > 0:
+            for idx, row in foreign_buy.iterrows():
+                sym = str(row.get('symbol', '')).upper()
+                date = str(row.get('date', ''))
+                if sym == symbol.upper():
+                    buy_dates.add(date)
+        
+        # Parse foreign sell
+        if len(foreign_sell) > 0:
+            for idx, row in foreign_sell.iterrows():
+                sym = str(row.get('symbol', '')).upper()
+                date = str(row.get('date', ''))
+                if sym == symbol.upper():
+                    sell_dates.add(date)
+        
+        # Đếm streak: nếu ngày trong buy nhưng không trong sell = mua ròng
+        all_dates = sorted(list(buy_dates | sell_dates), reverse=True)
+        
+        streak = 0
+        for date in all_dates:
+            if date in buy_dates and date not in sell_dates:
+                streak += 1
+            else:
+                break
+        
+        return streak
+    except Exception as e:
+        return 0
+
+
+def get_industry_performance(symbol: str, df: pd.DataFrame, lookback: int = 5) -> float:
+    """
+    So sánh hiệu suất mã với trung bình ngành
+    Returns: % chênh lệch so với ngành (dương = mạnh hơn ngành)
+    """
+    try:
+        # Tính % tăng của mã trong N phiên
+        if df is None or len(df) < lookback:
+            return 0
+        
+        stock_return = 0
+        if 'close' in df.columns and len(df) >= lookback:
+            current_price = float(df['close'].iloc[-1])
+            past_price = float(df['close'].iloc[-lookback])
+            if past_price > 0:
+                stock_return = ((current_price - past_price) / past_price) * 100
+        
+        # Lấy danh sách cổ phiếu cùng ngành từ vnstock
+        try:
+            from vnstock_data import Listing
+            lst = Listing(source="kbs")
+            
+            # Lấy industry của mã (từ stock data)
+            from .models import StockData
+            try:
+                stock = StockData.objects.get(symbol=symbol.upper())
+                industry = stock.industry or stock.get_industry()
+            except:
+                industry = None
+            
+            if industry:
+                # Lấy danh sách top stocks theo ngành (lấy mẫu)
+                # So sánh với top gainers
+                top = lst.top_gainers()
+                
+                if top is not None and len(top) > 0:
+                    # Tính trung bình % tăng của top stocks
+                    industry_return = top['change_percent'].mean() if 'change_percent' in top.columns else 0
+                    
+                    # Chênh lệch = Stock - Industry
+                    return round(stock_return - industry_return, 2)
+        except:
+            pass
+        
+        # Fallback: so sánh với VNIndex (thị trường chung)
+        return 0  # Không đủ dữ liệu
+    except Exception as e:
+        return 0
 
 
 def calculate_profit_growth(symbol: str) -> Optional[float]:
@@ -469,6 +702,7 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
         "sma_10": 0.0,
         "sma_20": 0.0,
         "sma_50": 0.0,
+        "sma_200": 0.0,
         "bb_upper": 0.0,
         "bb_middle": 0.0,
         "bb_lower": 0.0,
@@ -576,6 +810,13 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
                 sma_50_series = ind.sma(length=50)
                 if sma_50_series is not None and len(sma_50_series) > 0:
                     result["sma_50"] = round(float(sma_50_series.iloc[-1]), 2)
+            except Exception:
+                pass
+
+            try:
+                sma_200_series = ind.sma(length=200)
+                if sma_200_series is not None and len(sma_200_series) > 0:
+                    result["sma_200"] = round(float(sma_200_series.iloc[-1]), 2)
             except Exception:
                 pass
 
@@ -737,7 +978,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             from vnstock_data import Market
             mkt = Market()
             df = mkt.equity(symbol).ohlcv(
-                start=(datetime.now() - pd.Timedelta(days=100)).strftime("%Y-%m-%d"),
+                start=(datetime.now() - pd.Timedelta(days=250)).strftime("%Y-%m-%d"),
                 end=datetime.now().strftime("%Y-%m-%d")
             )
             if df is not None and len(df) > 0:
@@ -755,7 +996,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
                 from vnstock import Quote
                 q = Quote(symbol=symbol)
                 df = q.history(
-                    start=(datetime.now() - pd.Timedelta(days=100)).strftime("%Y-%m-%d"),
+                    start=(datetime.now() - pd.Timedelta(days=250)).strftime("%Y-%m-%d"),
                     end=datetime.now().strftime("%Y-%m-%d"),
                     interval="1D"
                 )
@@ -765,11 +1006,37 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         if df is None or len(df) < 20:
             return None
 
+        # Get Market Group for Veto check
+        market_group = "UNKNOWN"
+        try:
+            stock = StockData.objects.get(symbol=symbol.upper())
+            market_group = stock.market_group or "UNKNOWN"
+        except:
+            pass
+
         # Calculate indicators
         tech = calculate_technical_indicators(df)
 
-        # Trading Levels - ATR-based Stop Loss
+        # ========== REAL R:R CALCULATION ==========
+        # Risk = Entry - Hỗ trợ cứng (SMA50)
+        # Reward = Entry * 5% (Target Yield cố định 5%)
         entry = tech["price"]
+        
+        # Hỗ trợ cứng = SMA50
+        support_price = tech["sma_50"] if tech["sma_50"] > 0 else entry * 0.97
+        hard_risk = entry - support_price
+        hard_risk_pct = (hard_risk / entry) * 100 if entry > 0 else 3
+        
+        # Target = Entry + 5%
+        target_5pct = round(entry * 1.05, 2)
+        
+        # Real R:R = Reward / Risk
+        if hard_risk > 0:
+            real_rr_ratio = round(5 / hard_risk_pct, 2)
+        else:
+            real_rr_ratio = 2.0
+        
+        # ========== Trading Levels - ATR-based Stop Loss ==========
         atr_value = tech["atr"] if tech["atr"] > 0 else entry * 0.02
         min_distance_pct = 0.03
         min_distance = entry * min_distance_pct
@@ -784,18 +1051,12 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         stop_loss = round(raw_sl, 2)
         take_profit = round(entry + (atr_value * 3), 2)
 
-        # R:R
-        risk = entry - stop_loss
-        reward = take_profit - entry
-        if risk > 0:
-            rr_ratio = round(reward / risk, 2)
-        else:
-            risk = entry * 0.03
-            rr_ratio = 3.0
-            stop_loss = round(entry * 0.97, 2)
-            take_profit = round(entry * 1.09, 2)
+        # Use real R:R ratio
+        risk = hard_risk
+        reward = target_5pct - entry
+        rr_ratio = real_rr_ratio
 
-        # ========== NEW: Target Yield & Est. Days với ADX Trend Factor ==========
+        # ========== Target Yield & Est. Days ==========
         # Target Yield %: Lợi nhuận kỳ vọng từ Entry tới Take Profit
         target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
         
@@ -901,34 +1162,101 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
 
         criteria_met = len(criteria)
 
-        # VETO CHECK - AFTER criteria calculation
+        # ========== VETO CHECK - KIM BÀI MIỄN TỬ ==========
+        # Module 1: Veto Tài chính - Loại bỏ ngay nếu không đạt
         is_vetoed = False
         veto_reason = ""
-
-        if tech["cmf"] < 0:
+        
+        # Initialize has_high_resistance early (used later in return dict)
+        has_high_resistance = False
+        
+        # Veto 1: ROE < 15% HOẶC F-Score < 6/9
+        if fund_data['roe'] is not None and fund_data['roe'] < 15:
             is_vetoed = True
-            veto_reason = "CMF Negative"
+            veto_reason = f"ROE < 15% ({fund_data['roe']:.1f}%)"
+        elif fund_data['f_score'] < 6:
+            is_vetoed = True
+            veto_reason = f"F-Score < 6 ({fund_data['f_score']}/9)"
+        
+        # Veto 2: Không thuộc VN30 hoặc MIDCAP
+        elif market_group not in ['VN30', 'MIDCAP']:
+            is_vetoed = True
+            veto_reason = f"Không thuộc VN30/MIDCAP ({market_group})"
+        
+        # Veto 2b: P/E của mã > P/E trung bình ngành (Định giá đắt hơn ngành)
+        elif fund_data.get('pe') and fund_data.get('pe_industry_avg'):
+            if fund_data['pe'] > fund_data['pe_industry_avg'] * 1.2:  # PE cao hơn 20% so với ngành
+                is_vetoed = True
+                veto_reason = f"P/E cao hơn ngành ({fund_data['pe']:.1f} vs {fund_data['pe_industry_avg']:.1f})"
+        
+        # Veto 3: Thanh khoản trung bình 20 phiên < 50 tỷ
+        elif tech["volume_ratio"] > 0 and tech["price"] > 0:
+            avg_vol_value = tech["price"] * df['volume'].tail(20).mean() / 1e9 if 'volume' in df.columns else 0
+            if avg_vol_value < 50:
+                is_vetoed = True
+                veto_reason = f"Thanh khoản < 50B ({avg_vol_value:.0f}B)"
+        
+        # Veto 4: CMF Negative (Tiền đang rút ra) - INDEPENDENT CHECK
+        if not is_vetoed and tech["cmf"] < 0:
+            is_vetoed = True
+            veto_reason = f"CMF Negative ({tech['cmf']:.2f})"
+        
+        # Veto 5: ATR = 0
         elif tech["atr"] <= 0:
             is_vetoed = True
             veto_reason = "ATR = 0"
+        
+        # Veto 6: Invalid Price
         elif entry <= 0:
             is_vetoed = True
             veto_reason = "Invalid Price"
-        # VETO if F-Score < 3 (low fundamental quality)
-        elif fund_data['f_score'] < 3:
-            is_vetoed = True
-            veto_reason = f"F-Score: {fund_data['f_score']}/9"
-        # VETO if Price < SMA50 (downtrend long-term) - NOT override existing veto
+        
+        # Veto 7: Price < SMA50 (downtrend dài hạn)
         elif tech["sma_50"] > 0 and tech["price"] < tech["sma_50"]:
             is_vetoed = True
             veto_reason = "Below SMA50"
+        
+        # Veto 8: Vùng giá không an toàn - Giá cách SMA200 > 15% (Đu đỉnh dài hạn)
+        elif tech["sma_200"] > 0 and tech["price"] > 0:
+            dist_to_sma200 = ((tech["price"] - tech["sma_200"]) / tech["sma_200"]) * 100
+            if dist_to_sma200 > 15:
+                is_vetoed = True
+                veto_reason = f"Cách SMA200 > 15% ({dist_to_sma200:.1f}%)"
+        
+        # Veto 9: Target Yield < 2% (Không đáng để giao dịch)
+        elif target_yield_pct < 2:
+            is_vetoed = True
+            veto_reason = f"Target < 2% ({target_yield_pct:.1f}%)"
+        
+        # Veto 10: R:R < 1.5 (Bad Trade-off) - INDEPENDENT CHECK
+        if not is_vetoed and rr_ratio < 1.5:
+            is_vetoed = True
+            veto_reason = f"R:R < 1.5 ({rr_ratio:.2f})"
+        
+        # Veto 11: Unrealistic Target (Target Yield > 10% mà Est. Days < 5)
+        elif target_yield_pct > 10 and est_days < 5:
+            is_vetoed = True
+            veto_reason = f"Unrealistic Target ({target_yield_pct:.1f}% in {est_days:.0f}d)"
+        
+        # Veto 12: Mã yếu hơn ngành (Industry Leader)
+        elif fund_data.get('is_industry_leader') == False and fund_data.get('industry_performance', 0) < -3:
+            is_vetoed = True
+            veto_reason = f"Yếu hơn ngành ({fund_data.get('industry_performance', 0):.1f}%)"
+        
+        # Store safe entry info
+        safe_entry_distance = 0
+        if tech["sma_20"] > 0 and tech["price"] > 0:
+            safe_entry_distance = ((tech["price"] - tech["sma_20"]) / tech["sma_20"]) * 100
+        
+        is_safe_entry = abs(safe_entry_distance) <= 2
 
         # SCORES
         tech_score = 50
         fund_score = 50
 
         if not is_vetoed:
-            # RSI
+            # ========== TECH SCORE (40%) ==========
+            # RSI Sweet Spot
             if 50 <= tech["rsi"] <= 65:
                 tech_score += 12 if 55 <= tech["rsi"] <= 62 else 8
             elif tech["rsi"] > 70:
@@ -938,13 +1266,13 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             elif tech["rsi"] < 40:
                 tech_score += 5
 
-            # ADX
+            # ADX Strong
             if tech["adx"] > 25:
                 tech_score += 12
             elif tech["adx"] > 20:
                 tech_score += 8
 
-            # CMF
+            # CMF Positive
             if tech["cmf"] > 0.1:
                 tech_score += 12
             elif tech["cmf"] > 0:
@@ -952,13 +1280,13 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             else:
                 tech_score -= 15
 
-            # Volume
+            # Volume Active
             if tech["volume_ratio"] > 1.5:
                 tech_score += 8
             elif tech["volume_ratio"] > 1.0:
                 tech_score += 5
 
-            # R:R
+            # R:R (Real calculation)
             if rr_ratio >= 2.0:
                 tech_score += 10
             elif rr_ratio >= 1.5:
@@ -966,7 +1294,17 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             elif rr_ratio < 1.0:
                 tech_score -= 10
 
-            # VWAP penalty
+            # Safe Entry Bonus: Giá trong vùng [-2%, +2%] so với SMA20
+            if is_safe_entry:
+                tech_score += 10
+            
+            # High Resistance Penalty: Target nằm trên Bollinger Upper Band
+            has_high_resistance = False
+            if tech["bb_upper"] > 0 and take_profit > tech["bb_upper"]:
+                tech_score -= 15
+                has_high_resistance = True
+
+            # VWAP
             if tech["vwap_status"] == "below":
                 tech_score -= 8
 
@@ -974,7 +1312,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             if has_inverted_sl:
                 tech_score -= 10
 
-            # FAST PICK - Based on Volume Ratio
+            # FAST PICK - Based on Volume Ratio & ADX
             if tech["adx"] > 18 and tech["volume_ratio"] > 0.8:
                 is_fast_pick = True
             else:
@@ -985,24 +1323,47 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
 
         tech_score = max(0, min(100, tech_score))
 
-        # Fund Score based on F-Score and ROE
-        if fund_data['f_score'] >= 7:
-            fund_score = 80
+        # ========== FUND SCORE (60%) ==========
+        # F-Score weighted
+        if fund_data['f_score'] >= 8:
+            fund_score = 85
+        elif fund_data['f_score'] >= 7:
+            fund_score = 78
+        elif fund_data['f_score'] >= 6:
+            fund_score = 70
         elif fund_data['f_score'] >= 5:
-            fund_score = 65
-        elif fund_data['f_score'] >= 3:
-            fund_score = 50
+            fund_score = 55
         else:
-            fund_score = 35
+            fund_score = 40
 
-        # Adjust by ROE
+        # ROE Premium
         if fund_data['roe'] is not None:
-            if fund_data['roe'] > 20:
-                fund_score = min(100, fund_score + 15)
-            elif fund_data['roe'] > 15:
+            if fund_data['roe'] > 25:
+                fund_score = min(100, fund_score + 12)
+            elif fund_data['roe'] > 20:
                 fund_score = min(100, fund_score + 10)
+            elif fund_data['roe'] > 15:
+                fund_score = min(100, fund_score + 8)
             elif fund_data['roe'] < 5:
                 fund_score = max(0, fund_score - 15)
+
+        # SMART MONEY BONUS: +15 nếu khối ngoại mua ròng 3-5 phiên liên tiếp
+        foreign_streak = fund_data.get('foreign_buy_streak', 0)
+        foreign_bonus = 0
+        if foreign_streak >= 5:
+            foreign_bonus = 20  # Mua ròng 5+ phiên
+        elif foreign_streak >= 3:
+            foreign_bonus = 15  # Mua ròng 3-4 phiên
+        
+        # INDUSTRY LEADER BONUS: +10 nếu mạnh hơn ngành
+        industry_perf = fund_data.get('industry_performance', 0)
+        industry_bonus = 0
+        if industry_perf > 5:
+            industry_bonus = 15  # Dẫn đầu ngành mạnh
+        elif industry_perf > 0:
+            industry_bonus = 10  # Trên trung bình ngành
+        
+        fund_score = min(100, fund_score + foreign_bonus + industry_bonus)
 
         # ========== RISK ASSESSMENT - SEPARATED ==========
         # Market Risk (thị trường chung) - VNIndex RSI
@@ -1051,6 +1412,22 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             signal = "ACCUMULATE"
         else:
             signal = "WAIT"
+
+        # ========== MARKET WEIGHT ADJUSTMENT ==========
+        # Khi VNIndex đang ở vùng Danger, giảm Master Score để tránh "lạc quan quá mức"
+        market_weight = 0
+        if market_rsi > 85:
+            market_weight = -25  # Thị trường quá nóng, giảm mạnh
+        elif market_rsi > 80:
+            market_weight = -20  # Danger zone
+        elif market_rsi > 70:
+            market_weight = -10  # Warning zone
+        elif market_rsi < 40:
+            market_weight = +10  # Thị trường quá bán, cơ hội mua vào
+        
+        # Apply market weight
+        base_master_score = int(fund_score * 0.6 + tech_score * 0.4)
+        master_score = max(0, min(100, base_master_score + market_weight))
 
         # Trend
         if tech["sma_20"] > 0 and tech["sma_50"] > 0:
@@ -1103,7 +1480,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "stop_loss": stop_loss,
             "take_profit": take_profit,
             "risk_reward_ratio": rr_ratio,
-            # NEW: Target Yield & Est. Days
+            # Target Yield & Est. Days
             "target_yield_pct": target_yield_pct,
             "trend_factor": trend_factor,
             "estimated_days_to_target": round(est_days, 1),
@@ -1112,12 +1489,17 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             # Expected metrics (profit/day)
             "expected_profit_per_day": profit_per_day,
             "upside_per_day": profit_per_day,
-            # Scores
-            "master_score": int(tech_score * 0.55 + fund_score * 0.45),
+            # ========== SCORES: 60% Fund + 40% Tech (with Market Weight) ==========
+            "master_score": master_score,  # Already calculated with market weight
+            "base_master_score": base_master_score,
+            "market_weight": market_weight,
             "technical_score": tech_score,
             "fundamental_score": fund_score,
+            # Safe Entry & Resistance
+            "is_safe_entry": is_safe_entry,
+            "has_high_resistance": has_high_resistance,
+            # Signal & Status
             "signal": signal,
-            # Status
             "is_vetoed": is_vetoed,
             "veto_reason": veto_reason,
             "is_fast_pick": is_fast_pick,
@@ -1143,7 +1525,28 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
             "pb": fund_data['pb'],
             "f_score": fund_data['f_score'],
             "f_score_grade": fund_data['f_score_grade'],
-            "profit_growth": fund_data.get('profit_growth'),  # NEW
+            "profit_growth": fund_data.get('profit_growth'),
+            # Smart Money & Industry
+            "foreign_buy_streak": foreign_streak,
+            "foreign_bonus": foreign_bonus,
+            "industry_performance": industry_perf,
+            "is_industry_leader": industry_perf >= 0,
+            # Real R:R
+            "hard_risk_pct": round(hard_risk_pct, 2),
+            "support_price": round(support_price, 2),
+            # P/E Industry
+            "pe_industry_avg": fund_data.get('pe_industry_avg') or 0,
+            # Early Exit Sensor & Money Management
+            "early_exit_trigger_pct": 2.0,  # Kích hoạt khi lãi >= 2%
+            "early_exit_drop_pct": 0.7,  # Bán nếu sụt 0.7% từ đỉnh
+            "optimal_position_size": calculate_optimal_position(
+                account_balance=100_000_000,  # 100M default
+                risk_tolerance=2.0,  # 2% risk
+                entry_price=entry,
+                support_price=support_price
+            ),
+            "account_balance": 100_000_000,
+            "risk_tolerance_pct": 2.0,
         }
 
     except Exception as e:
@@ -1339,9 +1742,30 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "is_short_term_qualified": data["is_short_term_qualified"],
                     "is_slow_mode": data["is_slow_mode"],
                     "is_high_risk": data["is_high_risk"],
-                    "is_market_high_risk": data.get("is_market_high_risk", False),  # NEW
-                    "stock_risk_level": data.get("stock_risk_level", "Medium"),  # NEW
+                    "is_market_high_risk": data.get("is_market_high_risk", False),
+                    "stock_risk_level": data.get("stock_risk_level", "Medium"),
+                    "stock_risk_reason": data.get("stock_risk_reason", ""),
                     "has_inverted_sl": data["has_inverted_sl"],
+                    # New fields
+                    "is_safe_entry": data.get("is_safe_entry", False),
+                    "has_high_resistance": data.get("has_high_resistance", False),
+                    "avg_volume_value": data.get("avg_volume_value", 0),
+                    "trend_factor": data.get("trend_factor", 0.6),
+                    # Smart Money & Industry
+                    "foreign_buy_streak": data.get("foreign_buy_streak", 0),
+                    "foreign_bonus": data.get("foreign_bonus", 0),
+                    "industry_performance": data.get("industry_performance", 0),
+                    "is_industry_leader": data.get("is_industry_leader", True),
+                    # Real R:R
+                    "hard_risk_pct": data.get("hard_risk_pct", 0),
+                    "support_price": data.get("support_price", 0),
+                    # P/E Industry & Early Exit
+                    "pe_industry_avg": data.get("pe_industry_avg", 0),
+                    "early_exit_trigger_pct": data.get("early_exit_trigger_pct", 2.0),
+                    "early_exit_drop_pct": data.get("early_exit_drop_pct", 0.7),
+                    "optimal_position_size": data.get("optimal_position_size", 0),
+                    "account_balance": data.get("account_balance", 100_000_000),
+                    "risk_tolerance_pct": data.get("risk_tolerance_pct", 2.0),
                     "estimated_days_to_target": data["estimated_days_to_target"],
                     "timeframe_label": data.get("timeframe_label", ""),
                     "timeframe_color": data.get("timeframe_color", ""),

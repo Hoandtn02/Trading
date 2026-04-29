@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv
+from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv, strategy_lab, api_simulate, api_backtest
 
 urlpatterns = [
     path("", home, name="home"),
@@ -15,4 +15,7 @@ urlpatterns = [
     path("run/<str:function_id>/", run_function, name="run_function"),
     path("preset/save/", save_preset, name="save_preset"),
     path("preset/load/<str:function_id>/", load_presets, name="load_presets"),
+    path("strategy-lab/", strategy_lab, name="strategy_lab"),
+    path("api/simulate/", api_simulate, name="api_simulate"),
+    path("api/backtest/", api_backtest, name="api_backtest"),
 ]

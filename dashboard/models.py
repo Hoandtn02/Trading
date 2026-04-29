@@ -189,7 +189,38 @@ class StockAnalysis(models.Model):
     # NEW: Separated Risk Assessment
     is_market_high_risk = models.BooleanField(default=False)  # VNIndex RSI > 80
     stock_risk_level = models.CharField(max_length=20, default="Medium")  # Very Low/Low/Medium/High
-
+    stock_risk_reason = models.CharField(max_length=200, blank=True, default="")
+    
+    # Score Breakdown
+    base_master_score = models.IntegerField(default=50)  # Before market weight adjustment
+    market_weight = models.IntegerField(default=0)  # Adjustment based on market RSI
+    
+    # Entry Quality
+    is_safe_entry = models.BooleanField(default=False)  # Within [-2%, +2%] of SMA20
+    has_high_resistance = models.BooleanField(default=False)  # TP above Bollinger Upper Band
+    
+    # Volume
+    avg_volume_value = models.FloatField(default=0)  # 20-day avg volume in Billions VND
+    trend_factor = models.FloatField(default=0.6)  # ADX-based factor (0.4-0.8)
+    
+    # Smart Money & Industry
+    foreign_buy_streak = models.IntegerField(default=0)  # Số phiên khối ngoại mua ròng liên tiếp
+    foreign_bonus = models.IntegerField(default=0)  # Điểm cộng từ Smart Money
+    industry_performance = models.FloatField(default=0)  # % chênh lệch vs ngành
+    is_industry_leader = models.BooleanField(default=True)  # True = mạnh hơn ngành
+    
+    # Real R:R
+    hard_risk_pct = models.FloatField(default=0)  # % rủi ro thực (Entry - SMA50)
+    support_price = models.FloatField(default=0)  # Giá hỗ trợ cứng (SMA50)
+    
+    # Early Exit Sensor & Money Management
+    pe_industry_avg = models.FloatField(default=0)  # P/E trung bình ngành
+    early_exit_trigger_pct = models.FloatField(default=2.0)  # Ngưỡng kích hoạt trailing (mặc định 2%)
+    early_exit_drop_pct = models.FloatField(default=0.7)  # Sụt giảm tối đa từ đỉnh (mặc định 0.7%)
+    optimal_position_size = models.FloatField(default=0)  # Số tiền giải ngân tối ưu
+    account_balance = models.FloatField(default=100000000)  # Số dư tài khoản mặc định (100M)
+    risk_tolerance_pct = models.FloatField(default=2.0)  # % rủi ro chấp nhận (mặc định 2%)
+    
     # Holding
     estimated_days_to_target = models.FloatField(default=0)
     timeframe_label = models.CharField(max_length=30, default="")
