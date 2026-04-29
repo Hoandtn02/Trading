@@ -952,7 +952,121 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
 
 def strategy_lab(request: HttpRequest) -> HttpResponse:
     """Strategy Lab - Live Simulation & Backtesting"""
-    return render(request, "dashboard/strategy_lab.html")
+    # Lấy danh sách symbols từ DB
+    from .models import StockData, VN30_SYMBOLS
+    
+    # Lấy VN30 và MIDCAP stocks
+    all_symbols = list(VN30_SYMBOLS)
+    
+    # Thêm các mã từ DB
+    db_symbols = StockData.objects.values_list('symbol', flat=True)
+    for s in db_symbols:
+        if s not in all_symbols:
+            all_symbols.append(s)
+    
+    # Sắp xếp
+    all_symbols = sorted(set(all_symbols))
+    
+    return render(request, "dashboard/strategy_lab.html", {
+        "symbols": all_symbols
+    })
+
+
+@csrf_exempt
+def api_get_stock_data(request: HttpRequest) -> JsonResponse:
+    """
+    API endpoint to get stock data from database for simulation.
+    Returns all technical and fundamental data for a given symbol.
+    """
+    try:
+        from .models import StockData, StockAnalysis
+        
+        symbol = request.GET.get("symbol", "").strip().upper()
+        if not symbol:
+            return JsonResponse({"error": "Symbol is required"}, status=400)
+        
+        # Lấy data từ DB
+        try:
+            stock = StockData.objects.get(symbol=symbol)
+        except StockData.DoesNotExist:
+            return JsonResponse({"error": f"Symbol {symbol} not found in database"}, status=404)
+        
+        # Lấy analysis
+        try:
+            analysis = StockAnalysis.objects.get(symbol=stock)
+        except StockAnalysis.DoesNotExist:
+            analysis = None
+        
+        # Calculate price distance to SMA50
+        price = stock.price or 0
+        sma_50 = stock.sma_50 or 0
+        price_dist = ((price - sma_50) / sma_50 * 100) if sma_50 > 0 else 0
+        
+        # Build response
+        data = {
+            "symbol": stock.symbol,
+            "company_name": stock.company_name,
+            "price": price,
+            "change_percent": stock.change_percent,
+            # Technical
+            "cmf": round(stock.cmf or 0, 3),
+            "rsi": round(stock.rsi or 50, 1),
+            "adx": round(stock.adx or 25, 1),
+            "atr": round(stock.atr or 0, 2),
+            "sma_10": round(stock.sma_10 or 0, 2),
+            "sma_20": round(stock.sma_20 or 0, 2),
+            "sma_50": round(sma_50, 2),
+            "price_dist": round(price_dist, 1),  # % price is from SMA50
+            # Fundamental
+            "roe": round(stock.roe or 15, 1),
+            "f_score": stock.f_score or 5,
+            "pe": round(stock.pe or 15, 1),
+            "pb": round(stock.pb or 1.5, 2),
+            # Analysis
+            "market_rsi": round(analysis.market_rsi or 50, 1) if analysis else 50,
+            "master_score": analysis.master_score if analysis else 50,
+            "signal": analysis.signal if analysis else "HOLD",
+            "is_vetoed": analysis.is_vetoed if analysis else False,
+            "veto_reason": analysis.veto_reason if analysis else "",
+            "risk_reward_ratio": round(analysis.risk_reward_ratio, 2) if analysis else 1.5,
+        }
+        
+        return JsonResponse({"status": "success", "data": data})
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)
+
+
+@csrf_exempt
+def api_get_all_symbols(request: HttpRequest) -> JsonResponse:
+    """
+    API endpoint to get all available symbols (VN30 + MIDCAP).
+    """
+    try:
+        from .models import StockData, VN30_SYMBOLS
+        
+        # Lấy VN30 symbols
+        symbols = list(VN30_SYMBOLS)
+        
+        # Thêm các mã từ DB không có trong VN30
+        db_symbols = StockData.objects.values_list('symbol', flat=True)
+        for s in db_symbols:
+            if s not in symbols:
+                symbols.append(s)
+        
+        # Sắp xếp
+        symbols = sorted(set(symbols))
+        
+        return JsonResponse({
+            "status": "success",
+            "symbols": symbols,
+            "count": len(symbols)
+        })
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)
 
 
 def api_simulate(request: HttpRequest) -> JsonResponse:

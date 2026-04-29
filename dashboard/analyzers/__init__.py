@@ -38,8 +38,8 @@ from .signals import (
 from .index_analyzer import IndexAnalyzer, IndexData, MarketBreadth
 
 # Gold & Futures (Phase 3)
-from .gold_analyzer import GoldAnalyzer, GoldData
-from .futures_analyzer import FuturesAnalyzer, FuturesData
+#from .gold_analyzer import GoldAnalyzer, GoldData
+#from .futures_analyzer import FuturesAnalyzer, FuturesData
 
 # ETF, Forex, Crypto, CW (Phase 4)
 from .fund_analyzer import FundAnalyzer, ETFAnalyzer, FundData
@@ -76,8 +76,8 @@ __all__ = [
     "IndexData",
     "MarketBreadth",
     # Gold & Futures
-    "GoldAnalyzer",
-    "GoldData",
+    #"GoldAnalyzer",
+    #"GoldData",
     "FuturesAnalyzer",
     "FuturesData",
     # ETF, Forex, Crypto, CW
