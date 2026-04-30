@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models  # pyright: ignore[reportMissingImports]
 
 
 class FunctionGroup(models.Model):
