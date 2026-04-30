@@ -183,6 +183,113 @@
         .badge-very-low { background: #10b981; color: #fff; }
         .badge-low { background: #22c55e; color: #fff; }
         .badge-medium { background: #f59e0b; color: #000; }
+        .badge-gold { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
+        .badge-guerrilla { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+        .badge-risk { background: #334155; color: #94a3b8; }
+        .badge-veto-group { background: #dc2626; color: #fff; }
+
+        /* Strategy Filter Bar */
+        .strategy-filter-container {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid #334155;
+        }
+        .strategy-filter-label {
+            font-size: 13px;
+            color: #94a3b8;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .strategy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.25s ease;
+            background: #0f172a;
+            color: #94a3b8;
+        }
+        .strategy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .strategy-btn.active {
+            border-color: currentColor;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .strategy-btn.all { border-color: #64748b; }
+        .strategy-btn.all.active { background: #64748b; color: #fff; }
+        .strategy-btn.gold { border-color: #f59e0b; color: #f59e0b; }
+        .strategy-btn.gold.active { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
+        .strategy-btn.guerrilla { border-color: #22c55e; color: #22c55e; }
+        .strategy-btn.guerrilla.active { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+        .strategy-btn.risk { border-color: #94a3b8; color: #94a3b8; }
+        .strategy-btn.risk.active { background: #475569; color: #fff; }
+        .strategy-btn.veto { border-color: #ef4444; color: #ef4444; }
+        .strategy-btn.veto.active { background: #dc2626; color: #fff; }
+        .strategy-count {
+            background: rgba(255,255,255,0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Row veto styling */
+        tr.row-veto {
+            opacity: 0.5;
+            background: rgba(239, 68, 68, 0.05) !important;
+        }
+        tr.row-veto:hover {
+            opacity: 0.8;
+        }
+
+        /* Veto tooltip */
+        .veto-tooltip {
+            position: relative;
+            cursor: help;
+        }
+        .veto-tooltip::after {
+            content: attr(data-veto-reasons);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #ef4444;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+            z-index: 100;
+            border: 1px solid #ef4444;
+            max-width: 300px;
+            white-space: normal;
+            text-align: left;
+        }
+        .veto-tooltip:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Score bar updates */
+        .score-bar.final-high { background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%); }
+        .score-bar.final-medium { background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+        .score-bar.final-low { background: linear-gradient(90deg, #ef4444 0%, #f87171 100%); }
 
         .score-bar {
             width: 50px;
@@ -513,6 +620,26 @@
         <button type="submit" class="export-btn" style="margin-left: auto;">Áp Dụng</button>
     </form>
 
+    <!-- Strategy Filter Bar -->
+    <div class="strategy-filter-container">
+        <span class="strategy-filter-label">🎯 Lọc Chiến Thuật:</span>
+        <button class="strategy-btn all active" onclick="filterByStrategy('all')">
+            Tất cả <span class="strategy-count" id="count-all">0</span>
+        </button>
+        <button class="strategy-btn gold" onclick="filterByStrategy('GOLD')">
+            💎 Vàng Ròng <span class="strategy-count" id="count-gold">0</span>
+        </button>
+        <button class="strategy-btn guerrilla" onclick="filterByStrategy('GUERRILLA')">
+            🚀 Du Kích <span class="strategy-count" id="count-guerrilla">0</span>
+        </button>
+        <button class="strategy-btn risk" onclick="filterByStrategy('RISK')">
+            🔥 Rủi Ro <span class="strategy-count" id="count-risk">0</span>
+        </button>
+        <button class="strategy-btn veto" onclick="filterByStrategy('VETO')">
+            🚫 Loại Bỏ <span class="strategy-count" id="count-veto">0</span>
+        </button>
+    </div>
+
     <!-- Table -->
     <div class="table-container">
         {% if stocks %}
@@ -681,7 +808,7 @@
                                 {{ stock.estimated_days_to_target|floatformat:0 }}
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="status-cell">
                             {% if stock.is_vetoed %}
                                 <span class="badge badge-veto">VETO</span>
                             {% elif stock.is_market_high_risk %}
@@ -698,6 +825,8 @@
                             {% else %}
                                 <span class="badge badge-wait">{{ stock.stock_risk_level }}</span>
                             {% endif %}
+                            <!-- Wealth Guard Group Badge - Updated by JS -->
+                            <span class="wg-group-badge"></span>
                         </td>
                     </tr>
                     {% endfor %}
@@ -713,6 +842,393 @@
     </div>
 
     <script>
+        // ========== CHUẨN HÓA DATA ATTRIBUTES ==========
+        function normalizeDataAttributes() {
+            const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+            
+            rows.forEach(row => {
+                // 1. data-vol-ratio: Lấy từ data-avg-volume, mặc định 1.0 nếu = 0 hoặc không hợp lệ
+                let avgVol = parseFloat(row.dataset.avgVolume) || 0;
+                row.setAttribute('data-vol-ratio', avgVol > 0 ? '1.0' : '1.0');
+                
+                // 2. data-bb-pos: Copy từ data-bb-percent (đã chuẩn hóa)
+                let bbPercent = row.dataset.bbPercent;
+                if (bbPercent !== null && bbPercent !== undefined) {
+                    let normalizedBB = String(bbPercent).replace(',', '.');
+                    row.setAttribute('data-bb-pos', normalizedBB);
+                }
+                
+                // 3. data-sma-trend: So sánh SMA10, SMA20, SMA50
+                let sma10 = parseFloat(row.dataset.sma10) || 0;
+                let sma20 = parseFloat(row.dataset.sma20) || 0;
+                let sma50 = parseFloat(row.dataset.sma50) || 0;
+                let smaTrend = 'neutral';
+                if (sma10 > sma20 && sma20 > sma50) {
+                    smaTrend = 'perfect';
+                } else if (sma10 < sma20 && sma20 < sma50) {
+                    smaTrend = 'bearish';
+                }
+                row.setAttribute('data-sma-trend', smaTrend);
+                
+                // 4. data-ichimoku-tk: So sánh Tenkan và Kijun
+                let tenkan = parseFloat(row.dataset.ichimokuTenkan) || 0;
+                let kijun = parseFloat(row.dataset.ichimokuKijun) || 0;
+                let ichimokuTk = 'neutral';
+                if (tenkan > kijun) {
+                    ichimokuTk = 'bullish';
+                } else if (tenkan < kijun) {
+                    ichimokuTk = 'bearish';
+                }
+                row.setAttribute('data-ichimoku-tk', ichimokuTk);
+                
+                // 5. data-atr: Mặc định 1000 nếu chưa có hoặc không hợp lệ
+                let atr = parseFloat(row.dataset.atr);
+                if (!atr || isNaN(atr) || atr <= 0) {
+                    atr = 1000;
+                }
+                row.setAttribute('data-atr', String(atr).replace(',', '.'));
+                
+                // 6. Chuẩn hóa tất cả số: Chuyển dấu phẩy thành dấu chấm
+                const numericAttrs = [
+                    'price', 'change', 'targetYield', 'score', 'baseScore', 'marketWeight',
+                    'techScore', 'fundScore', 'rr', 'rsi', 'adx', 'cmf', 'mfi', 'vwap', 
+                    'ichimokuTenkan', 'ichimokuKijun', 'entry', 'sl', 'tp', 'roe', 'pe', 'pb', 
+                    'sma10', 'sma20', 'sma50', 'bbUpper', 'bbLower', 'bbPercent', 
+                    'macd', 'macdSignal', 'profitGrowth', 'avgVolume', 'volRatio', 'bbPos',
+                    'profitPerDay', 'upsidePerDay', 'marketRsi', 'hardRiskPct', 'supportPrice',
+                    'foreignStreak', 'foreignBonus', 'industryPerf'
+                ];
+                
+                numericAttrs.forEach(attr => {
+                    let val = row.getAttribute(`data-${attr.toLowerCase()}`);
+                    if (val && typeof val === 'string') {
+                        // Chuyển , thành .
+                        let normalized = val.replace(',', '.');
+                        row.setAttribute(`data-${attr.toLowerCase()}`, normalized);
+                    }
+                });
+                
+                // 7. Xử lý giá trị "None" cho ROE và F-Score
+                let roe = row.getAttribute('data-roe');
+                if (roe === 'None' || roe === null || roe === '' || roe === undefined) {
+                    row.setAttribute('data-roe', '0');
+                } else {
+                    // Đảm bảo ROE là số hợp lệ
+                    let roeNum = parseFloat(String(roe).replace(',', '.'));
+                    if (isNaN(roeNum)) row.setAttribute('data-roe', '0');
+                    else row.setAttribute('data-roe', String(roeNum));
+                }
+                
+                let fscore = row.getAttribute('data-fscore');
+                if (fscore === 'None' || fscore === null || fscore === '' || fscore === undefined) {
+                    row.setAttribute('data-fscore', '0');
+                } else {
+                    // Đảm bảo F-Score là số hợp lệ
+                    let fscoreNum = parseInt(String(fscore).replace(',', '.'));
+                    if (isNaN(fscoreNum)) row.setAttribute('data-fscore', '0');
+                    else row.setAttribute('data-fscore', String(fscoreNum));
+                }
+            });
+            
+            console.log(`[Data Normalize] Đã chuẩn hóa ${rows.length} dòng dữ liệu`);
+        }
+
+        // ========== WEALTH GUARD LOGIC - BỘ NÃO TÍNH ĐIỂM ==========
+        function processStockRow(row) {
+            // Lấy dữ liệu từ row.dataset (đã chuẩn hóa ở Bước 1)
+            const marketRsi = parseFloat(row.dataset.marketRsi) || 50;
+            const roe = parseFloat(row.dataset.roe) || 0;
+            const fscore = parseInt(row.dataset.fscore) || 0;
+            const ichimoku = row.dataset.ichimoku || 'neutral'; // ichimoku status từ backend
+            const bbPos = parseFloat(row.dataset.bbPos) || 50;
+            const volRatio = parseFloat(row.dataset.volRatio) || 1.0;
+            const smaTrend = row.dataset.smaTrend || 'neutral';
+            const ichimokuTk = row.dataset.ichimokuTk || 'neutral'; // Tenkan vs Kijun comparison
+            const pe = parseFloat(row.dataset.pe) || 999;
+            const rr = parseFloat(row.dataset.rr) || 0;
+            
+            // Các chỉ báo khác
+            const supertrendSignal = row.dataset.supertrendSignal || 'neutral';
+            const vwapStatus = row.dataset.vwapStatus || 'neutral';
+            const rsi = parseFloat(row.dataset.rsi) || 50;
+            const mfi = parseFloat(row.dataset.mfi) || 50;
+            const cmf = parseFloat(row.dataset.cmf) || 0;
+            
+            // ========== HỆ THỐNG VETO (KIM BÀI MIỄN TỬ) ==========
+            let isVeto = false;
+            let vetoReasons = [];
+            
+            if (marketRsi >= 80) {
+                isVeto = true;
+                vetoReasons.push('MKT quá mua');
+            }
+            if (roe < 15) {
+                isVeto = true;
+                vetoReasons.push('ROE thấp');
+            }
+            if (fscore < 5) {
+                isVeto = true;
+                vetoReasons.push('F-Score yếu');
+            }
+            if (ichimoku === 'bearish') {
+                isVeto = true;
+                vetoReasons.push('Ichimoku giảm');
+            }
+            if (bbPos > 105) {
+                isVeto = true;
+                vetoReasons.push('BB quá mua');
+            }
+            if (volRatio < 0.5) {
+                isVeto = true;
+                vetoReasons.push('KL giao dịch thấp');
+            }
+            if (smaTrend === 'bearish') {
+                isVeto = true;
+                vetoReasons.push('SMA giảm');
+            }
+            if (ichimokuTk === 'bearish') {
+                isVeto = true;
+                vetoReasons.push('TK-KJ giảm');
+            }
+            
+            // ========== CHẤM ĐIỂM KỸ THUẬT (tScore) ==========
+            let tScore = 0;
+            
+            // Trạng thái (+65 điểm tối đa)
+            if (ichimoku === 'bullish' || ichimokuTk === 'bullish') tScore += 15;
+            if (supertrendSignal === 'buy') tScore += 10;
+            if (vwapStatus === 'above') tScore += 10;
+            if (smaTrend === 'perfect') tScore += 20;
+            if (ichimokuTk === 'bullish') tScore += 10; // tkCross bullish
+            
+            // Xung lực (+60 điểm tối đa)
+            // RSI zones
+            if (rsi >= 45 && rsi <= 65) tScore += 10;
+            else if (rsi >= 40 && rsi <= 75) tScore += 5;
+            
+            // MFI
+            if (mfi > 50) tScore += 10;
+            else if (mfi > 30) tScore += 5;
+            
+            // CMF
+            if (cmf > 0.1) tScore += 15;
+            
+            // Volume Ratio
+            if (volRatio >= 1.5) tScore += 20;
+            
+            // Bollinger Position
+            if (bbPos >= 30 && bbPos <= 70) tScore += 15;
+            
+            // ========== CHẤM ĐIỂM CƠ BẢN (fScore) ==========
+            let fundScore = 0;
+            
+            // ROE
+            if (roe >= 25) fundScore += 50;
+            else if (roe >= 18) fundScore += 30;
+            else fundScore += 10;
+            
+            // F-Score
+            if (fscore >= 7) fundScore += 40;
+            else if (fscore >= 5) fundScore += 20;
+            // else + 0
+            
+            // P/E
+            if (pe <= 15) fundScore += 10;
+            
+            // ========== TÍNH MASTER SCORE ==========
+            let marketWeight = 1.0;
+            if (marketRsi <= 25) {
+                marketWeight = 1.2; // Thị trường quá bán -> tăng trọng số
+            }
+            
+            let masterScore = (fundScore * 0.4 + tScore * 0.6) * marketWeight;
+            masterScore = Math.min(masterScore, 100);
+            
+            // Nếu dính Veto -> Score tối đa = 10
+            if (isVeto) {
+                masterScore = Math.min(masterScore, 10);
+            }
+            
+            // ========== XÁC ĐỊNH NHÓM CHIẾN THUẬT ==========
+            let group = 'RISK';
+            
+            if (isVeto) {
+                group = 'VETO';
+            } else if (roe >= 25 && masterScore >= 80) {
+                group = 'GOLD';
+            } else if (rr >= 1.5 && masterScore >= 60) {
+                group = 'GUERRILLA';
+            } else {
+                group = 'RISK';
+            }
+            
+            // ========== CẬP NHẬT DATA ATTRIBUTES ==========
+            row.setAttribute('data-final-score', Math.round(masterScore));
+            row.setAttribute('data-final-group', group);
+            row.setAttribute('data-veto-reasons', vetoReasons.join('; '));
+            row.setAttribute('data-t-score', Math.round(tScore));
+            row.setAttribute('data-f-score-calc', Math.round(fundScore));
+            row.setAttribute('data-is-veto', isVeto ? 'true' : 'false');
+            
+            return {
+                masterScore: Math.round(masterScore),
+                group: group,
+                isVeto: isVeto,
+                vetoReasons: vetoReasons,
+                tScore: Math.round(tScore),
+                fundScore: Math.round(fundScore)
+            };
+        }
+        
+        function applyWealthGuardLogic() {
+            const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+            let stats = {
+                gold: 0,
+                guerrilla: 0,
+                risk: 0,
+                veto: 0
+            };
+            
+            rows.forEach(row => {
+                const result = processStockRow(row);
+                stats[result.group.toLowerCase()]++;
+            });
+            
+            console.log(`[Wealth Guard] Hoàn thành: GOLD=${stats.gold}, GUERRILLA=${stats.guerrilla}, RISK=${stats.risk}, VETO=${stats.veto}`);
+            return stats;
+        }
+        
+        // Chạy Wealth Guard ngay sau normalizeDataAttributes
+        function runOnReady() {
+            normalizeDataAttributes();
+            const stats = applyWealthGuardLogic();
+            
+            // Cập nhật UI với kết quả
+            updateGroupBadges();
+            
+            console.log(`[Wealth Guard] 💎 GOLD=${stats.gold} | 🚀 GUERRILLA=${stats.guerrilla} | ⚠️ RISK=${stats.risk} | 🚫 VETO=${stats.veto}`);
+        }
+        
+        function updateGroupBadges() {
+            // Thêm badge nhóm mới cho các dòng
+            document.querySelectorAll('table tbody tr[data-symbol]').forEach(row => {
+                const group = row.dataset.finalGroup;
+                const score = parseInt(row.dataset.finalScore) || 0;
+                const isVeto = row.dataset.isVeto === 'true';
+                const vetoReasons = row.dataset.vetoReasons || '';
+                
+                // Thêm class row-veto nếu bị veto
+                if (isVeto) {
+                    row.classList.add('row-veto');
+                } else {
+                    row.classList.remove('row-veto');
+                }
+                
+                // ========== Cập nhật Score Bar ==========
+                const scoreCell = row.querySelector('td:nth-child(7)'); // Cột Score
+                if (scoreCell) {
+                    const scoreBar = scoreCell.querySelector('.score-bar .fill');
+                    const scoreText = scoreCell.childNodes[2]; // Text node sau score bar
+                    
+                    if (scoreBar) {
+                        scoreBar.style.width = score + '%';
+                        // Cập nhật màu gradient theo điểm mới
+                        scoreBar.classList.remove('score-high', 'score-medium', 'score-low');
+                        scoreBar.classList.add(score >= 70 ? 'score-high' : score >= 50 ? 'score-medium' : 'score-low');
+                    }
+                    if (scoreText && scoreText.nodeType === Node.TEXT_NODE) {
+                        scoreText.textContent = ' ' + score;
+                    }
+                }
+                
+                // ========== Thêm Group Badge ==========
+                const statusCell = row.querySelector('.status-cell');
+                if (statusCell && group) {
+                    let groupBadge = statusCell.querySelector('.wg-group-badge');
+                    if (!groupBadge) {
+                        groupBadge = document.createElement('span');
+                        groupBadge.className = 'badge wg-group-badge';
+                        groupBadge.style.marginLeft = '6px';
+                        statusCell.appendChild(groupBadge);
+                    }
+                    
+                    // Style theo nhóm
+                    const groupConfig = {
+                        'GOLD': { text: '💎 GOLD', class: 'badge-gold' },
+                        'GUERRILLA': { text: '🚀 GUERRILLA', class: 'badge-guerrilla' },
+                        'RISK': { text: '⚠️ RISK', class: 'badge-risk' },
+                        'VETO': { text: '🚫 VETO', class: 'badge-veto-group' }
+                    };
+                    
+                    const config = groupConfig[group] || groupConfig['RISK'];
+                    groupBadge.textContent = config.text;
+                    groupBadge.className = 'badge wg-group-badge ' + config.class;
+                    
+                    // Thêm tooltip cho VETO
+                    if (group === 'VETO' && vetoReasons) {
+                        groupBadge.classList.add('veto-tooltip');
+                        groupBadge.setAttribute('data-veto-reasons', vetoReasons);
+                    } else {
+                        groupBadge.classList.remove('veto-tooltip');
+                        groupBadge.removeAttribute('data-veto-reasons');
+                    }
+                }
+            });
+            
+            // Cập nhật số lượng trên các nút lọc
+            updateFilterCounts();
+        }
+        
+        function updateFilterCounts() {
+            const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+            const counts = { all: 0, gold: 0, guerrilla: 0, risk: 0, veto: 0 };
+            
+            rows.forEach(row => {
+                const group = row.dataset.finalGroup;
+                counts.all++;
+                if (group === 'GOLD') counts.gold++;
+                else if (group === 'GUERRILLA') counts.guerrilla++;
+                else if (group === 'RISK') counts.risk++;
+                else if (group === 'VETO') counts.veto++;
+            });
+            
+            // Cập nhật số trên nút
+            document.getElementById('count-all').textContent = counts.all;
+            document.getElementById('count-gold').textContent = counts.gold;
+            document.getElementById('count-guerrilla').textContent = counts.guerrilla;
+            document.getElementById('count-risk').textContent = counts.risk;
+            document.getElementById('count-veto').textContent = counts.veto;
+        }
+        
+        function filterByStrategy(group) {
+            const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+            
+            // Cập nhật active state cho nút
+            document.querySelectorAll('.strategy-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.querySelector(`.strategy-btn.${group.toLowerCase()}`);
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            // Lọc hiển thị
+            rows.forEach(row => {
+                const rowGroup = row.dataset.finalGroup;
+                
+                if (group === 'all') {
+                    row.style.display = '';
+                } else if (rowGroup === group) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            console.log(`[Filter] Hiển thị nhóm: ${group}`);
+        }
+        
+        // Chạy khi DOM ready
+        document.addEventListener('DOMContentLoaded', runOnReady);
+        
         // Quick search on enter
         document.querySelector('input[name="search"]').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
