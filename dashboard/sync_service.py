@@ -62,9 +62,10 @@ def get_company_name(symbol: str) -> str:
     return symbol
 
 
-def get_fundamental_data(symbol: str) -> Dict[str, Any]:
+def get_fundamental_data(symbol: str, fast_mode: bool = False) -> Dict[str, Any]:
     """
     Lấy dữ liệu cơ bản từ vnstock_data (Unified API) hoặc vnstock fallback
+    fast_mode: True = chỉ lấy ratio (nhanh), False = lấy đầy đủ (chậm hơn)
     Returns: {roe, pe, pb, f_score, f_score_grade, profit_growth}
     """
     result = {
@@ -75,6 +76,9 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
         "f_score": 0,
         "f_score_grade": "N/A",
         "profit_growth": None,  # NEW: Quý gần nhất vs cùng kỳ năm trước
+        "foreign_buy_streak": 0,
+        "industry_performance": 0,
+        "is_industry_leader": True,
     }
 
     def safe_float(val):
@@ -146,8 +150,31 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
             if result['roe'] is None and result['pe'] and result['pb'] and result['pe'] > 0:
                 result['roe'] = round((result['pb'] / result['pe']) * 100, 2)
 
+            # Fast mode: chỉ tính F-Score đơn giản từ ratio
+            if fast_mode:
+                # Simplified F-Score từ ratio (chỉ 3 điểm tối đa)
+                simple_score = 0
+                if result.get('roe') and result['roe'] > 10:
+                    simple_score += 1
+                if result.get('pe') and 5 < result['pe'] < 25:
+                    simple_score += 1
+                if result.get('pb') and result['pb'] < 3:
+                    simple_score += 1
+                result['f_score'] = simple_score * 3  # Scale lên 9
+                result['f_score_grade'] = get_f_score_grade(result['f_score'])
+            else:
+                # Full mode: tính F-Score đầy đủ
+                result['profit_growth'] = calculate_profit_growth(symbol)
+                result['pe_industry_avg'] = get_industry_pe_average(symbol)
+                result['foreign_buy_streak'] = get_foreign_buy_streak(symbol)
+                result['industry_performance'] = get_industry_performance(symbol, None)
+                result['is_industry_leader'] = result['industry_performance'] >= 0
+                result['f_score'] = calculate_f_score(symbol, result)
+                result['f_score_grade'] = get_f_score_grade(result['f_score'])
+
+        return result
+
     except Exception as e:
-        # print(f"[{symbol}] vnstock_data error: {e}")
         pass
 
     # Fallback: try vnstock
@@ -187,30 +214,23 @@ def get_fundamental_data(symbol: str) -> Dict[str, Any]:
                             result['pb'] = val
 
         except Exception as e:
-            # print(f"[{symbol}] vnstock fallback error: {e}")
             pass
 
     # Calculate ROE from PE/PB if still missing
     if result['roe'] is None and result['pe'] and result['pb'] and result['pe'] > 0:
         result['roe'] = round((result['pb'] / result['pe']) * 100, 2)
 
-    # NEW: Calculate Profit Growth from income statement (latest quarter vs same quarter last year)
-    result['profit_growth'] = calculate_profit_growth(symbol)
-
-    # NEW: Get Industry Average P/E for comparison
-    result['pe_industry_avg'] = get_industry_pe_average(symbol)
-
-    # Calculate F-Score
-    result['f_score'] = calculate_f_score(symbol, result)
-    result['f_score_grade'] = get_f_score_grade(result['f_score'])
-
-    # NEW: Get Smart Money (Foreign Net Buying) - returns number of consecutive buy sessions
-    result['foreign_buy_streak'] = get_foreign_buy_streak(symbol)
-    
-    # NEW: Get Industry Performance - returns stock vs industry performance
-    # Note: df is not available here, so call without it (will use API to get price data internally)
-    result['industry_performance'] = get_industry_performance(symbol, None)
-    result['is_industry_leader'] = result['industry_performance'] >= 0  # Stock >= Industry average
+    # Simplified F-Score if still 0
+    if result['f_score'] == 0:
+        simple_score = 0
+        if result.get('roe') and result['roe'] > 15:
+            simple_score += 3
+        if result.get('pe') and 5 < result['pe'] < 25:
+            simple_score += 3
+        if result.get('pb') and result['pb'] < 3:
+            simple_score += 3
+        result['f_score'] = simple_score
+        result['f_score_grade'] = get_f_score_grade(result['f_score'])
 
     return result
 
@@ -633,17 +653,29 @@ def get_top_symbols_by_liquidity() -> List[str]:
     """Lấy Top 100 mã thanh khoản cao nhất"""
     warnings.filterwarnings('ignore')
 
+    # Danh sách ~120 mã thanh khoản tốt nhất (không trùng lặp)
     candidates = [
+        # VN30 & Bluechips
         "VNM", "VCB", "VHM", "VIC", "VPB", "BID", "TCB", "CTG", "MBB", "ACB",
         "STB", "HPG", "FPT", "MWG", "PNJ", "TPB", "SHB", "SSI", "MSN", "GAS",
-        "PLX", "VRE", "VIB", "VJC", "SAB", "HDB", "LPB", "SSB", "GVR", "DGC",
-        "KDH", "GMD", "SBT", "DGW", "CMG", "IMP", "VHC", "REE", "NT2", "BCM",
-        "POW", "HAG", "NVL", "DIG", "ASM", "DRC", "HCM", "PVI", "BSR", "PVD",
-        "VND", "OCB", "EIB", "KBS", "SHS", "VDS", "BVS", "TVS", "VIG", "VFM",
-        "BCM", "MSB", "NAB", "EIB", "STB", "HCM", "CTS", "VCI", "SHS", "VND",
-        "TPB", "MBB", "ACB", "VPB", "CTG", "TCB", "BID", "VCB", "SHB", "LPB",
-        "SSB", "OCB", "HDB", "VIB", "MSB", "STB", "PGB", "KLB", "BAB", "BID",
-        "NVL", "DPG", "DXG", "KDH", "HDG", "IDJ", "SJS", "FPT", "CMG", "ELC",
+        "PLX", "VRE", "VIB", "SAB", "HDB", "LPB", "SSB", "GVR", "BCM", "VJC",
+        # Midcap - Ngân hàng
+        "OCB", "EIB", "MSB", "NAB", "KLB", "BAB", "PGB", "VBB", "ABB", "TPB",
+        # Midcap - Bất động sản
+        "NVL", "DIG", "DXG", "KDH", "HDG", "IDJ", "SJS", "DPG", "CRE", "NLG",
+        "ASM", "IJC", "KAC", "DPR", "VPH", "PDR", "BCM", "HII", "SRA", "VIG",
+        # Midcap - Chứng khoán
+        "VND", "HCM", "CTS", "VCI", "SHS", "VDS", "BVS", "TVS", "SSI", "VIX",
+        "APG", "BSI", "CSI", "EVS", "FTS", "HBS", "IVS", "KBS", "MBS", "PHS",
+        # Midcap - Sản xuất & Vật liệu
+        "DGC", "GMD", "SBT", "DGW", "CMG", "IMP", "VHC", "REE", "NT2", "DRC",
+        "AAA", "ALT", "AMC", "BMC", "CSV", "DCL", "DHC", "DPM", "DVP", "HAP",
+        # Midcap - Năng lượng & Dịch vụ
+        "POW", "HAG", "BSR", "PVD", "PVC", "VND", "OGC", "ASP", "CAV", "CLC",
+        # Midcap - Bán lẻ & Tiêu dùng
+        "DGW", "ELC", "GCC", "HAX", "MWG", "PET", "QNS", "SAT", "STK", "TMT",
+        # Midcap - Công nghiệp
+        "BMI", "CII", "CSM", "DXP", "HHS", "HT1", "KSB", "LIX", "LM8", "MSR",
     ]
 
     try:
@@ -960,17 +992,18 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
     return result
 
 
-def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, Any]]:
-    """Phân tích một mã cổ phiếu - trả về dict kết quả"""
+def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False) -> Optional[Dict[str, Any]]:
+    """Phân tích một mã cổ phiếu - trả về dict kết quả
+    fast_mode: True = bỏ qua các API calls tốn thời gian (profit_growth, industry, foreign)"""
     try:
         import warnings as w
         w.filterwarnings('ignore')
 
-        # Get Company Name
-        company_name = get_company_name(symbol)
+        # Get Company Name (skip in fast mode)
+        company_name = get_company_name(symbol) if not fast_mode else symbol
 
         # Get Fundamental Data (ROE, P/E, P/B, F-Score)
-        fund_data = get_fundamental_data(symbol)
+        fund_data = get_fundamental_data(symbol, fast_mode=fast_mode)
 
         # Get Price Data - try vnstock_data first
         df = None
@@ -1556,27 +1589,33 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0) -> Optional[Dict[str, A
         return None
 
 
-def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0) -> Dict[str, Any]:
-    """Đồng bộ một batch mã cổ phiếu"""
+def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bool = False) -> Dict[str, Any]:
+    """Đồng bộ một batch mã cổ phiếu với timeout per-symbol và fast_mode"""
     results = []
+    SYMBOL_TIMEOUT = 30 if fast_mode else 45  # Fast mode = 30s, Full mode = 45s
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(analyze_stock, symbol, market_rsi): symbol for symbol in symbols}
+        futures = {executor.submit(analyze_stock, symbol, market_rsi, fast_mode): symbol for symbol in symbols}
 
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=SYMBOL_TIMEOUT + 10):
             symbol = futures[future]
             try:
-                result = future.result()
+                # Use timeout per future
+                result = future.result(timeout=SYMBOL_TIMEOUT)
                 if result:
                     results.append(result)
+            except TimeoutError:
+                print(f"[Sync] ⏱️ Timeout analyzing {symbol} - skipping")
             except Exception as e:
                 print(f"[Sync] Error processing {symbol}: {e}")
 
     return {"results": results, "count": len(results)}
 
 
-def sync_market_data(mode: str = "full") -> Dict[str, Any]:
-    """Đồng bộ toàn bộ dữ liệu thị trường"""
+def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, Any]:
+    """Đồng bộ toàn bộ dữ liệu thị trường
+    fast_mode: True = bỏ qua các API calls tốn thời gian (profit_growth, industry, foreign)
+    """
     start_time = datetime.now()
 
     sync_record, created = SyncStatus.objects.get_or_create(
@@ -1592,7 +1631,8 @@ def sync_market_data(mode: str = "full") -> Dict[str, Any]:
     sync_record.started_at = timezone.now()
     sync_record.save()
 
-    print(f"[Sync] Starting sync in '{mode}' mode...")
+    mode_desc = "FULL" if not fast_mode else "FAST"
+    print(f"[Sync] Starting sync in '{mode}' mode ({mode_desc})...")
 
     # Lấy Market RSI
     market_rsi = get_market_rsi()
@@ -1611,13 +1651,20 @@ def sync_market_data(mode: str = "full") -> Dict[str, Any]:
 
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i+batch_size]
-        print(f"[Sync] Processing batch {i//batch_size + 1}: {batch[:5]}...")
+        batch_num = i // batch_size + 1
+        total_batches = (len(symbols) + batch_size - 1) // batch_size
+        print(f"[Sync] Batch {batch_num}/{total_batches}: {batch[:3]}...")
+        print(f"[Sync] Progress: {min(i + batch_size, len(symbols))}/{len(symbols)} symbols ({(min(i + batch_size, len(symbols)) / len(symbols) * 100):.0f}%)")
 
-        batch_result = sync_stock_batch(batch, market_rsi)
+        batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode)
         all_results.extend(batch_result["results"])
 
+        # Update progress percentage
+        progress = int(min(i + batch_size, len(symbols)) / len(symbols) * 100)
         sync_record.processed_symbols = min(i + batch_size, len(symbols))
         sync_record.save()
+
+    print(f"[Sync] Đã xử lý {len(all_results)}/{len(symbols)} mã thành công")
 
     # Save to Database
     print(f"[Sync] Saving {len(all_results)} results to database...")

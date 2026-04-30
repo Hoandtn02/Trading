@@ -665,6 +665,22 @@
                     <option value="small" {% if current_market == 'small' %}selected{% endif %}>Small</option>
                 </select>
             </div>
+
+            <div class="toolbar-group">
+                <select name="industry" class="toolbar-select">
+                    <option value="all">🏭 Tất cả ngành</option>
+                    <option value="Banking" {% if current_industry == 'Banking' %}selected{% endif %}>🏦 Ngân hàng</option>
+                    <option value="Real Estate" {% if current_industry == 'Real Estate' %}selected{% endif %}>🏠 Bất động sản</option>
+                    <option value="Securities" {% if current_industry == 'Securities' %}selected{% endif %}>📈 Chứng khoán</option>
+                    <option value="Technology" {% if current_industry == 'Technology' %}selected{% endif %}>💻 Công nghệ</option>
+                    <option value="Oil & Gas" {% if current_industry == 'Oil & Gas' %}selected{% endif %}>⛽ Dầu khí</option>
+                    <option value="Retail" {% if current_industry == 'Retail' %}selected{% endif %}>🛒 Bán lẻ</option>
+                    <option value="FMCG" {% if current_industry == 'FMCG' %}selected{% endif %}>🥛 Tiêu dùng</option>
+                    <option value="Steel" {% if current_industry == 'Steel' %}selected{% endif %}>🔩 Thép</option>
+                    <option value="Conglomerate" {% if current_industry == 'Conglomerate' %}selected{% endif %}>🏢 Tập đoàn</option>
+                    <option value="Other" {% if current_industry == 'Other' %}selected{% endif %}>📦 Khác</option>
+                </select>
+            </div>
             
             <div class="toolbar-group">
                 <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" 

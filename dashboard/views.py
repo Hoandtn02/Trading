@@ -311,7 +311,9 @@ def scan_vn30_api(request: HttpRequest) -> HttpResponse:
         import threading
 
         def run_sync():
-            sync_market_data(mode=mode)
+            # Full sync = fast_mode=False (đầy đủ), Data only = fast_mode=True (nhanh)
+            fast_mode = (mode == "data_only")
+            sync_market_data(mode=mode, fast_mode=fast_mode)
 
         thread = threading.Thread(target=run_sync)
         thread.daemon = True
@@ -642,6 +644,18 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     elif market_filter == "small":
         analyses = analyses.filter(symbol__market_group="SMALL")
 
+    # Filter by industry - sử dụng get_industry() method từ model
+    industry_filter = request.GET.get("industry", "all")
+    if industry_filter and industry_filter != "all":
+        # Lấy tất cả stock có trong danh sách filter
+        from dashboard.models import StockData
+        matching_symbols = []
+        for s in StockData.objects.only('symbol').all():
+            ind = s.industry or s.get_industry()
+            if industry_filter.lower() in ind.lower():
+                matching_symbols.append(s.symbol)
+        analyses = analyses.filter(symbol__symbol__in=matching_symbols)
+
     # Search
     if search:
         analyses = analyses.filter(symbol__symbol__icontains=search)
@@ -777,6 +791,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         "current_filter": filter_type,
         "current_sort": sort_by,
         "current_market": market_filter,
+        "current_industry": industry_filter,
         "search_value": search,
         "min_score_value": min_score,
         "last_sync": last_sync,
