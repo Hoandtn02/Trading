@@ -842,13 +842,7 @@
                             {% if stock.upside_per_day > 0 %}+{% endif %}{{ stock.upside_per_day|floatformat:2 }}%
                             <div style="font-size: 9px; color: #64748b;">{{ stock.expected_profit_per_day|floatformat:0 }}/ngày</div>
                         </td>
-                        <td>
-                            <span class="score-bar">
-                                <span class="fill {% if stock.master_score >= 70 %}score-high{% elif stock.master_score >= 50 %}score-medium{% else %}score-low{% endif %}"
-                                      style="width: {{ stock.master_score }}%;"></span>
-                            </span>
-                            {{ stock.master_score }}
-                        </td>
+                        
                         <td>
                             <span class="badge {% if stock.signal == 'BUY' or stock.signal == 'STRONG_BUY' %}badge-buy{% elif stock.signal == 'SELL' %}badge-sell{% else %}badge-wait{% endif %}">
                                 {{ stock.signal }}
