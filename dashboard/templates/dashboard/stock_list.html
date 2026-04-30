@@ -1152,7 +1152,7 @@
                         statusCell.appendChild(groupBadge);
                     }
                     
-                    // Style theo nhóm
+                    // Style theo nhóm - Chỉ hiện badge nhóm mới, không tooltip
                     const groupConfig = {
                         'GOLD': { text: '💎 GOLD', class: 'badge-gold' },
                         'GUERRILLA': { text: '🚀 GUERRILLA', class: 'badge-guerrilla' },
@@ -1163,15 +1163,7 @@
                     const config = groupConfig[group] || groupConfig['RISK'];
                     groupBadge.textContent = config.text;
                     groupBadge.className = 'badge wg-group-badge ' + config.class;
-                    
-                    // Thêm tooltip cho VETO
-                    if (group === 'VETO' && vetoReasons) {
-                        groupBadge.classList.add('veto-tooltip');
-                        groupBadge.setAttribute('data-veto-reasons', vetoReasons);
-                    } else {
-                        groupBadge.classList.remove('veto-tooltip');
-                        groupBadge.removeAttribute('data-veto-reasons');
-                    }
+                    // Không có tooltip - chi tiết sẽ xem trong Modal
                 }
             });
             
@@ -1310,6 +1302,13 @@
                 // Real R:R
                 hard_risk_pct: parseFloat(row.dataset.hardRiskPct) || 0,
                 support_price: parseFloat(row.dataset.supportPrice) || 0,
+                // Wealth Guard Data
+                final_score: parseInt(row.dataset.finalScore) || 0,
+                final_group: row.dataset.finalGroup || 'RISK',
+                veto_reasons: row.dataset.vetoReasons || '',
+                is_veto_wg: row.dataset.isVeto === 'true',
+                t_score: parseInt(row.dataset.tScore) || 0,
+                f_score_calc: parseInt(row.dataset.fScoreCalc) || 0,
             };
             showModal(stockData);
         }
@@ -1513,6 +1512,37 @@
                 riskReasonEl.innerHTML += `<br><span style="color:#60a5fa;">Trend Factor: ${stockData.trend_factor} (${tfLabel})</span>`;
             }
 
+            // Show Wealth Guard Scores Section
+            const wgSection = document.getElementById('modalWGSection');
+            if (stockData.final_score !== undefined && stockData.final_score > 0) {
+                wgSection.style.display = 'block';
+                document.getElementById('modalFinalScore').textContent = stockData.final_score + '/100';
+                document.getElementById('modalFinalScore').className = 'value ' + 
+                    (stockData.final_score >= 70 ? 'positive' : stockData.final_score >= 50 ? '' : 'negative');
+                
+                const groupColors = { 'GOLD': '#f59e0b', 'GUERRILLA': '#22c55e', 'RISK': '#94a3b8', 'VETO': '#ef4444' };
+                document.getElementById('modalFinalGroup').textContent = stockData.final_group;
+                document.getElementById('modalFinalGroup').style.color = groupColors[stockData.final_group] || '#94a3b8';
+                
+                document.getElementById('modalTScore').textContent = stockData.t_score + '/125';
+                document.getElementById('modalFScoreCalc').textContent = stockData.f_score_calc + '/100';
+            } else {
+                wgSection.style.display = 'none';
+            }
+
+            // Show/Hide Wealth Guard VETO Section
+            const vetoSection = document.getElementById('modalVetoSection');
+            const vetoReasonsEl = document.getElementById('modalVetoReasons');
+            
+            if (stockData.is_veto_wg && stockData.veto_reasons) {
+                vetoSection.style.display = 'block';
+                // Format reasons as bullet list
+                const reasons = stockData.veto_reasons.split(';').map(r => r.trim()).filter(r => r);
+                vetoReasonsEl.innerHTML = '<strong>Lý do loại bỏ:</strong><br>• ' + reasons.join('<br>• ');
+            } else {
+                vetoSection.style.display = 'none';
+            }
+
             // AI Verdict
             const verdictEl = document.getElementById('modalVerdict');
             verdictEl.innerHTML = generateAIVerdict(stockData);
@@ -1577,8 +1607,11 @@
             const fundRating = s.fundamental_score >= 70 ? 'Tốt' : s.fundamental_score >= 50 ? 'Trung bình' : 'Yếu';
             let verdict = `Kỹ thuật: ${techRating} (${s.technical_score}/100) | Tài chính: ${fundRating} (${s.fundamental_score}/100). `;
 
-            if (s.is_vetoed) {
-                verdict += 'CẢNH BÁO: ' + s.veto_reason + '. ';
+            // Sử dụng veto_reasons từ Wealth Guard
+            if (s.is_veto_wg && s.veto_reasons) {
+                verdict += `🚫 CẢNH BÁO VETO: ${s.veto_reasons.replace(/;/g, ', ')}. `;
+            } else if (s.is_vetoed && s.veto_reason) {
+                verdict += '🚫 CẢNH BÁO: ' + s.veto_reason + '. ';
             }
             if (s.is_fast_pick) {
                 verdict += 'Có thể đánh T+ nhanh. ';
@@ -1707,6 +1740,29 @@
                 </div>
             </div>
 
+            <!-- Wealth Guard Scores -->
+            <div class="modal-section" id="modalWGSection" style="display: none;">
+                <h3>🛡️ Wealth Guard Analysis</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Final Score</div>
+                        <div class="value" id="modalFinalScore" style="font-size: 24px; font-weight: 700;">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Nhóm Chiến Thuật</div>
+                        <div class="value" id="modalFinalGroup">-</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tech Score (tScore)</div>
+                        <div class="value" id="modalTScore">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Fund Score (fScore)</div>
+                        <div class="value" id="modalFScoreCalc">0</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Risk Assessment -->
             <div class="modal-section" id="modalRiskSection">
                 <h3>Rủi Ro Đánh Giá</h3>
@@ -1721,6 +1777,20 @@
                     </div>
                 </div>
                 <div id="modalRiskReason" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; font-size: 12px; color: #94a3b8;"></div>
+            </div>
+
+            <!-- Wealth Guard VETO Section -->
+            <div class="modal-section" id="modalVetoSection" style="display: none;">
+                <div style="background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(220,38,38,0.1) 100%); border: 2px solid #ef4444; border-radius: 12px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <span style="font-size: 24px;">🚫</span>
+                        <div>
+                            <div style="color: #ef4444; font-size: 16px; font-weight: 700;">CỔ PHIẾU BỊ LOẠI (VETO)</div>
+                            <div style="color: #f87171; font-size: 12px;">Wealth Guard - Không đạt tiêu chí đầu tư</div>
+                        </div>
+                    </div>
+                    <div id="modalVetoReasons" style="color: #fca5a5; font-size: 13px; line-height: 1.6;"></div>
+                </div>
             </div>
 
             <!-- Criteria List -->

@@ -793,7 +793,9 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
     analyses = StockAnalysis.objects.select_related("symbol").all()
 
-    response = HttpResponse(content_type="text/csv")
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    # Add BOM for UTF-8 Excel compatibility
+    response.write('\ufeff')
     response["Content-Disposition"] = f'attachment; filename="stocks_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
 
     writer = csv.writer(response)
@@ -852,7 +854,9 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     except (StockData.DoesNotExist, StockAnalysis.DoesNotExist):
         raise Http404(f"Không tìm thấy mã {symbol}")
 
-    response = HttpResponse(content_type="text/csv")
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    # Add BOM for UTF-8 Excel compatibility
+    response.write('\ufeff')
     response["Content-Disposition"] = f'attachment; filename="{symbol}_detail_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
 
     writer = csv.writer(response)
