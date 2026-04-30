@@ -200,6 +200,79 @@
             align-items: center;
             border: 1px solid #334155;
         }
+
+        /* Filter Toolbar - New Layout */
+        .filter-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 16px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .toolbar-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+        .toolbar-row:first-child {
+            border-bottom: 1px solid #334155;
+        }
+        .strategy-row {
+            padding: 0;
+        }
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toolbar-input {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 180px;
+        }
+        .toolbar-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .toolbar-select {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .toolbar-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .toolbar-submit {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+            transition: all 0.2s;
+        }
+        .toolbar-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
         .strategy-filter-label {
             font-size: 13px;
             color: #94a3b8;
@@ -576,69 +649,64 @@
         </div>
     </div>
 
-    <!-- Filters -->
-    <form method="get" class="filters">
-        <div class="filter-group">
-            <label>🔍 Tìm:</label>
-            <input type="text" name="search" value="{{ search_value }}" placeholder="Mã cổ phiếu...">
+    <!-- Filter Toolbar -->
+    <form method="get" class="filter-toolbar">
+        <!-- Row 1: System Controls -->
+        <div class="toolbar-row">
+            <div class="toolbar-group">
+                <input type="text" name="search" value="{{ search_value }}" placeholder="🔍 Tìm mã cổ phiếu..." class="toolbar-input">
+            </div>
+            
+            <div class="toolbar-group">
+                <select name="market" class="toolbar-select">
+                    <option value="all" {% if current_market == 'all' %}selected{% endif %}>🏛️ Tất cả</option>
+                    <option value="vn30" {% if current_market == 'vn30' %}selected{% endif %}>VN30</option>
+                    <option value="midcap" {% if current_market == 'midcap' %}selected{% endif %}>Midcap</option>
+                    <option value="small" {% if current_market == 'small' %}selected{% endif %}>Small</option>
+                </select>
+            </div>
+            
+            <div class="toolbar-group">
+                <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" 
+                       placeholder="Score ≥" class="toolbar-input" style="width: 100px;">
+            </div>
+            
+            <div class="toolbar-group">
+                <select name="sort" class="toolbar-select">
+                    <option value="master_score" {% if current_sort == 'master_score' %}selected{% endif %}>📊 Score</option>
+                    <option value="rsi" {% if current_sort == 'rsi' %}selected{% endif %}>📈 RSI</option>
+                    <option value="criteria" {% if current_sort == 'criteria' %}selected{% endif %}>✅ Criteria</option>
+                    <option value="rr" {% if current_sort == 'rr' %}selected{% endif %}>⚖️ R:R</option>
+                    <option value="price" {% if current_sort == 'price' %}selected{% endif %}>💰 Price</option>
+                    <option value="change" {% if current_sort == 'change' %}selected{% endif %}>📉 Change%</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="toolbar-submit">✓ Áp Dụng</button>
         </div>
-
-        <div class="filter-group">
-            <label>📊 Lọc:</label>
-            <button type="submit" name="filter" value="all" class="filter-btn {% if current_filter == 'all' %}active{% endif %}">Tất Cả</button>
-            <button type="submit" name="filter" value="buy" class="filter-btn {% if current_filter == 'buy' %}active{% endif %}">Mua</button>
-            <button type="submit" name="filter" value="veto" class="filter-btn {% if current_filter == 'veto' %}active{% endif %}">Veto</button>
-            <button type="submit" name="filter" value="fast" class="filter-btn {% if current_filter == 'fast' %}active{% endif %}">Fast</button>
-            <button type="submit" name="filter" value="qualified" class="filter-btn {% if current_filter == 'qualified' %}active{% endif %}">Qualified</button>
+        
+        <!-- Row 2: Strategy Filters -->
+        <div class="toolbar-row strategy-row">
+            <div class="strategy-filter-container" style="margin: 0; padding: 12px 16px;">
+                <span class="strategy-filter-label">🎯 Lọc Chiến Thuật:</span>
+                <button type="button" class="strategy-btn all active" onclick="filterByStrategy('all')">
+                    Tất cả <span class="strategy-count" id="count-all">0</span>
+                </button>
+                <button type="button" class="strategy-btn gold" onclick="filterByStrategy('GOLD')">
+                    💎 Vàng Ròng <span class="strategy-count" id="count-gold">0</span>
+                </button>
+                <button type="button" class="strategy-btn guerrilla" onclick="filterByStrategy('GUERRILLA')">
+                    🚀 Du Kích <span class="strategy-count" id="count-guerrilla">0</span>
+                </button>
+                <button type="button" class="strategy-btn risk" onclick="filterByStrategy('RISK')">
+                    🔥 Rủi Ro <span class="strategy-count" id="count-risk">0</span>
+                </button>
+                <button type="button" class="strategy-btn veto" onclick="filterByStrategy('VETO')">
+                    🚫 Loại Bỏ <span class="strategy-count" id="count-veto">0</span>
+                </button>
+            </div>
         </div>
-
-        <div class="filter-group">
-            <label>🏛️ Nhóm:</label>
-            <button type="submit" name="market" value="all" class="filter-btn {% if current_market == 'all' %}active{% endif %}">Tất Cả</button>
-            <button type="submit" name="market" value="vn30" class="filter-btn {% if current_market == 'vn30' %}active{% endif %}">VN30</button>
-            <button type="submit" name="market" value="midcap" class="filter-btn {% if current_market == 'midcap' %}active{% endif %}">Midcap</button>
-            <button type="submit" name="market" value="small" class="filter-btn {% if current_market == 'small' %}active{% endif %}">Small</button>
-        </div>
-
-        <div class="filter-group">
-            <label>📈 Score tối thiểu:</label>
-            <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" style="width: 80px;">
-        </div>
-
-        <div class="filter-group">
-            <label>🔽 Sắp xếp:</label>
-            <select name="sort">
-                <option value="master_score" {% if current_sort == 'master_score' %}selected{% endif %}>Score</option>
-                <option value="rsi" {% if current_sort == 'rsi' %}selected{% endif %}>RSI</option>
-                <option value="criteria" {% if current_sort == 'criteria' %}selected{% endif %}>Criteria</option>
-                <option value="rr" {% if current_sort == 'rr' %}selected{% endif %}>R:R Ratio</option>
-                <option value="price" {% if current_sort == 'price' %}selected{% endif %}>Price</option>
-                <option value="change" {% if current_sort == 'change' %}selected{% endif %}>Change %</option>
-            </select>
-        </div>
-
-        <button type="submit" class="export-btn" style="margin-left: auto;">Áp Dụng</button>
     </form>
-
-    <!-- Strategy Filter Bar -->
-    <div class="strategy-filter-container">
-        <span class="strategy-filter-label">🎯 Lọc Chiến Thuật:</span>
-        <button class="strategy-btn all active" onclick="filterByStrategy('all')">
-            Tất cả <span class="strategy-count" id="count-all">0</span>
-        </button>
-        <button class="strategy-btn gold" onclick="filterByStrategy('GOLD')">
-            💎 Vàng Ròng <span class="strategy-count" id="count-gold">0</span>
-        </button>
-        <button class="strategy-btn guerrilla" onclick="filterByStrategy('GUERRILLA')">
-            🚀 Du Kích <span class="strategy-count" id="count-guerrilla">0</span>
-        </button>
-        <button class="strategy-btn risk" onclick="filterByStrategy('RISK')">
-            🔥 Rủi Ro <span class="strategy-count" id="count-risk">0</span>
-        </button>
-        <button class="strategy-btn veto" onclick="filterByStrategy('VETO')">
-            🚫 Loại Bỏ <span class="strategy-count" id="count-veto">0</span>
-        </button>
-    </div>
 
     <!-- Table -->
     <div class="table-container">
