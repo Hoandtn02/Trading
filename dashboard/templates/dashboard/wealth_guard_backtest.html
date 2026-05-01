@@ -1,0 +1,764 @@
+{% load dashboard_extras %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wealth Guard Logic Backtest</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0f1a 0%, #1a1f3a 50%, #0d1526 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 1600px; margin: 0 auto; }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 30px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-radius: 16px;
+      margin-bottom: 24px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .header h1 { color: #fff; font-size: 24px; }
+    .header h1 span { color: #f59e0b; }
+    .nav-links { display: flex; gap: 12px; }
+    .nav-links a {
+      color: rgba(255,255,255,0.7);
+      padding: 10px 20px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .nav-links a:hover { background: rgba(255,255,255,0.1); color: white; }
+    
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+      padding: 20px;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .control-label {
+      font-size: 12px;
+      color: #94a3b8;
+      text-transform: uppercase;
+    }
+    .symbol-select {
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 2px solid #334155;
+      background: #0f172a;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      min-width: 120px;
+    }
+    .symbol-select:focus { border-color: #f59e0b; outline: none; }
+    
+    .btn {
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: #0f172a;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(245,158,11,0.4); }
+    .btn-secondary {
+      background: #334155;
+      color: #fff;
+    }
+    .btn-secondary:hover { background: #475569; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    
+    /* Status */
+    .status-bar {
+      padding: 12px 20px;
+      background: #0f172a;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+    }
+    .status-bar .symbol-info { color: #f59e0b; font-weight: 600; }
+    .status-bar .data-info { color: #22c55e; }
+    
+    /* Simulation Progress */
+    .simulation-progress {
+      margin: 16px 0;
+      padding: 16px;
+      background: #0f172a;
+      border-radius: 12px;
+      display: none;
+    }
+    .simulation-progress.show { display: block; }
+    .progress-bar {
+      height: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .progress-text { font-size: 12px; color: #94a3b8; }
+    
+    /* Summary Cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .summary-card {
+      padding: 20px;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border-radius: 12px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .summary-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .summary-card .label {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+    }
+    .summary-card.highlight { border-color: #f59e0b; }
+    .summary-card.highlight .value { color: #22c55e; }
+    .summary-card .value.green { color: #22c55e; }
+    .summary-card .value.red { color: #ef4444; }
+    .summary-card .value.yellow { color: #f59e0b; }
+    
+    /* Simulation Table */
+    .simulation-table {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .table-header {
+      padding: 16px 20px;
+      background: #0f172a;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .table-header h3 { font-size: 16px; color: #fff; }
+    .table-controls { display: flex; gap: 8px; }
+    
+    .table-scroll {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: center;
+      font-size: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    th {
+      background: #0f172a;
+      color: #94a3b8;
+      text-transform: uppercase;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    td { color: #e2e8f0; }
+    td.date { color: #94a3b8; font-weight: 600; }
+    td.price { font-weight: 600; }
+    td.fv { color: #60a5fa; font-weight: 600; }
+    td.deviation { font-weight: 600; }
+    td.deviation.accurate { color: #22c55e; }
+    td.deviation.noise { color: #f59e0b; }
+    td.deviation.error { color: #ef4444; }
+    td.remark { font-size: 11px; color: #94a3b8; text-align: left; }
+    
+    tr.current-step {
+      background: rgba(245, 158, 11, 0.15);
+      border-left: 3px solid #f59e0b;
+    }
+    tr.passed { opacity: 0.6; }
+    
+    /* Accuracy Legend */
+    .legend {
+      display: flex;
+      gap: 20px;
+      padding: 12px 20px;
+      background: #0f172a;
+      border-top: 1px solid #334155;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .legend-dot.accurate { background: #22c55e; }
+    .legend-dot.noise { background: #f59e0b; }
+    .legend-dot.error { background: #ef4444; }
+    
+    /* Loading State */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #94a3b8;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #1e293b;
+      border-top-color: #f59e0b;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Tooltip */
+    .tooltip {
+      position: relative;
+      cursor: help;
+    }
+    .tooltip::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 10px;
+      background: #1e293b;
+      color: #fff;
+      font-size: 11px;
+      border-radius: 4px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .tooltip:hover::after { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>🛡️ Wealth Guard <span>Logic Backtest</span></h1>
+      <div class="nav-links">
+        <a href="/">Dashboard</a>
+        <a href="/top-picks/">Top Picks</a>
+        <a href="/strategy-lab/">Strategy Lab</a>
+        <a href="/backtest/">Backtest</a>
+      </div>
+    </div>
+    
+    <!-- Controls -->
+    <div class="controls">
+      <div class="control-group">
+        <span class="control-label">Mã CK:</span>
+        <select id="symbolSelect" class="symbol-select">
+          <option value="">-- Chọn mã --</option>
+          {% for s in symbols %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" id="loadBtn" onclick="loadData()">
+        📊 Nạp dữ liệu (100 phiên)
+      </button>
+      <button class="btn btn-secondary" id="stepBtn" onclick="runStepByStep()" disabled>
+        ▶️ Chạy bước
+      </button>
+      <button class="btn btn-primary" id="runAllBtn" onclick="runAllSimulation()" disabled>
+        ⏩ Chạy nhanh toàn bộ
+      </button>
+      <button class="btn btn-secondary" id="resetBtn" onclick="resetSimulation()" disabled>
+        🔄 Reset
+      </button>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar" id="statusBar">
+      <span>⚡ Chọn mã cổ phiếu và nhấn "Nạp dữ liệu" để bắt đầu</span>
+      <span></span>
+    </div>
+    
+    <!-- Simulation Progress -->
+    <div class="simulation-progress" id="simProgress">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text" id="progressText">Đang xử lý...</div>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="summary-grid" id="summaryGrid" style="display: none;">
+      <div class="summary-card highlight">
+        <div class="value green" id="accuracyRate">0%</div>
+        <div class="label">Tỷ lệ Chính xác</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="totalSteps">0</div>
+        <div class="label">Tổng phiên</div>
+      </div>
+      <div class="summary-card">
+        <div class="value green" id="accurateCount">0</div>
+        <div class="label">Chính xác (&lt;1%)</div>
+      </div>
+      <div class="summary-card">
+        <div class="value yellow" id="noiseCount">0</div>
+        <div class="label">Nhiễu (&gt;3%)</div>
+      </div>
+      <div class="summary-card">
+        <div class="value red" id="errorCount">0</div>
+        <div class="label">Sai lệch (&gt;5%)</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="avgDeviation">0%</div>
+        <div class="label">Sai số TB</div>
+      </div>
+      <div class="summary-card">
+        <div class="value green" id="avgProfit">0%</div>
+        <div class="label">Lợi nhuận TB/FV</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="profitIfTrade">0%</div>
+        <div class="label">Lợi nhuận nếu Trade</div>
+      </div>
+    </div>
+    
+    <!-- Simulation Table -->
+    <div class="simulation-table">
+      <div class="table-header">
+        <h3>📋 Nhật ký mô phỏng</h3>
+        <div class="table-controls">
+          <button class="btn btn-secondary" onclick="exportCSV()">📥 Export CSV</button>
+        </div>
+      </div>
+      
+      <div class="table-scroll" id="tableScroll">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Ngày</th>
+              <th class="tooltip" data-tip="Giá đóng cửa ngày T">Giá T</th>
+              <th class="tooltip" data-tip="Fair Value Daily = (VWAP*0.6)+(SMA10*0.4)">FV Daily</th>
+              <th class="tooltip" data-tip="Fair Value Weekly = (VWAP*0.6)+(SMA20*0.4)">FV Weekly</th>
+              <th class="tooltip" data-tip="Giá thực tế ngày T+1">Thực tế T+1</th>
+              <th class="tooltip" data-tip="Deviation = (Actual - FV_Daily)/FV_Daily * 100">Deviation %</th>
+              <th>Đánh giá</th>
+              <th>AI Remark</th>
+            </tr>
+          </thead>
+          <tbody id="simulationLog">
+            <tr>
+              <td colspan="9">
+                <div class="loading">
+                  <div class="spinner"></div>
+                  <div>Đang tải dữ liệu...</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot accurate"></div>
+          <span>Chính xác (&lt;1%)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot noise"></div>
+          <span>Nhiễu (1-5%)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot error"></div>
+          <span>Sai lệch (&gt;5%)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // ============== STATE ==============
+    let stockData = [];
+    let currentIndex = 0;
+    let simulationResults = [];
+    let isRunning = false;
+    let industryConfig = {};
+    
+    // ============== LOAD DATA ==============
+    async function loadData() {
+      const symbol = document.getElementById('symbolSelect').value;
+      if (!symbol) {
+        alert('Vui lòng chọn mã cổ phiếu!');
+        return;
+      }
+      
+      const loadBtn = document.getElementById('loadBtn');
+      const statusBar = document.getElementById('statusBar');
+      
+      loadBtn.disabled = true;
+      loadBtn.innerHTML = '⏳ Đang tải...';
+      statusBar.innerHTML = `<span>🔄 Đang tải dữ liệu ${symbol}...</span><span></span>`;
+      
+      try {
+        const response = await fetch(`/api/wealth-guard/data/?symbol=${symbol}&limit=100`);
+        const result = await response.json();
+        
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        
+        stockData = result.data;
+        industryConfig = result.industry_config;
+        currentIndex = 0;
+        simulationResults = [];
+        
+        document.getElementById('statusBar').innerHTML = `
+          <span class="symbol-info">📈 ${symbol}</span>
+          <span class="data-info">${stockData.length} phiên dữ liệu | Ngành: ${result.industry} | Config: ${industryConfig.type} ${industryConfig.target}</span>
+        `;
+        
+        // Enable buttons
+        document.getElementById('stepBtn').disabled = false;
+        document.getElementById('runAllBtn').disabled = false;
+        document.getElementById('resetBtn').disabled = false;
+        
+        // Show empty table
+        renderSimulationLog();
+        
+      } catch (error) {
+        document.getElementById('statusBar').innerHTML = `
+          <span>❌ Lỗi: ${error.message}</span>
+          <span></span>
+        `;
+      } finally {
+        loadBtn.disabled = false;
+        loadBtn.innerHTML = '📊 Nạp dữ liệu (100 phiên)';
+      }
+    }
+    
+    // ============== STEP-BY-STEP SIMULATION ==============
+    function runStepByStep() {
+      if (currentIndex >= stockData.length - 1) {
+        alert('Đã chạy hết dữ liệu! Nhấn Reset để chạy lại.');
+        return;
+      }
+      
+      // Run one step
+      runSingleStep(currentIndex);
+      currentIndex++;
+      
+      // Update summary
+      updateSummary();
+      
+      // Scroll to latest
+      const tbody = document.getElementById('simulationLog');
+      const lastRow = tbody.lastElementChild;
+      if (lastRow) {
+        lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    
+    // ============== RUN ALL SIMULATION ==============
+    async function runAllSimulation() {
+      if (isRunning) return;
+      if (stockData.length === 0) {
+        alert('Vui lòng nạp dữ liệu trước!');
+        return;
+      }
+      
+      isRunning = true;
+      document.getElementById('runAllBtn').disabled = true;
+      document.getElementById('stepBtn').disabled = true;
+      
+      const progressDiv = document.getElementById('simProgress');
+      const progressFill = document.getElementById('progressFill');
+      const progressText = document.getElementById('progressText');
+      
+      progressDiv.classList.add('show');
+      
+      const startIdx = currentIndex;
+      const total = stockData.length - 1 - startIdx;
+      
+      for (let i = startIdx; i < stockData.length - 1; i++) {
+        runSingleStep(i);
+        currentIndex = i + 1;
+        
+        // Update progress
+        const progress = Math.round((i - startIdx + 1) / total * 100);
+        progressFill.style.width = progress + '%';
+        progressText.textContent = `Đang xử lý phiên ${i - startIdx + 2}/${total} (${progress}%)`;
+        
+        // Small delay for visual effect
+        if (i % 5 === 0) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
+      
+      progressFill.style.width = '100%';
+      progressText.textContent = '✅ Hoàn tất!';
+      
+      setTimeout(() => {
+        progressDiv.classList.remove('show');
+      }, 2000);
+      
+      isRunning = false;
+      document.getElementById('runAllBtn').disabled = false;
+      document.getElementById('stepBtn').disabled = false;
+      
+      updateSummary();
+      
+      // Scroll to summary
+      document.getElementById('summaryGrid').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // ============== RUN SINGLE STEP ==============
+    function runSingleStep(index) {
+      const current = stockData[index];
+      const next = stockData[index + 1];
+      
+      if (!current || !next) return;
+      
+      // Bước 1: Dự đoán FV tại ngày T
+      const fvDaily = current.FV_Daily;
+      const fvWeekly = current.FV_Weekly;
+      
+      // Bước 2: Lấy giá thực tế T+1
+      const actualPrice = next.Close;
+      
+      // Bước 3: Tính Deviation
+      const deviation = ((actualPrice - fvDaily) / fvDaily) * 100;
+      
+      // Bước 4: Đánh giá
+      let accuracy = 'noise';
+      let remark = '';
+      
+      if (Math.abs(deviation) < 1) {
+        accuracy = 'accurate';
+        remark = 'Giá thực tế chạm vùng FV - Dự đoán CHÍNH XÁC';
+      } else if (Math.abs(deviation) < 3) {
+        accuracy = 'noise';
+        if (deviation > 0) {
+          remark = 'Giá cao hơn FV 1-3% do xung lực mua ngắn hạn';
+        } else {
+          remark = 'Giá thấp hơn FV 1-3% do áp lực chốt lời';
+        }
+      } else if (Math.abs(deviation) < 5) {
+        accuracy = 'noise';
+        if (deviation > 0) {
+          remark = `Giá cao hơn FV ${deviation.toFixed(1)}% - Có thể do tin tức tích cực`;
+        } else {
+          remark = `Giá thấp hơn FV ${Math.abs(deviation).toFixed(1)}% - Thị trường điều chỉnh`;
+        }
+      } else {
+        accuracy = 'error';
+        if (deviation > 0) {
+          remark = `⚠️ FV quá thấp! Giá thực tế cao hơn ${deviation.toFixed(1)}% - Cần điều chỉnh công thức`;
+        } else {
+          remark = `⚠️ FV quá cao! Giá thực tế thấp hơn ${Math.abs(deviation).toFixed(1)}% - Cần điều chỉnh công thức`;
+        }
+      }
+      
+      // Thêm AI insight
+      if (current.RSI < 30 && deviation > 0) {
+        remark += ' | RSI quá bán + giá phục hồi = Xác nhận đà tăng';
+      } else if (current.RSI > 70 && deviation < 0) {
+        remark += ' | RSI quá mua + giá giảm = Xác nhận đà giảm';
+      }
+      
+      // Tính profit nếu trade theo FV
+      const profitIfBuy = ((actualPrice - fvDaily) / fvDaily) * 100;
+      
+      simulationResults.push({
+        step: index + 1,
+        date: current.Date,
+        currentPrice: current.Close,
+        fvDaily: fvDaily,
+        fvWeekly: fvWeekly,
+        actualPrice: actualPrice,
+        deviation: deviation,
+        accuracy: accuracy,
+        remark: remark,
+        profitIfBuy: profitIfBuy,
+        rsi: current.RSI
+      });
+      
+      renderSimulationLog();
+    }
+    
+    // ============== RENDER TABLE ==============
+    function renderSimulationLog() {
+      const tbody = document.getElementById('simulationLog');
+      
+      if (simulationResults.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9">
+              <div style="padding: 40px; text-align: center; color: #64748b;">
+                Chưa có dữ liệu. Nhấn "Nạp dữ liệu" rồi "Chạy bước" hoặc "Chạy nhanh toàn bộ"
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = simulationResults.map((r, i) => {
+        const isCurrent = i === simulationResults.length - 1;
+        const isPassed = i < simulationResults.length - 1;
+        
+        let devClass = r.accuracy;
+        let devLabel = '';
+        if (r.accuracy === 'accurate') devLabel = '✅ Chính xác';
+        else if (r.accuracy === 'noise') devLabel = '⚡ Nhiễu';
+        else devLabel = '❌ Sai lệch';
+        
+        return `
+          <tr class="${isCurrent ? 'current-step' : ''} ${isPassed ? 'passed' : ''}">
+            <td>${r.step}</td>
+            <td class="date">${r.date}</td>
+            <td class="price">${r.currentPrice.toLocaleString()}</td>
+            <td class="fv">${r.fvDaily.toLocaleString()}</td>
+            <td class="fv">${r.fvWeekly.toLocaleString()}</td>
+            <td class="price">${r.actualPrice.toLocaleString()}</td>
+            <td class="deviation ${devClass}">${r.deviation > 0 ? '+' : ''}${r.deviation.toFixed(2)}%</td>
+            <td style="font-weight: 600;">${devLabel}</td>
+            <td class="remark">${r.remark}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // ============== UPDATE SUMMARY ==============
+    function updateSummary() {
+      if (simulationResults.length === 0) return;
+      
+      const total = simulationResults.length;
+      const accurate = simulationResults.filter(r => r.accuracy === 'accurate').length;
+      const noise = simulationResults.filter(r => r.accuracy === 'noise').length;
+      const errors = simulationResults.filter(r => r.accuracy === 'error').length;
+      
+      const avgDeviation = simulationResults.reduce((sum, r) => sum + Math.abs(r.deviation), 0) / total;
+      const avgProfit = simulationResults.reduce((sum, r) => sum + r.profitIfBuy, 0) / total;
+      const totalProfitIfTrade = simulationResults.reduce((sum, r) => sum + r.profitIfBuy, 0);
+      
+      const accuracyRate = (accurate / total * 100).toFixed(1);
+      
+      document.getElementById('summaryGrid').style.display = 'grid';
+      document.getElementById('accuracyRate').textContent = accuracyRate + '%';
+      document.getElementById('totalSteps').textContent = total;
+      document.getElementById('accurateCount').textContent = accurate;
+      document.getElementById('noiseCount').textContent = noise;
+      document.getElementById('errorCount').textContent = errors;
+      document.getElementById('avgDeviation').textContent = avgDeviation.toFixed(2) + '%';
+      document.getElementById('avgProfit').textContent = avgProfit.toFixed(2) + '%';
+      document.getElementById('profitIfTrade').textContent = totalProfitIfTrade.toFixed(1) + '%';
+      
+      // Color coding for accuracy
+      const accEl = document.getElementById('accuracyRate');
+      accEl.className = 'value';
+      if (accuracyRate >= 70) accEl.classList.add('green');
+      else if (accuracyRate >= 50) accEl.classList.add('yellow');
+      else accEl.classList.add('red');
+    }
+    
+    // ============== RESET ==============
+    function resetSimulation() {
+      currentIndex = 0;
+      simulationResults = [];
+      
+      document.getElementById('summaryGrid').style.display = 'none';
+      renderSimulationLog();
+      
+      document.getElementById('stepBtn').disabled = false;
+      document.getElementById('runAllBtn').disabled = false;
+    }
+    
+    // ============== EXPORT CSV ==============
+    function exportCSV() {
+      if (simulationResults.length === 0) {
+        alert('Chưa có dữ liệu để export!');
+        return;
+      }
+      
+      const headers = ['Bước', 'Ngày', 'Giá T', 'FV Daily', 'FV Weekly', 'Thực tế T+1', 'Deviation %', 'Đánh giá', 'AI Remark'];
+      const rows = simulationResults.map(r => [
+        r.step,
+        r.date,
+        r.currentPrice,
+        r.fvDaily,
+        r.fvWeekly,
+        r.actualPrice,
+        r.deviation.toFixed(2),
+        r.accuracy === 'accurate' ? 'Chinh xac' : r.accuracy === 'noise' ? 'Nhieu' : 'Sai lech',
+        r.remark
+      ]);
+      
+      let csv = headers.join(',') + '\n';
+      rows.forEach(row => {
+        csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+      });
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wealth_guard_backtest_${document.getElementById('symbolSelect').value}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    // ============== INIT ==============
+    document.addEventListener('DOMContentLoaded', function() {
+      // Auto-select VCB if available
+      const select = document.getElementById('symbolSelect');
+      if (select.options.length > 1) {
+        // Keep first selected
+      }
+    });
+  </script>
+</body>
+</html>

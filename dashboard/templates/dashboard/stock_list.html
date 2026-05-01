@@ -599,6 +599,20 @@
         .profit-high { color: #22c55e; }
         .profit-medium { color: #3b82f6; }
         .profit-low { color: #94a3b8; }
+
+        /* Color Coding cho Định giá */
+.fv-daily { color: #f59e0b; } /* Mặc định màu vàng cho Daily */
+
+/* Màu xanh khi giá hiện tại < Giá trị hợp lý (Rẻ) */
+.undervalued { 
+    color: #22c55e !important; 
+    text-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+} 
+
+/* Màu đỏ khi giá hiện tại > Giá trị hợp lý (Đắt) */
+.overvalued { 
+    color: #ef4444 !important; 
+}
     </style>
 </head>
 <body>
@@ -724,192 +738,170 @@
         </div>
     </form>
 
-    <!-- Table -->
-    <div class="table-container">
-        {% if stocks %}
-        <div class="table-scroll">
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Mã</th>
-                        <th>Nhóm</th>
-                        <th>Giá</th>
-                        <th>Target Yield</th>
-                        <th>%/Day</th>
-                        <th>Score</th>
-                        <th>Signal</th>
-                        <th>Criteria</th>
-                        <th>R:R</th>
-                        <th>RSI</th>
-                        <th>CMF</th>
-                        <th>Cloud</th>
-                        <th>ROE</th>
-                        <th>F-Score</th>
-                        <th>Timeframe</th>
-                        <th>Trạng Thái</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for stock in stocks %}
-                    <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}"
-                        data-symbol="{{ stock.symbol }}"
-                        data-company="{{ stock.company_name }}"
-                        data-industry="{{ stock.industry }}"
-                        data-market-group="{{ stock.market_group }}"
-                        data-price="{{ stock.price }}"
-                        data-change="{{ stock.change_percent }}"
-                        data-target-yield="{{ stock.target_yield_pct }}"
-                        data-score="{{ stock.master_score }}"
-                        data-base-score="{{ stock.base_master_score|default:stock.master_score }}"
-                        data-market-weight="{{ stock.market_weight|default:0 }}"
-                        data-tech-score="{{ stock.technical_score }}"
-                        data-fund-score="{{ stock.fundamental_score }}"
-                        data-signal="{{ stock.signal }}"
-                        data-criteria="{{ stock.criteria_met }}"
-                        data-rr="{{ stock.risk_reward_ratio }}"
-                        data-rsi="{{ stock.rsi }}"
-                        data-adx="{{ stock.adx }}"
-                        data-cmf="{{ stock.cmf }}"
-                        data-mfi="{{ stock.mfi }}"
-                        data-vwap="{{ stock.vwap }}"
-                        data-vwap-status="{{ stock.vwap_status }}"
-                        data-ichimoku-tenkan="{{ stock.ichimoku_tenkan }}"
-                        data-ichimoku-kijun="{{ stock.ichimoku_kijun }}"
-                        data-ichimoku="{{ stock.ichimoku_status }}"
-                        data-entry="{{ stock.entry_price }}"
-                        data-sl="{{ stock.stop_loss }}"
-                        data-tp="{{ stock.take_profit }}"
-                        data-roe="{{ stock.roe }}"
-                        data-pe="{{ stock.pe }}"
-                        data-pb="{{ stock.pb }}"
-                        data-fscore="{{ stock.f_score }}"
-                        data-profit-growth="{{ stock.profit_growth|default:'' }}"
-                        data-trend="{{ stock.trend }}"
-                        data-sma10="{{ stock.sma_10 }}"
-                        data-sma20="{{ stock.sma_20 }}"
-                        data-sma50="{{ stock.sma_50 }}"
-                        data-supertrend="{{ stock.supertrend }}"
-                        data-supertrend-signal="{{ stock.supertrend_signal }}"
-                        data-bb-upper="{{ stock.bb_upper }}"
-                        data-bb-lower="{{ stock.bb_lower }}"
-                        data-bb-percent="{{ stock.bb_percent }}"
-                        data-macd="{{ stock.macd }}"
-                        data-macd-signal="{{ stock.macd_signal }}"
-                        data-criteria-list="{{ stock.criteria_list|json_dumps }}"
-                        data-vetoed="{{ stock.is_vetoed|yesno:'true,false' }}"
-                        data-veto-reason="{{ stock.veto_reason }}"
-                        data-fast="{{ stock.is_fast_pick|yesno:'true,false' }}"
-                        data-high-risk="{{ stock.is_high_risk|yesno:'true,false' }}"
-                        data-days="{{ stock.estimated_days_to_target }}"
-                        data-timeframe-label="{{ stock.timeframe_label }}"
-                        data-timeframe-color="{{ stock.timeframe_color }}"
-                        data-profit-per-day="{{ stock.expected_profit_per_day }}"
-                        data-upside-per-day="{{ stock.upside_per_day }}"
-                        data-market-rsi="{{ stock.market_rsi }}"
-                        data-is-market-high-risk="{{ stock.is_market_high_risk|yesno:'true,false' }}"
-                        data-stock-risk-level="{{ stock.stock_risk_level }}"
-                        data-stock-risk-reason="{{ stock.stock_risk_reason }}"
-                        data-is-safe-entry="{{ stock.is_safe_entry|yesno:'true,false' }}"
-                        data-has-high-resistance="{{ stock.has_high_resistance|yesno:'true,false' }}"
-                        data-trend-factor="{{ stock.trend_factor }}"
-                        data-veto-reason="{{ stock.veto_reason }}"
-                        data-avg-volume="{{ stock.avg_volume_value|floatformat:0 }}"
-                        data-foreign-streak="{{ stock.foreign_buy_streak|default:'0' }}"
-                        data-foreign-bonus="{{ stock.foreign_bonus|default:'0' }}"
-                        data-industry-perf="{{ stock.industry_performance|default:'0' }}"
-                        data-is-industry-leader="{{ stock.is_industry_leader|yesno:'true,false' }}"
-                        data-hard-risk-pct="{{ stock.hard_risk_pct|default:'0' }}"
-                        data-support-price="{{ stock.support_price|default:'0' }}"
-                        onclick="openStockModalFromRow(this)">
-                        <td>{{ forloop.counter }}</td>
-                        <td>
-                            <span class="symbol-cell">{{ stock.symbol }}</span>
-                            <div class="company-cell">{{ stock.company_name }}</div>
-                        </td>
-                        <td>
-                            {% if stock.market_group == 'VN30' %}
-                                <span class="badge badge-qualified">{{ stock.market_group }}</span>
-                            {% else %}
-                                <span class="industry-badge">{{ stock.market_group|default:'MIDCAP' }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ stock.price|floatformat:1 }}</td>
-                        <td class="{% if stock.target_yield_pct >= 5 %}positive{% elif stock.target_yield_pct >= 3 %}neutral{% else %}negative{% endif %}">
-                            +{{ stock.target_yield_pct|floatformat:1 }}%
-                        </td>
-                        <td class="{% if stock.upside_per_day > 0 %}positive{% elif stock.upside_per_day < 0 %}negative{% endif %}">
-                            {% if stock.upside_per_day > 0 %}+{% endif %}{{ stock.upside_per_day|floatformat:2 }}%
-                            <div style="font-size: 9px; color: #64748b;">{{ stock.expected_profit_per_day|floatformat:0 }}/ngày</div>
-                        </td>
-                        
-                        <td>
-                            <span class="badge {% if stock.signal == 'BUY' or stock.signal == 'STRONG_BUY' %}badge-buy{% elif stock.signal == 'SELL' %}badge-sell{% else %}badge-wait{% endif %}">
-                                {{ stock.signal }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge {% if stock.criteria_met >= 9 %}badge-qualified{% elif stock.criteria_met >= 7 %}badge-buy{% else %}badge-wait{% endif %}">
-                                {{ stock.criteria_met }}/12
-                            </span>
-                        </td>
-                        <td>{{ stock.risk_reward_ratio|floatformat:2 }}</td>
-                        <td class="rsi-indicator {% if stock.rsi >= 70 %}rsi-overbought{% elif stock.rsi <= 30 %}rsi-oversold{% else %}rsi-neutral{% endif %}">
-                            {{ stock.rsi|floatformat:0 }}
-                        </td>
-                        <td>{{ stock.adx|floatformat:0 }}</td>
-                        <td class="{% if stock.cmf > 0 %}positive{% elif stock.cmf < 0 %}negative{% endif %}">
-                            {{ stock.cmf|floatformat:3 }}
-                        </td>
-                        <td>
-                            {% if stock.ichimoku_status == 'bullish' %}<span class="positive">🟢</span>
-                            {% elif stock.ichimoku_status == 'bearish' %}<span class="negative">🔴</span>
-                            {% else %}<span>🟡</span>{% endif %}
-                        </td>
-                        <td class="{% if stock.roe >= 15 %}positive{% elif stock.roe >= 10 %}neutral{% elif stock.roe and stock.roe > 0 %}negative{% endif %}">
-                            {% if stock.roe %}{{ stock.roe|floatformat:1 }}{% else %}-{% endif %}
-                        </td>
-                        <td>
-                            <span class="badge {% if stock.f_score >= 7 %}badge-buy{% elif stock.f_score >= 4 %}badge-wait{% else %}badge-sell{% endif %}">
-                                {{ stock.f_score }}/9
-                            </span>
-                        </td>
-                        <td>
-                            {% if stock.timeframe_label %}
-                                <span class="timeframe-badge timeframe-{{ stock.timeframe_color }}">
-                                    {{ stock.timeframe_label }}
-                                </span>
-                                <div style="font-size: 10px; color: #64748b; margin-top: 2px;">
-                                    {{ stock.estimated_days_to_target|floatformat:1 }} phiên
-                                </div>
-                            {% else %}
-                                {{ stock.estimated_days_to_target|floatformat:0 }}
-                            {% endif %}
-                        </td>
-                        <td class="status-cell">
-                            {% if stock.is_vetoed %}
-                                <span class="badge badge-veto">VETO</span>
-                            {% elif stock.is_market_high_risk %}
-                                <span class="badge badge-high-risk">MKT: DANGER</span>
-                                <span class="badge badge-{{ stock.stock_risk_level|lower }}">{{ stock.stock_risk_level }}</span>
-                            {% elif stock.stock_risk_level == 'High' %}
-                                <span class="badge badge-high-risk">STOCK: HIGH</span>
-                            {% elif stock.is_fast_pick %}
-                                <span class="badge badge-fast">FAST</span>
-                            {% elif stock.criteria_met >= 9 %}
-                                <span class="badge badge-qualified">EXCELLENT</span>
-                            {% elif stock.criteria_met >= 7 %}
-                                <span class="badge badge-buy">QUALIFIED</span>
-                            {% else %}
-                                <span class="badge badge-wait">{{ stock.stock_risk_level }}</span>
-                            {% endif %}
-                            <!-- Wealth Guard Group Badge - Updated by JS -->
-                            <span class="wg-group-badge"></span>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+   <!-- Table -->
+<div class="table-container">
+    {% if stocks %}
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Mã</th>
+                    <th>Nhóm</th>
+                    <th>Giá</th>
+                    <th>Định Giá (N/T)</th> <!-- Cột 5: Mới bổ sung -->
+                    <th>Target Yield</th>
+                    <th>%/Day</th>
+                    <th>Score</th>
+                    <th>Signal</th>
+                    <th>Criteria</th>
+                    <th>R:R</th>
+                    <th>RSI</th>
+                    <th>CMF</th>
+                    <th>Cloud</th>
+                    <th>ROE</th>
+                    <th>F-Score</th>
+                    <th>Timeframe</th>
+                    <th>Trạng Thái</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stock in stocks %}
+                <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}"
+                    data-symbol="{{ stock.symbol }}"
+                    data-company="{{ stock.company_name }}"
+                    data-industry="{{ stock.industry }}"
+                    data-market-group="{{ stock.market_group }}"
+                    data-price="{{ stock.price }}"
+                    data-change="{{ stock.change_percent }}"
+                    data-target-yield="{{ stock.target_yield_pct }}"
+                    data-score="{{ stock.master_score }}"
+                    data-base-score="{{ stock.base_master_score|default:stock.master_score }}"
+                    data-market-weight="{{ stock.market_weight|default:0 }}"
+                    data-tech-score="{{ stock.technical_score }}"
+                    data-fund-score="{{ stock.fundamental_score }}"
+                    data-signal="{{ stock.signal }}"
+                    data-criteria="{{ stock.criteria_met }}"
+                    data-rr="{{ stock.risk_reward_ratio }}"
+                    data-rsi="{{ stock.rsi }}"
+                    data-adx="{{ stock.adx }}"
+                    data-cmf="{{ stock.cmf }}"
+                    data-mfi="{{ stock.mfi }}"
+                    data-vwap="{{ stock.vwap }}"
+                    data-vwap-status="{{ stock.vwap_status }}"
+                    data-ichimoku-tenkan="{{ stock.ichimoku_tenkan }}"
+                    data-ichimoku-kijun="{{ stock.ichimoku_kijun }}"
+                    data-ichimoku="{{ stock.ichimoku_status }}"
+                    data-entry="{{ stock.entry_price }}"
+                    data-sl="{{ stock.stop_loss }}"
+                    data-tp="{{ stock.take_profit }}"
+                    data-roe="{{ stock.roe }}"
+                    data-pe="{{ stock.pe }}"
+                    data-pb="{{ stock.pb }}"
+                    data-fscore="{{ stock.f_score }}"
+                    data-profit-growth="{{ stock.profit_growth|default:'' }}"
+                    data-trend="{{ stock.trend }}"
+                    data-sma10="{{ stock.sma_10 }}"
+                    data-sma20="{{ stock.sma_20 }}"
+                    data-sma50="{{ stock.sma_50 }}"
+                    data-supertrend="{{ stock.supertrend }}"
+                    data-supertrend-signal="{{ stock.supertrend_signal }}"
+                    data-bb-upper="{{ stock.bb_upper }}"
+                    data-bb-lower="{{ stock.bb_lower }}"
+                    data-bb-percent="{{ stock.bb_percent }}"
+                    data-macd="{{ stock.macd }}"
+                    data-macd-signal="{{ stock.macd_signal }}"
+                    data-criteria-list="{{ stock.criteria_list|json_dumps }}"
+                    data-vetoed="{{ stock.is_vetoed|yesno:'true,false' }}"
+                    data-veto-reason="{{ stock.veto_reason }}"
+                    data-fast="{{ stock.is_fast_pick|yesno:'true,false' }}"
+                    data-high-risk="{{ stock.is_high_risk|yesno:'true,false' }}"
+                    data-days="{{ stock.estimated_days_to_target }}"
+                    data-timeframe-label="{{ stock.timeframe_label }}"
+                    data-timeframe-color="{{ stock.timeframe_color }}"
+                    data-profit-per-day="{{ stock.expected_profit_per_day }}"
+                    data-upside-per-day="{{ stock.upside_per_day }}"
+                    data-market-rsi="{{ stock.market_rsi }}"
+                    data-is-market-high-risk="{{ stock.is_market_high_risk|yesno:'true,false' }}"
+                    data-stock-risk-level="{{ stock.stock_risk_level }}"
+                    data-stock-risk-reason="{{ stock.stock_risk_reason }}"
+                    data-is-safe-entry="{{ stock.is_safe_entry|yesno:'true,false' }}"
+                    data-has-high-resistance="{{ stock.has_high_resistance|yesno:'true,false' }}"
+                    data-trend-factor="{{ stock.trend_factor }}"
+                    data-avg-volume="{{ stock.avg_volume_value|floatformat:0 }}"
+                    data-foreign-streak="{{ stock.foreign_buy_streak|default:'0' }}"
+                    data-foreign-bonus="{{ stock.foreign_bonus|default:'0' }}"
+                    data-industry-perf="{{ stock.industry_performance|default:'0' }}"
+                    data-is-industry-leader="{{ stock.is_industry_leader|yesno:'true,false' }}"
+                    data-hard-risk-pct="{{ stock.hard_risk_pct|default:'0' }}"
+                    data-support-price="{{ stock.support_price|default:'0' }}"
+                    data-atr="{{ stock.atr|default:1000 }}"
+                    data-breakout="{{ stock.breakout_status|default:'WAIT' }}"
+                    onclick="openStockModalFromRow(this)">
+                    
+                    <td>{{ forloop.counter }}</td>
+                    <td>
+                        <span class="symbol-cell">{{ stock.symbol }}</span>
+                        <div class="company-cell">{{ stock.company_name }}</div>
+                    </td>
+                    <td>
+                        {% if stock.market_group == 'VN30' %}
+                            <span class="badge badge-qualified">{{ stock.market_group }}</span>
+                        {% else %}
+                            <span class="industry-badge">{{ stock.market_group|default:'MIDCAP' }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ stock.price|floatformat:1 }}</td>
+                    
+                    <!-- Cột Định Giá Mới -->
+                    <td class="valuation-cell" id="val-{{ stock.symbol }}">
+                        <div class="fv-daily" style="font-size: 11px; color: #f59e0b; font-weight: 600;">Day: --</div>
+                        <div class="fv-weekly" style="font-size: 12px; color: #3b82f6; font-weight: 700;">Week: --</div>
+                    </td>
+
+                    <td class="{% if stock.target_yield_pct >= 5 %}positive{% elif stock.target_yield_pct >= 3 %}neutral{% else %}negative{% endif %}">
+                        +{{ stock.target_yield_pct|floatformat:1 }}%
+                    </td>
+                    <td class="{% if stock.upside_per_day > 0 %}positive{% elif stock.upside_per_day < 0 %}negative{% endif %}">
+                        {% if stock.upside_per_day > 0 %}+{% endif %}{{ stock.upside_per_day|floatformat:2 }}%
+                        <div style="font-size: 9px; color: #64748b;">{{ stock.expected_profit_per_day|floatformat:0 }}/ngày</div>
+                    </td>
+                    
+                    <!-- Score Bar (Bây giờ là cột thứ 8) -->
+                   <td class="score-value-cell" style="text-align: center; font-weight: 700; font-size: 14px;">--</td>
+                    
+                    <td>
+                        <span class="badge {% if stock.signal == 'BUY' or stock.signal == 'STRONG_BUY' %}badge-buy{% elif stock.signal == 'SELL' %}badge-sell{% else %}badge-wait{% endif %}">
+                            {{ stock.signal }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if stock.criteria_met >= 9 %}badge-qualified{% elif stock.criteria_met >= 7 %}badge-buy{% else %}badge-wait{% endif %}">
+                            {{ stock.criteria_met }}/12
+                        </span>
+                    </td>
+                    <td>{{ stock.risk_reward_ratio|floatformat:2 }}</td>
+                    <td class="rsi-indicator">
+                        {{ stock.rsi|floatformat:0 }}
+                    </td>
+                    <td>{{ stock.cmf|floatformat:3 }}</td>
+                    <td>
+                        {% if stock.ichimoku_status == 'bullish' %}<span class="positive">🟢</span>{% else %}<span>🟡</span>{% endif %}
+                    </td>
+                    <td>{{ stock.roe|default:'-' }}</td>
+                    <td>
+                        <span class="badge {% if stock.f_score >= 7 %}badge-buy{% else %}badge-wait{% endif %}">
+                            {{ stock.f_score }}/9
+                        </span>
+                    </td>
+                    <td>{{ stock.timeframe_label }}</td>
+                    <td class="status-cell">
+                        <span class="wg-group-badge"></span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         </div>
         {% else %}
         <div class="empty-state">
@@ -920,6 +912,17 @@
     </div>
 
     <script>
+        const INDUSTRY_CONFIG = {
+        'Banking': { type: 'PB', target: 1.65 },
+        'Real Estate': { type: 'PB', target: 1.8 },
+        'Securities': { type: 'PB', target: 2.0 },
+        'Technology': { type: 'PE', target: 18.0 },
+        'Retail': { type: 'PE', target: 15.0 },
+        'FMCG': { type: 'PE', target: 14.0 },
+        'Oil & Gas': { type: 'PE', target: 9.0 },
+        'Steel': { type: 'PE', target: 8.5 },
+        'Default': { type: 'PE', target: 11.0 }
+    };
         // ========== CHUẨN HÓA DATA ATTRIBUTES ==========
         function normalizeDataAttributes() {
             const rows = document.querySelectorAll('table tbody tr[data-symbol]');
@@ -1203,21 +1206,35 @@
                 }
                 
                 // ========== Cập nhật Score Bar ==========
-                const scoreCell = row.querySelector('td:nth-child(7)'); // Cột Score
-                if (scoreCell) {
-                    const scoreBar = scoreCell.querySelector('.score-bar .fill');
-                    const scoreText = scoreCell.childNodes[2]; // Text node sau score bar
-                    
-                    if (scoreBar) {
-                        scoreBar.style.width = score + '%';
-                        // Cập nhật màu gradient theo điểm mới
-                        scoreBar.classList.remove('score-high', 'score-medium', 'score-low');
-                        scoreBar.classList.add(score >= 70 ? 'score-high' : score >= 50 ? 'score-medium' : 'score-low');
-                    }
-                    if (scoreText && scoreText.nodeType === Node.TEXT_NODE) {
-                        scoreText.textContent = ' ' + score;
-                    }
-                }
+                const scoreCell = row.querySelector('td:nth-child(8)'); 
+if (scoreCell) {
+    // Gán số điểm
+    scoreCell.textContent = score;
+    
+    // Tự động đổi màu chữ dựa trên điểm số để thay thế cho thanh bar
+    if (score >= 70) {
+        scoreCell.style.color = '#22c55e'; // Xanh lá (Tốt)
+    } else if (score >= 50) {
+        scoreCell.style.color = '#f59e0b'; // Vàng cam (Trung bình)
+    } else {
+        scoreCell.style.color = '#ef4444'; // Đỏ (Yếu/Veto)
+    }
+}
+
+if (scoreCell) {
+    const scoreBar = scoreCell.querySelector('.score-bar .fill');
+    // Cách lấy text cũ childNodes[2] rất dễ lỗi nếu HTML thay đổi, hãy dùng querySelector cho chắc chắn:
+    const scoreText = scoreCell.querySelector('.score-text'); 
+    
+    if (scoreBar) {
+        scoreBar.style.width = score + '%';
+        scoreBar.classList.remove('score-high', 'score-medium', 'score-low');
+        scoreBar.classList.add(score >= 70 ? 'score-high' : score >= 50 ? 'score-medium' : 'score-low');
+    }
+    if (scoreText) {
+        scoreText.textContent = score;
+    }
+}
                 
                 // ========== Xóa sạch Badge cũ, chỉ tạo MỘT badge duy nhất ==========
                 const statusCell = row.querySelector('.status-cell');
@@ -1293,7 +1310,13 @@
         }
         
         // Chạy khi DOM ready
-        document.addEventListener('DOMContentLoaded', runOnReady);
+        document.addEventListener('DOMContentLoaded', () => {
+        normalizeDataAttributes(); // Hàm cũ của ông
+        runWealthGuardMaster();    // Hàm tính Day/Week mới chèn ở Bước 2
+    
+        // Nếu ông có hàm tính điểm Wealth Guard cũ, hãy gọi nó ở đây
+        if (typeof runOnReady === "function") runOnReady(); 
+        });
         
         // Quick search on enter
         document.querySelector('input[name="search"]').addEventListener('keypress', function(e) {
@@ -1311,6 +1334,8 @@
                 company_name: row.dataset.company,
                 industry: row.dataset.industry || 'Other',
                 market_group: row.dataset.marketGroup || 'MIDCAP',
+                fv_daily: parseFloat(row.dataset.fvDaily) || 0,
+                fv_weekly: parseFloat(row.dataset.fvWeekly) || 0,
                 price: parseFloat(row.dataset.price) || 0,
                 change_percent: parseFloat(row.dataset.change) || 0,
                 target_yield_pct: parseFloat(row.dataset.targetYield) || 0,
@@ -1393,12 +1418,73 @@
                 openStockModalFromRow(row);
             }
         }
+        function runWealthGuardMaster() {
+    const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+    rows.forEach(row => {
+        const d = row.dataset;
+        // 1. Ép kiểu và xử lý dữ liệu rỗng (Bổ sung quan trọng)
+        const price = parseFloat(d.price) || 0;
+        const vwap = parseFloat(d.vwap) || price;
+        const sma10 = parseFloat(d.sma10) || price;
+        const tp = parseFloat(d.tp) || (price * 1.05);
+        const pb = parseFloat(d.pb) || 1;
+        const pe = parseFloat(d.pe) || 10;
+        const marketRsi = parseFloat(d.marketRsi) || 50;
 
+        const config = INDUSTRY_CONFIG[d.industry] || INDUSTRY_CONFIG['Default'];
+
+        // 2. Tính FV Ngày (Daily) - Công thức chuẩn 60/40
+        const fv_daily = (vwap * 0.6) + (sma10 * 0.4);
+        
+        // 3. Tính FV Tuần (Weekly) - Logic đa lớp
+        let intrinsic = (config.type === 'PB') 
+            ? (config.target / pb) * price 
+            : (config.target / pe) * price;
+
+        const fundS = parseFloat(d.fundScore) || 50;
+        const techS = parseFloat(d.techScore) || 50;
+        
+        // Trọng số linh hoạt giữa Kỹ thuật và Cơ bản
+        let fv_weekly = ((intrinsic * fundS) + (tp * techS)) / (fundS + techS);
+        
+        // 4. BỔ SUNG: Điều chỉnh "Biên an toàn" theo RSI thị trường
+        if (marketRsi > 75) fv_weekly *= 0.95; // Thị trường nóng quá thì hạ mục tiêu
+        if (marketRsi < 30) fv_weekly *= 1.05; // Thị trường quá bán thì nâng mục tiêu
+
+        // Hiển thị ra Table
+        const valCell = row.querySelector(`#val-${d.symbol}`);
+        if (valCell) {
+            valCell.querySelector('.fv-daily').textContent = `Day: ${Math.round(fv_daily).toLocaleString('vi-VN')}`;
+            valCell.querySelector('.fv-weekly').textContent = `Week: ${Math.round(fv_weekly).toLocaleString('vi-VN')}`;
+            
+            // Màu sắc cảnh báo: Nếu giá hiện tại < Định giá tuần -> Chữ màu xanh
+            valCell.querySelector('.fv-weekly').style.color = (price < fv_weekly) ? "#22c55e" : "#ef4444";
+        }
+
+        // Lưu vào attribute để Modal sử dụng
+        row.setAttribute('data-fv-daily', fv_daily);
+        row.setAttribute('data-fv-weekly', fv_weekly);
+    });
+}
         function showModal(stockData) {
             // Populate modal header
             document.getElementById('modalSymbol').textContent = stockData.symbol;
             document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
             document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
+            // 1. Đổ số vào 2 ô Daily/Weekly trong Modal
+document.getElementById('modalFVDaily').textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
+document.getElementById('modalFVWeekly').textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
+
+// 2. Điều khiển chấm trắng trên thanh Gauge (Đắt/Rẻ)
+const price = stockData.price || 0;
+const fv = stockData.fv_weekly || 0;
+let gaugePos = 50; // Mặc định ở giữa
+if (fv > 0 && price > 0) {
+    gaugePos = (fv / price) * 50; 
+    gaugePos = Math.min(95, Math.max(5, gaugePos)); 
+}
+const valDot = document.getElementById('modalValDot');
+if (valDot) valDot.style.left = gaugePos + '%';
             // Target Yield (thay vì change_percent)
             const targetYield = stockData.target_yield_pct || 0;
             document.getElementById('modalChange').textContent = (targetYield >= 0 ? '+' : '') + targetYield.toFixed(1) + '%';
@@ -1557,6 +1643,13 @@
             } else {
                 stockRiskEl.className = 'value positive';
             }
+            // Tìm trong hàm showModal của ông và dán thêm 3 dòng này:
+            document.getElementById('modalFVDaily').textContent = formatNumber(stockData.fv_daily, 0);
+            document.getElementById('modalFVWeekly').textContent = formatNumber(stockData.fv_weekly, 0);
+
+            // Cập nhật thanh Gauge (Thước đo)
+            const pos = Math.min(100, Math.max(0, (stockData.fv_weekly / stockData.price) * 50));
+            document.getElementById('modalValDot').style.left = pos + '%';
 
             // Risk Reason
             const riskReasonEl = document.getElementById('modalRiskReason');
@@ -1798,6 +1891,33 @@
 
             <!-- Signal & Score -->
             <div class="modal-section">
+                <!-- Bổ sung khu vực Định Giá trong Modal -->
+<div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+    <h3 style="color: #f8fafc; border: none; margin-bottom: 15px;">🎯 Dự Báo Giá Trị Hợp Lý (Wealth Guard)</h3>
+    <div class="modal-grid">
+        <div class="modal-item" style="border: 1px solid #f59e0b;">
+            <div class="label" style="color: #f59e0b;">FV Trong Ngày (Daily)</div>
+            <div class="value" id="modalFVDaily" style="color: #f59e0b;">--</div>
+            <div style="font-size: 10px; color: #64748b;">Dựa trên VWAP & SMA10</div>
+        </div>
+        <div class="modal-item" style="border: 1px solid #3b82f6;">
+            <div class="label" style="color: #3b82f6;">FV Trong Tuần (Weekly)</div>
+            <div class="value" id="modalFVWeekly" style="color: #3b82f6;">--</div>
+            <div style="font-size: 10px; color: #64748b;">Nội tại ngành & Kỹ thuật</div>
+        </div>
+    </div>
+    
+    <!-- Thanh Gauge trực quan so sánh Giá hiện tại và Định giá -->
+    <div style="margin-top: 20px; position: relative; padding: 0 10px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
+            <span>Đắt (Overvalued)</span>
+            <span>Rẻ (Undervalued)</span>
+        </div>
+        <div style="height: 8px; background: linear-gradient(90deg, #ef4444 0%, #22c55e 100%); border-radius: 4px; position: relative;">
+            <div id="modalValDot" style="width: 12px; height: 12px; background: #fff; border: 2px solid #000; border-radius: 50%; position: absolute; top: -2px; left: 50%; transition: all 0.5s ease;"></div>
+        </div>
+    </div>
+</div>
                 <h3>Đánh Giá Tổng Quan</h3>
                 <div class="modal-grid">
                     <div class="modal-item">

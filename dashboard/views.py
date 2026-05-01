@@ -16,6 +16,19 @@ from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPres
 from .services import get_function_definition, iter_registry_functions, run_registry_function
 from dashboard.sync_service import sync_market_data, get_top_picks_from_db, get_sync_status
 
+# Industry Configuration for Fair Value calculation
+INDUSTRY_CONFIG = {
+    'Banking': {'type': 'PB', 'target': 1.65},
+    'Real Estate': {'type': 'PB', 'target': 1.8},
+    'Securities': {'type': 'PB', 'target': 2.0},
+    'Technology': {'type': 'PE', 'target': 18.0},
+    'Retail': {'type': 'PE', 'target': 15.0},
+    'FMCG': {'type': 'PE', 'target': 14.0},
+    'Oil & Gas': {'type': 'PE', 'target': 9.0},
+    'Steel': {'type': 'PE', 'target': 8.5},
+    'Default': {'type': 'PE', 'target': 11.0}
+}
+
 
 def retry_on_db_lock(max_retries: int = 3, delay: float = 0.5):
     """Decorator to retry database operations on lock errors."""
@@ -821,6 +834,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         "Master Score", "Base Score", "Market Weight", "Tech Score", "Fund Score", "Signal",
         "Target Yield %", "R:R Ratio", "Hard Risk %", "Est. Days", "Timeframe", "Trend Factor",
         "Entry", "Stop Loss", "Take Profit", "Support Price", "Profit/Day",
+        "FV Daily", "FV Weekly", "Valuation Status",
         "Is Vetoed", "Veto Reason", "Is Fast Pick", "Is Safe Entry", "Has High Resistance",
         "Foreign Streak", "Foreign Bonus", "Industry Perf", "Is Industry Leader",
         "Is Market High Risk", "Stock Risk Level", "Stock Risk Reason",
@@ -830,6 +844,40 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     for a in analyses:
         s = a.symbol
         avg_vol_b = getattr(a, 'avg_volume_value', 0) or (s.volume_ratio * s.price * 1e6 / 1e9 if s.volume_ratio and s.price else 0)
+
+        # Calculate FV Daily and FV Weekly based on Industry Config
+        industry = s.industry or 'Default'
+        industry_key = next((k for k in INDUSTRY_CONFIG if k.lower() in industry.lower()), 'Default')
+        config = INDUSTRY_CONFIG.get(industry_key, INDUSTRY_CONFIG['Default'])
+
+        # fv_daily = (vwap * 0.6) + (sma10 * 0.4)
+        vwap_val = s.vwap or s.price or 0
+        sma10_val = s.sma_10 or s.price or 0
+        fv_daily = round((vwap_val * 0.6) + (sma10_val * 0.4), 2)
+
+        # intrinsic_value based on industry type
+        price_val = s.price or 0
+        if config['type'] == 'PB' and s.pb and s.pb > 0:
+            intrinsic_value = round((config['target'] / s.pb) * price_val, 2)
+        elif s.pe and s.pe > 0:
+            intrinsic_value = round((config['target'] / s.pe) * price_val, 2)
+        else:
+            intrinsic_value = price_val
+
+        # fv_weekly = weighted average of intrinsic_value and take_profit
+        tech_score = a.technical_score or 50
+        fund_score = a.fundamental_score or 50
+        take_profit = a.take_profit or price_val
+        fv_weekly = round(((intrinsic_value * fund_score) + (take_profit * tech_score)) / (fund_score + tech_score), 2)
+
+        # Risk adjustment if market RSI > 75
+        market_rsi = a.market_rsi or 50
+        if market_rsi > 75:
+            fv_weekly = round(fv_weekly * 0.9, 2)
+
+        # Valuation Status
+        valuation_status = "Rẻ" if price_val < fv_weekly else "Đắt"
+
         writer.writerow([
             s.symbol, s.company_name, s.industry or s.get_industry(), s.market_group or s.get_market_group(),
             s.price, s.change_percent,
@@ -842,6 +890,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
             a.risk_reward_ratio, getattr(a, 'hard_risk_pct', 0),
             a.estimated_days_to_target, a.timeframe_label, getattr(a, 'trend_factor', 0.6),
             a.entry_price, a.stop_loss, a.take_profit, getattr(a, 'support_price', 0), a.expected_profit_per_day,
+            fv_daily, fv_weekly, valuation_status,
             "Yes" if a.is_vetoed else "No", a.veto_reason,
             "Yes" if a.is_fast_pick else "No",
             "Yes" if getattr(a, 'is_safe_entry', False) else "No",
@@ -858,7 +907,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
 
 def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
-    """Export chi tiết một mã cổ phiếu ra CSV"""
+    """Export chi tiết một mã cổ phiếu ra CSV với cấu trúc theo Sections"""
     import csv
     from django.http import HttpResponse, Http404
     from .models import StockData, StockAnalysis
@@ -870,13 +919,12 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
         raise Http404(f"Không tìm thấy mã {symbol}")
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
-    # Add BOM for UTF-8 Excel compatibility
     response.write('\ufeff')
     response["Content-Disposition"] = f'attachment; filename="{symbol}_detail_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
 
     writer = csv.writer(response)
 
-    # Header
+    # Section 1: THÔNG TIN CƠ BẢN
     writer.writerow(["=== THÔNG TIN CƠ BẢN ==="])
     writer.writerow(["Mã", stock.symbol])
     writer.writerow(["Công ty", stock.company_name])
@@ -887,6 +935,52 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow(["Khối lượng", stock.volume])
     writer.writerow(["Tỷ lệ khối lượng", stock.volume_ratio])
 
+    # Section 2: DỰ BÁO GIÁ TRỊ HỢP LÝ (WEALTH GUARD)
+    writer.writerow([])
+    writer.writerow(["=== DỰ BÁO GIÁ TRỊ HỢP LÝ (WEALTH GUARD) ==="])
+
+    # Calculate FV Daily and FV Weekly
+    industry = stock.industry or 'Default'
+    industry_key = next((k for k in INDUSTRY_CONFIG if k.lower() in industry.lower()), 'Default')
+    config = INDUSTRY_CONFIG.get(industry_key, INDUSTRY_CONFIG['Default'])
+
+    price_val = stock.price or 0
+    vwap_val = stock.vwap or price_val
+    sma10_val = stock.sma_10 or price_val
+
+    # fv_daily = (vwap * 0.6) + (sma10 * 0.4)
+    fv_daily = round((vwap_val * 0.6) + (sma10_val * 0.4), 2)
+
+    # intrinsic_value based on industry type
+    if config['type'] == 'PB' and stock.pb and stock.pb > 0:
+        intrinsic_value = round((config['target'] / stock.pb) * price_val, 2)
+    elif stock.pe and stock.pe > 0:
+        intrinsic_value = round((config['target'] / stock.pe) * price_val, 2)
+    else:
+        intrinsic_value = price_val
+
+    # fv_weekly = weighted average
+    tech_score = analysis.technical_score or 50
+    fund_score = analysis.fundamental_score or 50
+    take_profit = analysis.take_profit or price_val
+    fv_weekly = round(((intrinsic_value * fund_score) + (take_profit * tech_score)) / (fund_score + tech_score), 2)
+
+    # Risk adjustment if market RSI > 75
+    market_rsi = analysis.market_rsi or 50
+    if market_rsi > 75:
+        fv_weekly = round(fv_weekly * 0.9, 2)
+
+    # Valuation Status
+    valuation_status = "Rẻ" if price_val < fv_weekly else "Đắt"
+
+    writer.writerow(["FV Trong Ngày (Daily)", fv_daily])
+    writer.writerow(["FV Trong Tuần (Weekly)", fv_weekly])
+    writer.writerow(["Trạng Thái Định Giá", valuation_status])
+    writer.writerow(["Giá Trị Nội Tại (Intrinsic)", intrinsic_value])
+    writer.writerow(["Loại Định Giá Ngành", config['type']])
+    writer.writerow(["Target Ngành", config['target']])
+
+    # Section 3: ĐIỂM PHÂN TÍCH
     writer.writerow([])
     writer.writerow(["=== ĐIỂM PHÂN TÍCH ==="])
     writer.writerow(["Master Score", analysis.master_score])
@@ -1307,6 +1401,180 @@ def api_backtest(request: HttpRequest) -> JsonResponse:
             }
         
         return JsonResponse(results)
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)
+
+
+# ============== WEALTH GUARD LOGIC BACKTEST ==============
+
+def wealth_guard_backtest(request: HttpRequest) -> HttpResponse:
+    """Wealth Guard Logic Backtest - Chế độ mô phỏng đối chiếu dữ liệu lịch sử"""
+    from .models import StockData, VN30_SYMBOLS
+    
+    # Lấy VN30 và các mã từ DB
+    all_symbols = list(VN30_SYMBOLS)
+    db_symbols = StockData.objects.values_list('symbol', flat=True)
+    for s in db_symbols:
+        if s not in all_symbols:
+            all_symbols.append(s)
+    all_symbols = sorted(set(all_symbols))
+    
+    return render(request, "dashboard/wealth_guard_backtest.html", {
+        "symbols": all_symbols
+    })
+
+
+@csrf_exempt
+def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
+    """
+    API endpoint để lấy dữ liệu lịch sử cho Wealth Guard Backtest.
+    Trả về 100 phiên gần nhất với đầy đủ thông số kỹ thuật và cơ bản.
+    """
+    try:
+        from .models import StockData, StockAnalysis
+        from .analyzers import StockAnalyzer
+        import pandas as pd
+        
+        symbol = request.GET.get("symbol", "").strip().upper()
+        limit = int(request.GET.get("limit", 100))
+        
+        if not symbol:
+            return JsonResponse({"error": "Symbol is required"}, status=400)
+        
+        # Lấy OHLCV data từ StockAnalyzer
+        try:
+            analyzer = StockAnalyzer(period_ta=limit + 50)  # Extra for indicator calculation
+            ohlcv = analyzer._get_ohlcv(symbol)
+        except Exception as e:
+            return JsonResponse({"error": f"Không lấy được dữ liệu: {str(e)}"}, status=500)
+        
+        if ohlcv is None or len(ohlcv) < 20:
+            return JsonResponse({"error": "Không đủ dữ liệu để phân tích"}, status=400)
+        
+        # Reverse để lấy dữ liệu mới nhất trước
+        ohlcv = ohlcv.iloc[::-1].reset_index(drop=True)
+        
+        # Calculate indicators
+        df = ohlcv.copy()
+        
+        # SMA
+        df['sma_10'] = df['close'].rolling(10).mean()
+        df['sma_20'] = df['close'].rolling(20).mean()
+        df['sma_50'] = df['close'].rolling(50).mean()
+        
+        # VWAP approximation (using typical price)
+        df['typical'] = (df['high'] + df['low'] + df['close']) / 3
+        df['vol'] = df['volume']
+        df['vwap'] = (df['typical'] * df['vol']).rolling(14).sum() / df['vol'].rolling(14).sum()
+        df['vwap'] = df['vwap'].fillna(df['close'])
+        
+        # RSI
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+        df['rsi'] = df['rsi'].fillna(50)
+        
+        # Lấy chỉ limit records gần nhất
+        df = df.tail(limit).reset_index(drop=True)
+        
+        # Lấy thông tin từ DB để biết industry
+        try:
+            stock_db = StockData.objects.get(symbol=symbol)
+            industry = stock_db.industry or 'Default'
+        except:
+            industry = 'Default'
+        
+        # Build data array
+        data_array = []
+        for i, row in df.iterrows():
+            vwap_val = row['vwap'] if pd.notna(row['vwap']) else row['close']
+            sma10_val = row['sma_10'] if pd.notna(row['sma_10']) else row['close']
+            
+            # Calculate FV Daily: fv_daily = (vwap * 0.6) + (sma10 * 0.4)
+            fv_daily = round((vwap_val * 0.6) + (sma10_val * 0.4), 2)
+            
+            # Calculate FV Weekly (sma_20)
+            sma20_val = row['sma_20'] if pd.notna(row['sma_20']) else row['close']
+            fv_weekly = round((vwap_val * 0.6) + (sma20_val * 0.4), 2)
+            
+            # Get industry config
+            industry_key = next((k for k in INDUSTRY_CONFIG if k.lower() in industry.lower()), 'Default')
+            config = INDUSTRY_CONFIG.get(industry_key, INDUSTRY_CONFIG['Default'])
+            
+            # Get P/E, P/B từ DB
+            pe_val = 15.0
+            pb_val = 1.5
+            try:
+                stock_db = StockData.objects.get(symbol=symbol)
+                pe_val = stock_db.pe or 15.0
+                pb_val = stock_db.pb or 1.5
+            except:
+                pass
+            
+            # Calculate Fundamental Score (0-100)
+            fundamental_score = 50
+            if config['type'] == 'PB' and pb_val > 0:
+                # Bank/Real Estate: prefer PB < target
+                target_pb = config['target']
+                if pb_val <= target_pb:
+                    fundamental_score = 50 + (target_pb - pb_val) / target_pb * 50
+                else:
+                    fundamental_score = max(20, 50 - (pb_val - target_pb) / target_pb * 30)
+            elif pe_val > 0:
+                # Tech/Retail: prefer PE < target
+                target_pe = config['target']
+                if pe_val <= target_pe:
+                    fundamental_score = 50 + (target_pe - pe_val) / target_pe * 50
+                else:
+                    fundamental_score = max(20, 50 - (pe_val - target_pe) / target_pe * 30)
+            
+            # Calculate Technical Score (0-100)
+            rsi_val = row['rsi'] if pd.notna(row['rsi']) else 50
+            technical_score = 50
+            if rsi_val < 30:
+                technical_score = 80  # Oversold = good entry
+            elif rsi_val > 70:
+                technical_score = 30  # Overbought = risky
+            elif 40 <= rsi_val <= 60:
+                technical_score = 60  # Neutral zone
+            
+            # Take Profit = FV Daily * 1.05 (5% upside)
+            take_profit = round(fv_daily * 1.05, 2)
+            
+            record = {
+                "Date": str(row['time'])[:10] if pd.notna(row['time']) else "",
+                "Open": round(row['open'], 2) if pd.notna(row['open']) else 0,
+                "High": round(row['high'], 2) if pd.notna(row['high']) else 0,
+                "Low": round(row['low'], 2) if pd.notna(row['low']) else 0,
+                "Close": round(row['close'], 2) if pd.notna(row['close']) else 0,
+                "VWAP": round(vwap_val, 2),
+                "SMA10": round(sma10_val, 2),
+                "SMA20": round(sma20_val, 2),
+                "RSI": round(rsi_val, 1),
+                "PE": round(pe_val, 1),
+                "PB": round(pb_val, 2),
+                "Fundamental_Score": round(fundamental_score, 0),
+                "Technical_Score": round(technical_score, 0),
+                "FV_Daily": fv_daily,
+                "FV_Weekly": fv_weekly,
+                "Take_Profit": take_profit,
+                "Industry": industry,
+                "Industry_Config": config
+            }
+            data_array.append(record)
+        
+        return JsonResponse({
+            "status": "success",
+            "symbol": symbol,
+            "industry": industry,
+            "industry_config": config,
+            "total_records": len(data_array),
+            "data": data_array
+        })
         
     except Exception as e:
         import traceback

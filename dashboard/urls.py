@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv, strategy_lab, api_simulate, api_backtest, api_get_stock_data, api_get_all_symbols
+from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv, strategy_lab, api_simulate, api_backtest, api_get_stock_data, api_get_all_symbols, wealth_guard_backtest, api_wealth_guard_data
 
 urlpatterns = [
     path("", home, name="home"),
@@ -20,4 +20,6 @@ urlpatterns = [
     path("api/backtest/", api_backtest, name="api_backtest"),
     path("api/lab/stock-data/", api_get_stock_data, name="api_get_stock_data"),
     path("api/lab/symbols/", api_get_all_symbols, name="api_get_all_symbols"),
+    path("wealth-guard-backtest/", wealth_guard_backtest, name="wealth_guard_backtest"),
+    path("api/wealth-guard/data/", api_wealth_guard_data, name="api_wealth_guard_data"),
 ]

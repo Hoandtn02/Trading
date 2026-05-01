@@ -1022,13 +1022,6 @@
             Object.values(buttons).forEach(btn => btn.disabled = false);
         }
 
-        // Auto-check sync status on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            const isSyncing = {{ is_syncing|yesno:"true,false" }};
-            if (isSyncing) {
-                triggerSync();
-            }
-        });
     </script>
 </body>
 </html>

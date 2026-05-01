@@ -9,6 +9,7 @@ Sync Engine v9 - Database-First Architecture (FULL SYNC)
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from time import sleep
 from typing import List, Optional, Dict, Any
 import pandas as pd
 
@@ -1589,27 +1590,58 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False
         return None
 
 
-def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bool = False) -> Dict[str, Any]:
-    """Đồng bộ một batch mã cổ phiếu với timeout per-symbol và fast_mode"""
+def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bool = False, retry_failed: int = 2) -> Dict[str, Any]:
+    """Đồng bộ một batch mã cổ phiếu với timeout per-symbol, retry logic và fast_mode"""
+    SYMBOL_TIMEOUT = 35 if fast_mode else 60  # Fast mode = 35s, Full mode = 60s
+    MAX_RETRIES = retry_failed  # Số lần retry cho failed symbols
+    
     results = []
-    SYMBOL_TIMEOUT = 30 if fast_mode else 45  # Fast mode = 30s, Full mode = 45s
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(analyze_stock, symbol, market_rsi, fast_mode): symbol for symbol in symbols}
-
-        for future in as_completed(futures, timeout=SYMBOL_TIMEOUT + 10):
-            symbol = futures[future]
+    failed_symbols = list(symbols)  # Bắt đầu với tất cả symbols
+    
+    for attempt in range(MAX_RETRIES + 1):
+        if not failed_symbols:
+            break
+            
+        if attempt > 0:
+            print(f"[Sync] 🔄 Retry attempt {attempt}/{MAX_RETRIES} for {len(failed_symbols)} failed symbols...")
+            sleep(2)  # Chờ 2s trước khi retry
+        
+        batch_results = []
+        still_failed = []
+        
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(analyze_stock, symbol, market_rsi, fast_mode): symbol for symbol in failed_symbols}
+            
+            # Tính timeout tổng = timeout per symbol + buffer
+            total_timeout = (SYMBOL_TIMEOUT + 10) * (MAX_RETRIES - attempt + 1)  # Tăng timeout cho retry
+            
             try:
-                # Use timeout per future
-                result = future.result(timeout=SYMBOL_TIMEOUT)
-                if result:
-                    results.append(result)
+                for future in as_completed(futures, timeout=total_timeout):
+                    symbol = futures[future]
+                    try:
+                        result = future.result(timeout=SYMBOL_TIMEOUT)
+                        if result:
+                            batch_results.append(result)
+                        else:
+                            still_failed.append(symbol)
+                    except TimeoutError:
+                        print(f"[Sync] ⏱️ Timeout analyzing {symbol}")
+                        still_failed.append(symbol)
+                    except Exception as e:
+                        print(f"[Sync] Error processing {symbol}: {e}")
+                        still_failed.append(symbol)
             except TimeoutError:
-                print(f"[Sync] ⏱️ Timeout analyzing {symbol} - skipping")
-            except Exception as e:
-                print(f"[Sync] Error processing {symbol}: {e}")
-
-    return {"results": results, "count": len(results)}
+                # Timeout toàn bộ batch
+                print(f"[Sync] ⚠️ Batch timeout after {total_timeout}s")
+                still_failed = list(futures.values())
+        
+        results.extend(batch_results)
+        failed_symbols = still_failed
+    
+    if failed_symbols:
+        print(f"[Sync] ⚠️ {len(failed_symbols)} symbols failed after {MAX_RETRIES} retries: {failed_symbols}")
+    
+    return {"results": results, "count": len(results), "failed": failed_symbols}
 
 
 def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, Any]:
@@ -1648,6 +1680,8 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
     # Process in batches
     batch_size = 20
     all_results = []
+    total_failed = 0
+    failed_symbols_list = []
 
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i+batch_size]
@@ -1658,16 +1692,19 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
 
         batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode)
         all_results.extend(batch_result["results"])
+        
+        if batch_result.get("failed"):
+            total_failed += len(batch_result["failed"])
+            failed_symbols_list.extend(batch_result["failed"])
 
         # Update progress percentage
         progress = int(min(i + batch_size, len(symbols)) / len(symbols) * 100)
         sync_record.processed_symbols = min(i + batch_size, len(symbols))
         sync_record.save()
 
-    print(f"[Sync] Đã xử lý {len(all_results)}/{len(symbols)} mã thành công")
-
     # Save to Database
-    print(f"[Sync] Saving {len(all_results)} results to database...")
+    failed_msg = f" ({total_failed} failed)" if total_failed > 0 else ""
+    print(f"[Sync] Đã xử lý {len(all_results)}/{len(symbols)} mã thành công{failed_msg}")
     saved_count = save_results_to_db(all_results)
 
     # Validation: Top 5 by F-Score
