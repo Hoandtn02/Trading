@@ -276,6 +276,43 @@
       transition: opacity 0.2s;
     }
     .tooltip:hover::after { opacity: 1; }
+    
+    /* Stock Info Panel */
+    .stock-info-panel .info-item {
+      text-align: center;
+    }
+    .stock-info-panel .info-label {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .stock-info-panel .info-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+    
+    /* Positive/Negative colors */
+    .positive { color: #22c55e; }
+    .negative { color: #ef4444; }
+    .neutral { color: #94a3b8; }
+    
+    /* TP/SL badges */
+    .tp-hit { color: #22c55e; background: rgba(34,197,94,0.1); padding: 2px 6px; border-radius: 4px; }
+    .sl-hit { color: #ef4444; background: rgba(239,68,68,0.1); padding: 2px 6px; border-radius: 4px; }
+    .vetoed { color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 6px; border-radius: 4px; }
+    .holding { color: #94a3b8; }
+    
+    /* VETO row */
+    .vetoed-row { opacity: 0.5; background: rgba(239,68,68,0.05) !important; }
+    .vetoed-row:hover { opacity: 0.7; }
+    
+    /* Summary highlight */
+    .summary-card.highlight {
+      background: linear-gradient(135deg, rgba(34,197,94,0.2) 0%, rgba(34,197,94,0.05) 100%);
+      border: 1px solid rgba(34,197,94,0.3);
+    }
   </style>
 </head>
 <body>
@@ -286,8 +323,46 @@
       <div class="nav-links">
         <a href="/">Dashboard</a>
         <a href="/top-picks/">Top Picks</a>
-        <a href="/strategy-lab/">Strategy Lab</a>
-        <a href="/backtest/">Backtest</a>
+        <a href="/stocks/">Danh Sách</a>
+        <a href="/wealth-guard-backtest/" style="background: #f59e0b; color: #0f172a;">📊 Backtest FV</a>
+      </div>
+    </div>
+    
+    <!-- Stock Info Display -->
+    <div id="stockInfoPanel" class="stock-info-panel" style="display: none; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 16px; padding: 20px; margin-bottom: 24px; border: 1px solid rgba(255,255,255,0.1);">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 20px;">
+        <div class="info-item">
+          <div class="info-label">Ma CK</div>
+          <div class="info-value symbol-value" id="infoSymbol" style="font-size: 24px; font-weight: 700; color: #3b82f6;">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Nganh</div>
+          <div class="info-value" id="infoIndustry">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Gia HT</div>
+          <div class="info-value" id="infoPrice">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">RSI</div>
+          <div class="info-value" id="infoRSI">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">CMF</div>
+          <div class="info-value" id="infoCMF">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">ROE</div>
+          <div class="info-value" id="infoROE">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Mkt RSI</div>
+          <div class="info-value" id="infoMarketRSI">--</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Config</div>
+          <div class="info-value" id="infoConfig">--</div>
+        </div>
       </div>
     </div>
     
@@ -303,7 +378,7 @@
         </select>
       </div>
       <button class="btn btn-primary" id="loadBtn" onclick="loadData()">
-        📊 Nạp dữ liệu (100 phiên)
+        📊 Nạp dữ liệu (5 năm)
       </button>
       <button class="btn btn-secondary" id="stepBtn" onclick="runStepByStep()" disabled>
         ▶️ Chạy bước
@@ -330,39 +405,47 @@
       <div class="progress-text" id="progressText">Đang xử lý...</div>
     </div>
     
-    <!-- Summary Cards -->
+    <!-- Summary Cards v2 -->
     <div class="summary-grid" id="summaryGrid" style="display: none;">
       <div class="summary-card highlight">
-        <div class="value green" id="accuracyRate">0%</div>
-        <div class="label">Tỷ lệ Chính xác</div>
+        <div class="value green" id="winRate">0%</div>
+        <div class="label">Win Rate (TP)</div>
       </div>
       <div class="summary-card">
-        <div class="value" id="totalSteps">0</div>
-        <div class="label">Tổng phiên</div>
+        <div class="value" id="totalTrades">0</div>
+        <div class="label">Tổng lệnh</div>
       </div>
       <div class="summary-card">
-        <div class="value green" id="accurateCount">0</div>
-        <div class="label">Chính xác (&lt;1%)</div>
+        <div class="value green" id="tpHitCount">0</div>
+        <div class="label">TP Hit</div>
       </div>
       <div class="summary-card">
-        <div class="value yellow" id="noiseCount">0</div>
-        <div class="label">Nhiễu (&gt;3%)</div>
+        <div class="value red" id="slHitCount">0</div>
+        <div class="label">SL Hit</div>
       </div>
       <div class="summary-card">
-        <div class="value red" id="errorCount">0</div>
-        <div class="label">Sai lệch (&gt;5%)</div>
+        <div class="value yellow" id="vetoCount">0</div>
+        <div class="label">VETO</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="profitLossRatio">0</div>
+        <div class="label">Profit Factor</div>
+      </div>
+      <div class="summary-card">
+        <div class="value" id="maxDrawdown">0%</div>
+        <div class="label">Max Drawdown</div>
+      </div>
+      <div class="summary-card">
+        <div class="value green" id="totalRealProfit">0%</div>
+        <div class="label">Tổng P/L thực</div>
       </div>
       <div class="summary-card">
         <div class="value" id="avgDeviation">0%</div>
         <div class="label">Sai số TB</div>
       </div>
       <div class="summary-card">
-        <div class="value green" id="avgProfit">0%</div>
-        <div class="label">Lợi nhuận TB/FV</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="profitIfTrade">0%</div>
-        <div class="label">Lợi nhuận nếu Trade</div>
+        <div class="value" id="accuracyRate">0%</div>
+        <div class="label">Độ chính xác FV</div>
       </div>
     </div>
     
@@ -380,19 +463,25 @@
           <thead>
             <tr>
               <th>#</th>
-              <th>Ngày</th>
-              <th class="tooltip" data-tip="Giá đóng cửa ngày T">Giá T</th>
-              <th class="tooltip" data-tip="Fair Value Daily = (VWAP*0.6)+(SMA10*0.4)">FV Daily</th>
-              <th class="tooltip" data-tip="Fair Value Weekly = (VWAP*0.6)+(SMA20*0.4)">FV Weekly</th>
-              <th class="tooltip" data-tip="Giá thực tế ngày T+1">Thực tế T+1</th>
-              <th class="tooltip" data-tip="Deviation = (Actual - FV_Daily)/FV_Daily * 100">Deviation %</th>
-              <th>Đánh giá</th>
-              <th>AI Remark</th>
+              <th>Ngay</th>
+              <th>Gia T</th>
+              <th>RSI</th>
+              <th>Mkt RSI</th>
+              <th>FV Daily</th>
+              <th>Score</th>
+              <th>Trend</th>
+              <th>Nhom</th>
+              <th>Signal</th>
+              <th>T+1</th>
+              <th>Dev%</th>
+              <th>TP/SL</th>
+              <th>P/L%</th>
+              <th>Remark</th>
             </tr>
           </thead>
           <tbody id="simulationLog">
             <tr>
-              <td colspan="9">
+              <td colspan="13">
                 <div class="loading">
                   <div class="spinner"></div>
                   <div>Đang tải dữ liệu...</div>
@@ -415,6 +504,18 @@
         <div class="legend-item">
           <div class="legend-dot error"></div>
           <span>Sai lệch (&gt;5%)</span>
+        </div>
+        <div class="legend-item" style="margin-left: 20px;">
+          <div class="legend-dot" style="background: #ef4444;"></div>
+          <span>VETO</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #22c55e;"></div>
+          <span>TP Hit</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #f59e0b;"></div>
+          <span>SL Hit</span>
         </div>
       </div>
     </div>
@@ -444,7 +545,7 @@
       statusBar.innerHTML = `<span>🔄 Đang tải dữ liệu ${symbol}...</span><span></span>`;
       
       try {
-        const response = await fetch(`/api/wealth-guard/data/?symbol=${symbol}&limit=100`);
+        const response = await fetch(`/api/wealth-guard/data/?symbol=${symbol}&limit=1250`);
         const result = await response.json();
         
         if (result.error) {
@@ -455,6 +556,22 @@
         industryConfig = result.industry_config;
         currentIndex = 0;
         simulationResults = [];
+        
+        // Hiển thị Stock Info Panel
+        const panel = document.getElementById('stockInfoPanel');
+        panel.style.display = 'block';
+        
+        // Get latest data point
+        const latest = stockData[stockData.length - 1];
+        
+        document.getElementById('infoSymbol').textContent = symbol;
+        document.getElementById('infoIndustry').textContent = result.industry;
+        document.getElementById('infoPrice').textContent = latest ? latest.Close.toLocaleString() : '--';
+        document.getElementById('infoRSI').textContent = latest ? latest.RSI : '--';
+        document.getElementById('infoCMF').textContent = latest ? latest.CMF : '--';
+        document.getElementById('infoROE').textContent = latest ? latest.ROE : '--';
+        document.getElementById('infoMarketRSI').textContent = latest ? latest.Market_RSI : '--';
+        document.getElementById('infoConfig').textContent = result.industry_config.type + ' ' + result.industry_config.target;
         
         document.getElementById('statusBar').innerHTML = `
           <span class="symbol-info">📈 ${symbol}</span>
@@ -476,7 +593,7 @@
         `;
       } finally {
         loadBtn.disabled = false;
-        loadBtn.innerHTML = '📊 Nạp dữ liệu (100 phiên)';
+        loadBtn.innerHTML = '📊 Nạp dữ liệu (5 năm)';
       }
     }
     
@@ -524,13 +641,23 @@
       const total = stockData.length - 1 - startIdx;
       
       for (let i = startIdx; i < stockData.length - 1; i++) {
-        runSingleStep(i);
-        currentIndex = i + 1;
+        try {
+          runSingleStep(i);
+          currentIndex = i + 1;
+        } catch (err) {
+          console.error('Error at step', i, err);
+          simulationResults.push({
+            step: i + 1,
+            date: stockData[i]?.Date || 'N/A',
+            error: err.message
+          });
+            currentIndex = i + 1;
+        }
         
         // Update progress
         const progress = Math.round((i - startIdx + 1) / total * 100);
         progressFill.style.width = progress + '%';
-        progressText.textContent = `Đang xử lý phiên ${i - startIdx + 2}/${total} (${progress}%)`;
+        progressText.textContent = `Dang xu ly phien ${i - startIdx + 2}/${total} (${progress}%)`;
         
         // Small delay for visual effect
         if (i % 5 === 0) {
@@ -539,7 +666,7 @@
       }
       
       progressFill.style.width = '100%';
-      progressText.textContent = '✅ Hoàn tất!';
+      progressText.textContent = '✅ Hoan tat!';
       
       setTimeout(() => {
         progressDiv.classList.remove('show');
@@ -555,90 +682,312 @@
       document.getElementById('summaryGrid').scrollIntoView({ behavior: 'smooth' });
     }
     
-    // ============== RUN SINGLE STEP ==============
+    // ============== HELPER: Calculate Master Score v6 (With Slope & Industry) ==============
+    function calculateMasterScore(data, prevData = null) {
+      // Lay du lieu
+      const rsi = data.RSI || 50;
+      const cmf = data.CMF || 0;
+      const mfi = data.MFI || 50;
+      const roe = data.ROE || 20;
+      const fscore = data.F_Score || 6;
+      const marketRsi = data.Market_RSI || 50;
+      const pe = data.PE || 15;
+      const pb = data.PB || 1.5;
+      const foreign = data.Foreign_Buy || 0;
+      const industry = data.Industry || 'Default';
+      
+      // === VETO CHECK ===
+      let isVeto = false;
+      let vetoReasons = [];
+      if (marketRsi >= 80) {isVeto = true; vetoReasons.push('MKT RSI>80');}
+      if (roe < 15) {isVeto = true; vetoReasons.push('ROE<15');}
+      if (fscore < 5) {isVeto = true; vetoReasons.push('F<5');}
+      
+      // === INDUSTRY DETECTION ===
+      const isBanking = /bank|nga|nh|hdb|vcb|bid|ctg|tcb|acb|vpb|mbb|stb/i.test(industry) || 
+                        /Banking|Ngan Hang/i.test(industry);
+      
+      // === TECHNICAL SCORE (0-100) ===
+      let tScore = 0;
+      
+      // RSI zones - co dien
+      if (rsi >= 45 && rsi <= 65) tScore += 20;
+      else if (rsi >= 40 && rsi <= 75) tScore += 10;
+      else if (rsi < 30) tScore += 15;
+      
+      // MFI
+      if (mfi > 50) tScore += 20;
+      else if (mfi > 30) tScore += 10;
+      
+      // CMF
+      if (cmf > 0.1) tScore += 25;
+      else if (cmf > 0) tScore += 10;
+      
+      // Foreign
+      if (foreign > 2) tScore += 15;
+      else if (foreign > 1) tScore += 10;
+      
+      // Volume proxy
+      if (cmf > 0.2) tScore += 20;
+      
+      // === FUNDAMENTAL SCORE (0-100) ===
+      let fScore = 0;
+      if (roe >= 25) fScore += 50;
+      else if (roe >= 18) fScore += 30;
+      else fScore += 10;
+      
+      if (fscore >= 7) fScore += 40;
+      else if (fscore >= 5) fScore += 20;
+      
+      if (pe <= 15) fScore += 10;
+      
+      // === INDUSTRY WEIGHTING ===
+      // For Banking: Increase P/B and Foreign weight
+      if (isBanking) {
+        // P/B scoring (Banking quan tam P/B nhieu hon)
+        if (pb <= 1.5) fScore += 20;
+        else if (pb <= 2.0) fScore += 10;
+        
+        // Foreign importance for Banking
+        if (foreign > 3) fScore += 15;
+        else if (foreign > 1.5) fScore += 10;
+        
+        // Reduce RSI weight for Banking (vi du lieu PB/Foreign quan trong hon)
+        tScore = tScore * 0.8;
+      }
+      
+      // === MARKET WEIGHT ===
+      let marketWeight = 1.0;
+      if (marketRsi <= 25) marketWeight = 1.2;
+      else if (marketRsi >= 70) marketWeight = 0.8;
+      
+      // === MASTER SCORE ===
+      let masterScore = (fScore * 0.4 + tScore * 0.6) * marketWeight;
+      masterScore = Math.min(masterScore, 100);
+      
+      if (isVeto) masterScore = Math.min(masterScore, 10);
+      
+      // === SLOPE FILTER ===
+      let scoreDelta = 0;
+      let scoreTrend = 'STABLE';
+      if (prevData) {
+        const prevScoring = calculateMasterScore(prevData, null);
+        scoreDelta = masterScore - prevScoring.masterScore;
+        if (scoreDelta > 5) scoreTrend = 'RISING';
+        else if (scoreDelta < -5) scoreTrend = 'FALLING';
+      }
+      
+      // === RSI OVERBOUGHT WATCH ===
+      let rsiWatch = false;
+      if (rsi > 75 && scoreTrend === 'RISING') {
+        rsiWatch = true;  // Gia dang qua nong nhung van tang = WATCH
+      }
+      
+      // === GROUP ===
+      let group = 'RISK';
+      let signal = 'HOLD';
+      
+      if (isVeto) {
+        group = 'VETO';
+        signal = 'SKIP';
+      } else if (rsiWatch) {
+        // RSI qua nong nhung Score van tang = THEO DOI
+        group = 'RISK';
+        signal = 'WATCH';
+      } else if (roe >= 25 && masterScore >= 80) {
+        group = 'GOLD';
+        signal = scoreTrend === 'RISING' ? 'BUY' : 'WATCH';
+      } else if (masterScore >= 70 && scoreTrend === 'RISING') {
+        // CHI MUA KHI SCORE DANG TANG
+        group = 'GUERRILLA';
+        signal = 'BUY';
+      } else if (masterScore >= 70) {
+        group = 'GUERRILLA';
+        signal = 'WATCH';  // Score cao nhung khong tang = cho them thoi gian
+      } else if (masterScore >= 60 && rsi < 50 && scoreTrend === 'RISING') {
+        group = 'GUERRILLA';
+        signal = 'BUY';
+      } else if (rsi < 30 && masterScore >= 50) {
+        group = 'RISK';
+        signal = 'WATCH';
+      }
+      
+      return {
+        masterScore: Math.round(masterScore),
+        tScore: Math.round(tScore),
+        fScore: Math.round(fScore),
+        group,
+        signal,
+        isVeto,
+        vetoReasons: vetoReasons.join(', '),
+        scoreDelta: Math.round(scoreDelta),
+        scoreTrend,
+        rsiWatch
+      };
+    }
+    
+    // ============== RUN SINGLE STEP v6 (Slope Filter) ==============
     function runSingleStep(index) {
       const current = stockData[index];
-      const next = stockData[index + 1];
+      if (!current) return;
       
-      if (!current || !next) return;
+      const nextCandle = stockData[index + 1];
+      const t7Candle = stockData[index + 7];
+      const prevCandle = stockData[index - 1];  // Previous day for slope
       
-      // Bước 1: Dự đoán FV tại ngày T
-      const fvDaily = current.FV_Daily;
-      const fvWeekly = current.FV_Weekly;
+      // === CALCULATE MASTER SCORE with Previous Data for Slope ===
+      const scoring = calculateMasterScore(current, prevCandle);
+      const masterScore = scoring.masterScore;
+      const group = scoring.group;
+      const signal = scoring.signal;
+      const isVeto = scoring.isVeto;
+      const vetoReasons = scoring.vetoReasons;
+      const scoreDelta = scoring.scoreDelta;
+      const scoreTrend = scoring.scoreTrend;
       
-      // Bước 2: Lấy giá thực tế T+1
-      const actualPrice = next.Close;
-      
-      // Bước 3: Tính Deviation
-      const deviation = ((actualPrice - fvDaily) / fvDaily) * 100;
-      
-      // Bước 4: Đánh giá
-      let accuracy = 'noise';
+      // === KEY VARIABLES ===
+      let fvDaily = current.FV_Daily || 0;
+      let fvWeekly = current.FV_Weekly || 0;
+      let atr = current.ATR || (fvDaily * 0.02); // Fallback to 2% if no ATR
+      let tp = current.Take_Profit || (fvDaily * 1.05);
+      let sl = current.Stop_Loss || (fvDaily - atr * 2); // SL = FV - 2*ATR
+      let actualPrice = 0;
+      let deviation = 0;
+      let deviationT7 = 0;
+      let priceT7 = 0;
       let remark = '';
       
-      if (Math.abs(deviation) < 1) {
-        accuracy = 'accurate';
-        remark = 'Giá thực tế chạm vùng FV - Dự đoán CHÍNH XÁC';
-      } else if (Math.abs(deviation) < 3) {
-        accuracy = 'noise';
-        if (deviation > 0) {
-          remark = 'Giá cao hơn FV 1-3% do xung lực mua ngắn hạn';
-        } else {
-          remark = 'Giá thấp hơn FV 1-3% do áp lực chốt lời';
-        }
-      } else if (Math.abs(deviation) < 5) {
-        accuracy = 'noise';
-        if (deviation > 0) {
-          remark = `Giá cao hơn FV ${deviation.toFixed(1)}% - Có thể do tin tức tích cực`;
-        } else {
-          remark = `Giá thấp hơn FV ${Math.abs(deviation).toFixed(1)}% - Thị trường điều chỉnh`;
-        }
+      // === T+1 Analysis ===
+      if (nextCandle) {
+        actualPrice = nextCandle.Close || 0;
+        deviation = fvDaily > 0 ? ((actualPrice - fvDaily) / fvDaily) * 100 : 0;
+      }
+      
+      // === T+7 Analysis ===
+      if (t7Candle) {
+        priceT7 = t7Candle.Close || 0;
+        deviationT7 = fvWeekly > 0 ? ((priceT7 - fvWeekly) / fvWeekly) * 100 : 0;
+      }
+      
+      // === ENTRY CONDITION CHECK ===
+      let entryMatched = false;
+      let entryPrice = fvDaily;
+      
+      // === ENTRY CONDITION CHECK with Buffer ===
+      // Buffer: Cho phép khớp nếu Low <= FV + 0.2*ATR
+      let entryBuffer = atr * 0.2;
+      let entryCeiling = fvDaily + entryBuffer;
+      
+      if (nextCandle && nextCandle.Low <= entryCeiling && fvDaily > 0) {
+        entryMatched = true;
+        // Entry price: Low chạm buffer = mua ở Low
+        entryPrice = Math.min(nextCandle.Low, fvDaily); 
+      }
+      
+      // === RESULT ===
+      let tpSlResult = 'NO_SIGNAL';
+      let realProfit = 0;
+      
+      // === DECISION: Only trade if BUY signal AND Score >= 75 AND Slope Rising ===
+      if (isVeto) {
+        tpSlResult = 'VETO';
+        remark = 'VETO: ' + vetoReasons;
+      } else if (signal === 'WATCH') {
+        // RSI Watch or Score not rising = WAIT
+        tpSlResult = 'WATCH';
+        remark = 'WATCH | Score: ' + masterScore + ' | ' + group + ' | Trend: ' + scoreTrend;
+      } else if (signal !== 'BUY' || masterScore < 75) {
+        tpSlResult = 'NO_SIGNAL';
+        remark = group + ' | Score: ' + masterScore + ' | ' + scoreTrend + ' | Chua dat chuan';
+      } else if (!entryMatched) {
+        tpSlResult = 'MISSED';
+        remark = 'Low>' + entryCeiling.toFixed(0) + ' | Score: ' + masterScore + ' | ' + group + ' | ' + scoreTrend;
       } else {
-        accuracy = 'error';
-        if (deviation > 0) {
-          remark = `⚠️ FV quá thấp! Giá thực tế cao hơn ${deviation.toFixed(1)}% - Cần điều chỉnh công thức`;
+        // === EXECUTED TRADE ===
+        remark = 'BUY ' + group + ' | Score: ' + masterScore + ' | ' + scoreTrend + ' (Δ' + scoreDelta + ')';
+        
+        // ATR-based SL: Entry - 1.5 * ATR
+        // Với HDB ATR~500đ -> SL = Entry - 750đ (thoáng hơn 2% cố định)
+        let dynamicSL = entryPrice - (atr * 1.5);
+        // TP: Entry + 3*ATR cho R:R tốt (3:1.5 = 2:1)
+        let dynamicTP = entryPrice + (atr * 3);
+        
+        // TP/SL Check
+        let tpHit = false, slHit = false;
+        let tpDay = 0, slDay = 0;
+        
+        for (let d = 1; d <= 10 && index + d < stockData.length; d++) {
+          let fc = stockData[index + d];
+          if (!fc) break;
+          let high = fc.High || 0;
+          let low = fc.Low || 0;
+          
+          // Check TP first
+          if (!tpHit && high >= dynamicTP) {tpHit = true; tpDay = d;}
+          // Check SL (only if not already hit TP)
+          if (!slHit && low <= dynamicSL) {slHit = true; slDay = d;}
+          if (tpHit && !slHit) break;
+        }
+        
+        // Calculate profit with trading cost (0.3% round trip)
+        let tradingCost = 0.3;
+        if (tpHit && (!slHit || tpDay <= slDay)) {
+          tpSlResult = 'TP';
+          let exitPrice = dynamicTP;
+          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
+          remark += ' | TP +' + realProfit.toFixed(1) + '%';
+        } else if (slHit) {
+          tpSlResult = 'SL';
+          let exitPrice = dynamicSL;
+          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
+          remark += ' | SL ' + realProfit.toFixed(1) + '%';
         } else {
-          remark = `⚠️ FV quá cao! Giá thực tế thấp hơn ${Math.abs(deviation).toFixed(1)}% - Cần điều chỉnh công thức`;
+          tpSlResult = 'EOD+10';
+          let last = stockData[Math.min(index + 10, stockData.length - 1)];
+          let exitPrice = last ? (last.Close || entryPrice) : entryPrice;
+          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
+          remark += ' | EOD ' + realProfit.toFixed(1) + '%';
         }
       }
       
-      // Thêm AI insight
-      if (current.RSI < 30 && deviation > 0) {
-        remark += ' | RSI quá bán + giá phục hồi = Xác nhận đà tăng';
-      } else if (current.RSI > 70 && deviation < 0) {
-        remark += ' | RSI quá mua + giá giảm = Xác nhận đà giảm';
-      }
-      
-      // Tính profit nếu trade theo FV
-      const profitIfBuy = ((actualPrice - fvDaily) / fvDaily) * 100;
-      
+      // === PUSH RESULT ===
       simulationResults.push({
         step: index + 1,
-        date: current.Date,
-        currentPrice: current.Close,
-        fvDaily: fvDaily,
-        fvWeekly: fvWeekly,
-        actualPrice: actualPrice,
-        deviation: deviation,
-        accuracy: accuracy,
-        remark: remark,
-        profitIfBuy: profitIfBuy,
-        rsi: current.RSI
+        date: current.Date || 'N/A',
+        price: current.Close || 0,
+        rsi: current.RSI || 50,
+        fvDaily, fvWeekly,
+        cmf: current.CMF || 0,
+        masterScore,
+        group,
+        signal,
+        isVeto,
+        vetoReasons,
+        actualPrice,
+        priceT7,
+        deviation,
+        deviationT7,
+        tpSlResult,
+        realProfit,
+        remark,
+        scoreDelta,
+        scoreTrend,
+        marketRsi: current.Market_RSI || 50
       });
       
       renderSimulationLog();
     }
     
-    // ============== RENDER TABLE ==============
+    // ============== RENDER TABLE v2 ==============
     function renderSimulationLog() {
       const tbody = document.getElementById('simulationLog');
       
       if (simulationResults.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="9">
+            <td colspan="13">
               <div style="padding: 40px; text-align: center; color: #64748b;">
-                Chưa có dữ liệu. Nhấn "Nạp dữ liệu" rồi "Chạy bước" hoặc "Chạy nhanh toàn bộ"
+                Chua co du lieu. Nap du lieu roi "Chay buoc" hoac "Chay nhanh"
               </div>
             </td>
           </tr>
@@ -648,71 +997,250 @@
       
       tbody.innerHTML = simulationResults.map((r, i) => {
         const isCurrent = i === simulationResults.length - 1;
-        const isPassed = i < simulationResults.length - 1;
         
-        let devClass = r.accuracy;
-        let devLabel = '';
-        if (r.accuracy === 'accurate') devLabel = '✅ Chính xác';
-        else if (r.accuracy === 'noise') devLabel = '⚡ Nhiễu';
-        else devLabel = '❌ Sai lệch';
+        // RSI color
+        const rsiClass = r.rsi < 30 ? 'positive' : (r.rsi > 70 ? 'negative' : 'neutral');
+        
+        // Score color
+        let scoreClass = 'neutral';
+        if (r.masterScore >= 80) scoreClass = 'positive';
+        else if (r.masterScore < 50) scoreClass = 'negative';
+        
+        // Group badge
+        let groupBadge = '';
+        let groupColor = '#94a3b8';
+        if (r.group === 'GOLD') {groupBadge = 'GOLD'; groupColor = '#fbbf24';}
+        else if (r.group === 'GUERRILLA') {groupBadge = 'GUER'; groupColor = '#22c55e';}
+        else if (r.group === 'VETO') {groupBadge = 'VETO'; groupColor = '#ef4444';}
+        else {groupBadge = 'RISK'; groupColor = '#94a3b8';}
+        
+        // TP/SL badge
+        let tpSlBadge = '';
+        let tpSlClass = '';
+        if (r.tpSlResult === 'TP') {
+          tpSlBadge = 'TP';
+          tpSlClass = 'tp-hit';
+        } else if (r.tpSlResult === 'SL') {
+          tpSlBadge = 'SL';
+          tpSlClass = 'sl-hit';
+        } else if (r.tpSlResult === 'MISSED') {
+          tpSlBadge = 'MISS';
+          tpSlClass = 'vetoed';
+        } else if (r.tpSlResult === 'VETO') {
+          tpSlBadge = 'VETO';
+          tpSlClass = 'vetoed';
+        } else if (r.tpSlResult === 'NO_SIGNAL') {
+          tpSlBadge = 'HOLD';
+          tpSlClass = 'holding';
+        } else {
+          tpSlBadge = r.tpSlResult;
+          tpSlClass = 'holding';
+        }
+        
+        // Profit color
+        let profitClass = 'neutral';
+        if (r.realProfit > 0) profitClass = 'positive';
+        else if (r.realProfit < 0) profitClass = 'negative';
+        
+        // Row style
+        let rowStyle = '';
+        if (r.group === 'VETO') rowStyle = 'opacity: 0.5; background: rgba(239,68,68,0.1);';
+        else if (r.group === 'GOLD') rowStyle = 'background: rgba(251,191,36,0.05);';
+        if (isCurrent) rowStyle += ' border-left: 3px solid #3b82f6;';
         
         return `
-          <tr class="${isCurrent ? 'current-step' : ''} ${isPassed ? 'passed' : ''}">
+          <tr style="${rowStyle}">
             <td>${r.step}</td>
-            <td class="date">${r.date}</td>
-            <td class="price">${r.currentPrice.toLocaleString()}</td>
+            <td class="date" style="font-size: 11px;">${r.date}</td>
+            <td class="price">${r.price.toLocaleString()}</td>
+            <td class="${rsiClass}" style="font-weight: 600;">${r.rsi}</td>
+            <td style="font-size: 11px; font-weight: 600; color: ${r.marketRsi > 80 ? '#ef4444' : (r.marketRsi > 70 ? '#f59e0b' : '#94a3b8')};">${r.marketRsi || '--'}</td>
             <td class="fv">${r.fvDaily.toLocaleString()}</td>
-            <td class="fv">${r.fvWeekly.toLocaleString()}</td>
-            <td class="price">${r.actualPrice.toLocaleString()}</td>
-            <td class="deviation ${devClass}">${r.deviation > 0 ? '+' : ''}${r.deviation.toFixed(2)}%</td>
-            <td style="font-weight: 600;">${devLabel}</td>
-            <td class="remark">${r.remark}</td>
+            <td class="${scoreClass}" style="font-weight: 700;">${r.masterScore}</td>
+            <td style="font-size: 10px; font-weight: 600; color: ${r.scoreTrend === 'RISING' ? '#22c55e' : (r.scoreTrend === 'FALLING' ? '#ef4444' : '#94a3b8')};">${r.scoreTrend || 'STABLE'}</td>
+            <td style="font-weight: 700; color: ${groupColor};">${groupBadge}</td>
+            <td style="font-size: 11px; color: ${r.signal === 'BUY' ? '#22c55e' : (r.signal === 'WATCH' ? '#f59e0b' : '#94a3b8')};">${r.signal}</td>
+            <td class="price">${r.actualPrice > 0 ? r.actualPrice.toLocaleString() : '-'}</td>
+            <td class="${r.deviation > 0 ? 'negative' : (r.deviation < 0 ? 'positive' : '')}" style="font-weight: 600;">
+              ${r.deviation !== 0 ? (r.deviation > 0 ? '+' : '') + r.deviation.toFixed(1) + '%' : '-'}
+            </td>
+            <td class="${tpSlClass}" style="font-weight: 700; font-size: 11px;">${tpSlBadge}</td>
+            <td class="${profitClass}" style="font-weight: 700;">
+              ${r.realProfit !== 0 ? (r.realProfit > 0 ? '+' : '') + r.realProfit.toFixed(1) + '%' : '-'}
+            </td>
+            <td class="remark" style="font-size: 10px; max-width: 200px; overflow: hidden;">${r.remark}</td>
           </tr>
         `;
       }).join('');
     }
     
-    // ============== UPDATE SUMMARY ==============
+    // ============== UPDATE SUMMARY v5 (Full Metrics) ==============
     function updateSummary() {
       if (simulationResults.length === 0) return;
-      
+
       const total = simulationResults.length;
-      const accurate = simulationResults.filter(r => r.accuracy === 'accurate').length;
-      const noise = simulationResults.filter(r => r.accuracy === 'noise').length;
-      const errors = simulationResults.filter(r => r.accuracy === 'error').length;
       
-      const avgDeviation = simulationResults.reduce((sum, r) => sum + Math.abs(r.deviation), 0) / total;
-      const avgProfit = simulationResults.reduce((sum, r) => sum + r.profitIfBuy, 0) / total;
-      const totalProfitIfTrade = simulationResults.reduce((sum, r) => sum + r.profitIfBuy, 0);
+      // === FILTERS ===
+      const vetoTrades = simulationResults.filter(r => r.group === 'VETO');
+      const goldTrades = simulationResults.filter(r => r.group === 'GOLD');
+      const guerTrades = simulationResults.filter(r => r.group === 'GUERRILLA');
+      const riskTrades = simulationResults.filter(r => r.group === 'RISK');
       
-      const accuracyRate = (accurate / total * 100).toFixed(1);
+      // === EXECUTED vs SKIPPED ===
+      const executedTrades = simulationResults.filter(r => r.tpSlResult === 'TP' || r.tpSlResult === 'SL' || r.tpSlResult === 'EOD+10');
+      const tpHits = executedTrades.filter(r => r.tpSlResult === 'TP');
+      const slHits = executedTrades.filter(r => r.tpSlResult === 'SL');
+      const missedTrades = simulationResults.filter(r => r.tpSlResult === 'MISSED');
+      const noSignalTrades = simulationResults.filter(r => r.tpSlResult === 'NO_SIGNAL');
       
+      // === WIN RATE ===
+      const winRate = executedTrades.length > 0 ? (tpHits.length / executedTrades.length * 100) : 0;
+      
+      // === P/L ===
+      const totalProfit = tpHits.reduce((sum, r) => sum + Math.max(0, r.realProfit), 0);
+      const totalLoss = Math.abs(slHits.reduce((sum, r) => sum + Math.min(0, r.realProfit), 0));
+      
+      // === PROFIT FACTOR ===
+      const profitFactor = totalLoss > 0 ? (totalProfit / totalLoss) : (totalProfit > 0 ? totalProfit : 0);
+      
+      const totalRealProfit = executedTrades.reduce((sum, r) => sum + r.realProfit, 0);
+      
+      // === DRAWDOWN ===
+      let peakBalance = 100;
+      let maxDrawdown = 0;
+      let currentBalance = 100;
+      let maxConsecutiveLoss = 0;
+      let currentConsecutiveLoss = 0;
+      
+      const sorted = [...executedTrades].sort((a, b) => a.step - b.step);
+      for (const t of sorted) {
+        currentBalance += t.realProfit;
+        if (currentBalance > peakBalance) peakBalance = currentBalance;
+        const dd = ((peakBalance - currentBalance) / peakBalance) * 100;
+        if (dd > maxDrawdown) maxDrawdown = dd;
+        if (t.realProfit < 0) currentConsecutiveLoss++;
+        else {
+          if (currentConsecutiveLoss > maxConsecutiveLoss) maxConsecutiveLoss = currentConsecutiveLoss;
+          currentConsecutiveLoss = 0;
+        }
+      }
+      
+      // === VETO PROTECTION ===
+      const vetoAvoidedLoss = vetoTrades.reduce((sum, r) => {
+        // Estimate loss if these trades were executed
+        if (r.deviation < -3) return sum + 3; // Rough estimate
+        return sum;
+      }, 0);
+      
+      // === AVG TRADE ===
+      const avgWin = tpHits.length > 0 ? (totalProfit / tpHits.length) : 0;
+      const avgLoss = slHits.length > 0 ? (totalLoss / slHits.length) : 0;
+      
+      // === UPDATE UI ===
       document.getElementById('summaryGrid').style.display = 'grid';
-      document.getElementById('accuracyRate').textContent = accuracyRate + '%';
-      document.getElementById('totalSteps').textContent = total;
-      document.getElementById('accurateCount').textContent = accurate;
-      document.getElementById('noiseCount').textContent = noise;
-      document.getElementById('errorCount').textContent = errors;
-      document.getElementById('avgDeviation').textContent = avgDeviation.toFixed(2) + '%';
-      document.getElementById('avgProfit').textContent = avgProfit.toFixed(2) + '%';
-      document.getElementById('profitIfTrade').textContent = totalProfitIfTrade.toFixed(1) + '%';
       
-      // Color coding for accuracy
-      const accEl = document.getElementById('accuracyRate');
-      accEl.className = 'value';
-      if (accuracyRate >= 70) accEl.classList.add('green');
-      else if (accuracyRate >= 50) accEl.classList.add('yellow');
-      else accEl.classList.add('red');
+      document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
+      document.getElementById('winRate').className = 'value ' + (winRate >= 60 ? 'green' : (winRate >= 40 ? 'yellow' : 'red'));
+      
+      document.getElementById('totalTrades').textContent = total;
+      document.getElementById('tpHitCount').textContent = tpHits.length;
+      document.getElementById('slHitCount').textContent = slHits.length;
+      document.getElementById('vetoCount').textContent = vetoTrades.length;
+      
+      document.getElementById('profitLossRatio').textContent = profitFactor.toFixed(2);
+      document.getElementById('profitLossRatio').className = 'value ' + (profitFactor >= 1.5 ? 'green' : (profitFactor >= 1 ? 'yellow' : 'red'));
+      
+      document.getElementById('maxDrawdown').textContent = maxDrawdown.toFixed(1) + '%';
+      document.getElementById('maxDrawdown').className = 'value ' + (maxDrawdown < 10 ? 'green' : (maxDrawdown < 20 ? 'yellow' : 'red'));
+      
+      document.getElementById('totalRealProfit').textContent = (totalRealProfit >= 0 ? '+' : '') + totalRealProfit.toFixed(1) + '%';
+      document.getElementById('totalRealProfit').className = 'value ' + (totalRealProfit >= 0 ? 'green' : 'red');
+      
+      document.getElementById('avgDeviation').textContent = executedTrades.length + ' trades';
+      document.getElementById('accuracyRate').textContent = goldTrades.length + '/' + guerTrades.length;
+      
+      // === UPDATE OR CREATE CARDS ===
+      const summaryGrid = document.getElementById('summaryGrid');
+      
+      // Max Drawdown
+      let ddCard = document.getElementById('maxDrawdownCard');
+      if (!ddCard) {
+        ddCard = document.createElement('div');
+        ddCard.className = 'summary-card';
+        ddCard.id = 'maxDrawdownCard';
+        ddCard.innerHTML = `<div class="value red" id="maxDrawdown">0%</div><div class="label">Max Drawdown</div>`;
+        summaryGrid.appendChild(ddCard);
+      }
+      document.getElementById('maxDrawdown').textContent = maxDrawdown.toFixed(1) + '%';
+      document.getElementById('maxDrawdown').className = 'value ' + (maxDrawdown < 5 ? 'green' : (maxDrawdown < 15 ? 'yellow' : 'red'));
+      
+      // Max Consecutive Loss
+      let lossCard = document.getElementById('consecutiveLossCard');
+      if (!lossCard) {
+        lossCard = document.createElement('div');
+        lossCard.className = 'summary-card';
+        lossCard.id = 'consecutiveLossCard';
+        lossCard.innerHTML = `<div class="value yellow" id="maxConsecutiveLoss">0</div><div class="label">Max Thua LienTuc</div>`;
+        summaryGrid.appendChild(lossCard);
+      }
+      document.getElementById('maxConsecutiveLoss').textContent = maxConsecutiveLoss;
+      
+      // GOLD Signals
+      let goldCard = document.getElementById('goldCard');
+      if (!goldCard) {
+        goldCard = document.createElement('div');
+        goldCard.className = 'summary-card';
+        goldCard.id = 'goldCard';
+        goldCard.innerHTML = `<div class="value" style="color: #fbbf24;" id="goldCount">0</div><div class="label">GOLD Signals</div>`;
+        summaryGrid.appendChild(goldCard);
+      }
+      document.getElementById('goldCount').textContent = goldTrades.length;
+      
+      // GUER Signals
+      let guerCard = document.getElementById('guerCard');
+      if (!guerCard) {
+        guerCard = document.createElement('div');
+        guerCard.className = 'summary-card';
+        guerCard.id = 'guerCard';
+        guerCard.innerHTML = `<div class="value" style="color: #22c55e;" id="guerCount">0</div><div class="label">GUER Signals</div>`;
+        summaryGrid.appendChild(guerCard);
+      }
+      document.getElementById('guerCount').textContent = guerTrades.length;
+      
+      // Profit Factor
+      let pfCard = document.getElementById('profitFactorCard');
+      if (!pfCard) {
+        pfCard = document.createElement('div');
+        pfCard.className = 'summary-card';
+        pfCard.id = 'profitFactorCard';
+        pfCard.innerHTML = `<div class="value" id="profitFactor">0</div><div class="label">Profit Factor</div>`;
+        summaryGrid.appendChild(pfCard);
+      }
+      document.getElementById('profitFactor').textContent = profitFactor.toFixed(2);
+      document.getElementById('profitFactor').className = 'value ' + (profitFactor >= 1.5 ? 'green' : (profitFactor >= 1 ? 'yellow' : 'red'));
+      
+      // Veto Protected
+      let vetoCard = document.getElementById('vetoProtectedCard');
+      if (!vetoCard) {
+        vetoCard = document.createElement('div');
+        vetoCard.className = 'summary-card';
+        vetoCard.id = 'vetoProtectedCard';
+        vetoCard.innerHTML = `<div class="value" id="vetoProtected">0</div><div class="label">VETO Protected</div>`;
+        summaryGrid.appendChild(vetoCard);
+      }
+      document.getElementById('vetoProtected').textContent = vetoTrades.length;
+      document.getElementById('vetoProtected').className = 'value ' + (vetoTrades.length > 10 ? 'green' : 'yellow');
     }
     
     // ============== RESET ==============
     function resetSimulation() {
       currentIndex = 0;
       simulationResults = [];
-      
+
       document.getElementById('summaryGrid').style.display = 'none';
+      document.getElementById('stockInfoPanel').style.display = 'none';
       renderSimulationLog();
-      
+
       document.getElementById('stepBtn').disabled = false;
       document.getElementById('runAllBtn').disabled = false;
     }
@@ -720,33 +1248,39 @@
     // ============== EXPORT CSV ==============
     function exportCSV() {
       if (simulationResults.length === 0) {
-        alert('Chưa có dữ liệu để export!');
+        alert('Chua co du lieu!');
         return;
       }
       
-      const headers = ['Bước', 'Ngày', 'Giá T', 'FV Daily', 'FV Weekly', 'Thực tế T+1', 'Deviation %', 'Đánh giá', 'AI Remark'];
+      const headers = ['Buoc', 'Ngay', 'Gia', 'RSI', 'MktRSI', 'FV_Daily', 'Score', 'Trend', 'Nhom', 'Signal', 'T+1', 'Dev%', 'TP/SL', 'PL%', 'Remark'];
       const rows = simulationResults.map(r => [
         r.step,
         r.date,
-        r.currentPrice,
+        r.price || 0,
+        r.rsi,
+        r.marketRsi || 50,
         r.fvDaily,
-        r.fvWeekly,
-        r.actualPrice,
-        r.deviation.toFixed(2),
-        r.accuracy === 'accurate' ? 'Chinh xac' : r.accuracy === 'noise' ? 'Nhieu' : 'Sai lech',
-        r.remark
+        r.masterScore,
+        r.scoreTrend || 'STABLE',
+        r.group,
+        r.signal,
+        r.actualPrice || 0,
+        r.deviation ? r.deviation.toFixed(2) : 0,
+        r.tpSlResult,
+        r.realProfit ? r.realProfit.toFixed(2) : 0,
+        (r.remark || '').replace(/"/g, '""')
       ]);
       
-      let csv = headers.join(',') + '\n';
+      let csv = headers.join(';') + '\n';
       rows.forEach(row => {
-        csv += row.map(cell => `"${cell}"`).join(',') + '\n';
+        csv += row.map(cell => String(cell)).join(';') + '\n';
       });
       
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `wealth_guard_backtest_${document.getElementById('symbolSelect').value}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.download = 'backtest_v5_' + (document.getElementById('symbolSelect')?.value || 'unknown') + '_' + new Date().toISOString().slice(0,10) + '.csv';
       a.click();
       URL.revokeObjectURL(url);
     }

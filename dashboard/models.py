@@ -279,3 +279,74 @@ class SyncStatus(models.Model):
     @property
     def is_running(self):
         return self.status == "running"
+
+
+# ============== QUARTERLY FINANCIAL DATA ==============
+
+class QuarterlyFinancial(models.Model):
+    """Lưu trữ dữ liệu tài chính theo quý cho VETO chính xác"""
+    symbol = models.CharField(max_length=10, db_index=True)
+    quarter = models.CharField(max_length=10)  # VD: "2024-Q3"
+    quarter_date = models.DateField()  # Ngày cuối quý
+    
+    # Chỉ số tài chính
+    roe = models.FloatField(null=True, blank=True)
+    roa = models.FloatField(null=True, blank=True)
+    pe = models.FloatField(null=True, blank=True)
+    pb = models.FloatField(null=True, blank=True)
+    
+    # F-Score components
+    f_score_roc = models.IntegerField(default=0)  # Return on Change
+    f_score_roa = models.IntegerField(default=0)  # ROA > 0
+    f_score_accrual = models.IntegerField(default=0)  # Accrual nhỏ
+    
+    # Tổng F-Score (0-9)
+    f_score = models.IntegerField(default=0)
+    
+    # Revenue & Profit
+    revenue = models.BigIntegerField(null=True, blank=True)  # Doanh thu
+    net_profit = models.BigIntegerField(null=True, blank=True)  # Lợi nhuận ròng
+    profit_growth = models.FloatField(null=True, blank=True)  # Tăng trưởng lợi nhuận QoQ
+    
+    # Quality metrics
+    is_vetoed = models.BooleanField(default=False)
+    veto_reason = models.CharField(max_length=200, blank=True, default="")
+    
+    # VCI data (source)
+    vci_data = models.JSONField(default=dict, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = "quarterly_financial"
+        unique_together = ['symbol', 'quarter']
+        ordering = ['-quarter_date']
+    
+    def __str__(self):
+        return f"{self.symbol} {self.quarter} (F={self.f_score}, ROE={self.roe})"
+    
+    def calculate_f_score(self):
+        """Tính F-Score từ các thành phần"""
+        self.f_score = self.f_score_roc + self.f_score_roa + self.f_score_accrual
+        return self.f_score
+    
+    def check_veto(self):
+        """Kiểm tra điều kiện VETO dựa trên dữ liệu quý"""
+        self.is_vetoed = False
+        self.veto_reason = ""
+        
+        if self.roe is not None and self.roe < 15:
+            self.is_vetoed = True
+            self.veto_reason = "ROE < 15"
+        elif self.f_score < 5:
+            self.is_vetoed = True
+            self.veto_reason = f"F-Score < 5 ({self.f_score})"
+        
+        return self.is_vetoed
+    
+    def get_effective_roe(self, on_date):
+        """Lấy ROE hiệu quả cho ngày cụ thể (nếu quý chưa công bố thì dùng quý trước)"""
+        if self.quarter_date <= on_date:
+            return self.roe
+        return None

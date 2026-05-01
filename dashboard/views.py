@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import json
 import time
 import sqlite3
@@ -1430,33 +1432,92 @@ def wealth_guard_backtest(request: HttpRequest) -> HttpResponse:
 def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
     """
     API endpoint để lấy dữ liệu lịch sử cho Wealth Guard Backtest.
-    Trả về 100 phiên gần nhất với đầy đủ thông số kỹ thuật và cơ bản.
+    Trả về 5 năm dữ liệu với đầy đủ thông số kỹ thuật và cơ bản.
+    Sử dụng vnstock_data/vnstock như strategy_lab.
+    
+    Nâng cấp v2:
+    - High, Low cho TP/SL check
+    - ROE, F_Score cho VETO logic
+    - CMF, MFI, Foreign_Buy cho Smart Money analysis
     """
     try:
-        from .models import StockData, StockAnalysis
-        from .analyzers import StockAnalyzer
         import pandas as pd
+        import numpy as np
         
         symbol = request.GET.get("symbol", "").strip().upper()
-        limit = int(request.GET.get("limit", 100))
+        limit = int(request.GET.get("limit", 1250))  # ~5 years
         
         if not symbol:
             return JsonResponse({"error": "Symbol is required"}, status=400)
         
-        # Lấy OHLCV data từ StockAnalyzer
+        # ===== LẤY DỮ LIỆU OHLCV =====
+        ohlcv = None
+        
+        # Thử vnstock_data trước
         try:
-            analyzer = StockAnalyzer(period_ta=limit + 50)  # Extra for indicator calculation
-            ohlcv = analyzer._get_ohlcv(symbol)
+            from vnstock_data import Market
+            mkt = Market()
+            end = pd.Timestamp.today().strftime("%Y-%m-%d")
+            start = (pd.Timestamp.today() - pd.DateOffset(days=limit + 60)).strftime("%Y-%m-%d")
+            
+            df_raw = mkt.equity(symbol).ohlcv(start=start, end=end, interval="1D")
+            
+            if df_raw is not None and len(df_raw) > 0:
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    if col in df_raw.columns:
+                        df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce')
+                
+                price_cols = ['open', 'high', 'low', 'close']
+                for col in price_cols:
+                    if col in df_raw.columns:
+                        df_raw[col] = df_raw[col] * 1000
+                
+                if 'time' in df_raw.columns:
+                    df_raw['time'] = pd.to_datetime(df_raw['time'])
+                elif df_raw.index.name == 'time':
+                    df_raw = df_raw.reset_index()
+                
+                ohlcv = df_raw
         except Exception as e:
-            return JsonResponse({"error": f"Không lấy được dữ liệu: {str(e)}"}, status=500)
+            print(f"[WealthGuard] vnstock_data error: {e}")
+        
+        # Fallback: thử vnstock
+        if ohlcv is None or len(ohlcv) < 20:
+            try:
+                from vnstock.explorer.vci.quote import Quote
+                
+                q = Quote(symbol=symbol, show_log=False)
+                end = pd.Timestamp.today().strftime("%Y-%m-%d")
+                start = (pd.Timestamp.today() - pd.DateOffset(days=limit + 60)).strftime("%Y-%m-%d")
+                
+                df_raw = q.history(start=start, end=end, interval='1D')
+                
+                if df_raw is not None and len(df_raw) > 0:
+                    for col in ['open', 'high', 'low', 'close', 'volume']:
+                        if col in df_raw.columns:
+                            df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce')
+                    
+                    price_cols = ['open', 'high', 'low', 'close']
+                    for col in price_cols:
+                        if col in df_raw.columns:
+                            df_raw[col] = df_raw[col] * 1000
+                    
+                    if 'time' in df_raw.columns:
+                        df_raw['time'] = pd.to_datetime(df_raw['time'])
+                    elif df_raw.index.name == 'time':
+                        df_raw = df_raw.reset_index()
+                    
+                    ohlcv = df_raw
+            except Exception as e:
+                print(f"[WealthGuard] vnstock error: {e}")
         
         if ohlcv is None or len(ohlcv) < 20:
-            return JsonResponse({"error": "Không đủ dữ liệu để phân tích"}, status=400)
+            return JsonResponse({"error": f"Không lấy được dữ liệu cho {symbol}. Vui lòng thử mã khác."}, status=400)
         
-        # Reverse để lấy dữ liệu mới nhất trước
-        ohlcv = ohlcv.iloc[::-1].reset_index(drop=True)
+        if 'time' in ohlcv.columns:
+            ohlcv = ohlcv.sort_values('time').reset_index(drop=True)
         
-        # Calculate indicators
+        # ===== TÍNH INDICATORS =====
         df = ohlcv.copy()
         
         # SMA
@@ -1464,9 +1525,9 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
         df['sma_20'] = df['close'].rolling(20).mean()
         df['sma_50'] = df['close'].rolling(50).mean()
         
-        # VWAP approximation (using typical price)
+        # VWAP
         df['typical'] = (df['high'] + df['low'] + df['close']) / 3
-        df['vol'] = df['volume']
+        df['vol'] = df['volume'].fillna(0)
         df['vwap'] = (df['typical'] * df['vol']).rolling(14).sum() / df['vol'].rolling(14).sum()
         df['vwap'] = df['vwap'].fillna(df['close'])
         
@@ -1478,92 +1539,265 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
         df['rsi'] = 100 - (100 / (1 + rs))
         df['rsi'] = df['rsi'].fillna(50)
         
-        # Lấy chỉ limit records gần nhất
-        df = df.tail(limit).reset_index(drop=True)
+        # CMF (Chaikin Money Flow)
+        mf_multiplier = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
+        mf_multiplier = mf_multiplier.fillna(0)
+        mf_volume = mf_multiplier * df['volume']
+        df['cmf'] = mf_volume.rolling(20).sum() / df['volume'].rolling(20).sum()
+        df['cmf'] = df['cmf'].fillna(0)
         
-        # Lấy thông tin từ DB để biết industry
+        # MFI (Money Flow Index)
+        tp = (df['high'] + df['low'] + df['close']) / 3
+        mf = tp * df['volume']
+        pos_flow = mf.where(tp > tp.shift(1), 0).rolling(14).sum()
+        neg_flow = mf.where(tp < tp.shift(1), 0).rolling(14).sum()
+        mfi_ratio = pos_flow / (neg_flow + 1e-10)
+        df['mfi'] = 100 - (100 / (1 + mfi_ratio))
+        df['mfi'] = df['mfi'].fillna(50)
+        
+        # Foreign Buy Streak (simulate based on price momentum)
+        price_change = df['close'].pct_change(5).fillna(0)
+        df['foreign_buy'] = (price_change > 0).rolling(3).sum()
+        df['foreign_buy'] = df['foreign_buy'].fillna(0)
+        
+        # ROE & F-Score simulation (sử dụng trend-based simulation)
+        # Trong thực tế nên load từ financial data API
+        df['roe'] = 20.0  # Default simulation
+        df['f_score'] = 6  # Default simulation
+        
+        # VN-Index RSI (Market RSI) - Calculate from proxy or fetch real data
+        venv_site = os.path.expanduser(r"~/.venv/Lib/site-packages")
+        market_rsi_val = 50  # Default
+        
         try:
+            if venv_site not in sys.path:
+                sys.path.insert(0, venv_site)
+            
+            from vnstock_data import Quote
+            import pandas as pd
+            
+            # Fetch VN-Index data for market RSI
+            try:
+                quote = Quote(source='VCI', symbol='VNINDEX')
+                vndx_df = quote.history(start="2019-01-01", end="2026-12-31", interval="1D")
+                
+                if vndx_df is not None and not vndx_df.empty:
+                    # Calculate RSI on VN-Index
+                    delta = vndx_df['close'].diff()
+                    gain = delta.where(delta > 0, 0).rolling(14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                    rs = gain / (loss + 1e-10)
+                    vndx_df['market_rsi'] = 100 - (100 / (1 + rs))
+                    
+                    # Create lookup dict
+                    vndx_rsi = {}
+                    for _, row in vndx_df.iterrows():
+                        if pd.notna(row['market_rsi']):
+                            date_str = str(row['time'])[:10]
+                            vndx_rsi[date_str] = row['market_rsi']
+                    
+                    print(f"[BacktestAPI] Loaded {len(vndx_rsi)} VN-Index RSI data points")
+            except Exception as e:
+                print(f"[BacktestAPI] Could not fetch VN-Index: {e}")
+        except Exception as e:
+            print(f"[BacktestAPI] Market RSI setup error: {e}")
+        
+        # Market RSI proxy (sẽ được override bởi VN-Index RSI thực)
+        df['market_rsi'] = 50  # Default, sẽ update từ VN-Index
+        df['_market_rsi_override'] = False
+        
+        # Lấy industry từ DB
+        industry = 'Default'
+        pe_val = 15.0
+        pb_val = 1.5
+        roe_val = 20.0
+        try:
+            from .models import StockData
             stock_db = StockData.objects.get(symbol=symbol)
             industry = stock_db.industry or 'Default'
+            pe_val = stock_db.pe or 15.0
+            pb_val = stock_db.pb or 1.5
+            roe_val = stock_db.roe or 20.0
         except:
-            industry = 'Default'
+            pass
         
-        # Build data array
+        industry_key = next((k for k in INDUSTRY_CONFIG if k.lower() in industry.lower()), 'Default')
+        config = INDUSTRY_CONFIG.get(industry_key, INDUSTRY_CONFIG['Default'])
+        
+        # ===== FETCH QUARTERLY FINANCIAL DATA FOR VETO =====
+        quarterly_data = {}  # quarter -> {roe, f_score, is_vetoed, veto_reason}
+        
+        try:
+            from .models import QuarterlyFinancial
+            qf_records = QuarterlyFinancial.objects.filter(symbol=symbol).order_by('-quarter_date')
+            for qf in qf_records:
+                quarterly_data[qf.quarter] = {
+                    'roe': qf.roe,
+                    'f_score': qf.f_score,
+                    'is_vetoed': qf.is_vetoed,
+                    'veto_reason': qf.veto_reason
+                }
+        except Exception as e:
+            print(f"[BacktestAPI] Could not fetch QuarterlyFinancial: {e}")
+        
+        # Function to get quarter from date
+        def get_quarter(dt_str):
+            try:
+                dt = datetime.strptime(dt_str, '%Y-%m-%d')
+                q = (dt.month - 1) // 3 + 1
+                return f"{dt.year}-Q{q}"
+            except:
+                return None
+        
+        # ===== BUILD DATA ARRAY =====
         data_array = []
-        for i, row in df.iterrows():
-            vwap_val = row['vwap'] if pd.notna(row['vwap']) else row['close']
-            sma10_val = row['sma_10'] if pd.notna(row['sma_10']) else row['close']
+        for idx in range(len(df)):
+            if idx < 20:
+                continue
+                
+            row = df.iloc[idx]
             
-            # Calculate FV Daily: fv_daily = (vwap * 0.6) + (sma10 * 0.4)
+            time_val = row['time'] if 'time' in df.columns else idx
+            if hasattr(time_val, 'strftime'):
+                date_str = time_val.strftime('%Y-%m-%d')
+            else:
+                date_str = str(time_val)
+            
+            # Get quarter for this date
+            quarter = get_quarter(date_str)
+            
+            vwap_val = float(row['vwap']) if pd.notna(row['vwap']) else float(row['close'])
+            sma10_val = float(row['sma_10']) if pd.notna(row['sma_10']) else float(row['close'])
+            sma20_val = float(row['sma_20']) if pd.notna(row['sma_20']) else float(row['close'])
+            rsi_val = float(row['rsi']) if pd.notna(row['rsi']) else 50
+            cmf_val = float(row['cmf']) if pd.notna(row['cmf']) else 0
+            mfi_val = float(row['mfi']) if pd.notna(row['mfi']) else 50
+            foreign_val = float(row['foreign_buy']) if pd.notna(row['foreign_buy']) else 0
+            # Get date string for market RSI lookup
+            date_str = str(row.get('time', ''))[:10] if 'time' in df.columns else str(idx)
+            
+            # Market RSI: Ưu tiên VN-Index thực, fallback proxy
+            if 'vndx_rsi' in dir() and date_str in vndx_rsi:
+                market_rsi_val = vndx_rsi[date_str]
+            else:
+                market_rsi_val = float(row['market_rsi']) if pd.notna(row['market_rsi']) else 50
+            
+            # Use quarterly data if available, else fallback to static
+            if quarter and quarter in quarterly_data:
+                qd = quarterly_data[quarter]
+                roe_val = qd.get('roe') or roe_val
+                f_score_val = qd.get('f_score') or 6
+                is_vetoed = qd.get('is_vetoed', False)
+                veto_reason = qd.get('veto_reason', '')
+            else:
+                roe_val = float(row['roe']) if pd.notna(row['roe']) else 20.0
+                f_score_val = float(row['f_score']) if pd.notna(row['f_score']) else 6
+                is_vetoed = False
+                veto_reason = ""
+            
+            # === ATR Calculation (14-period) ===
+            atr_val = 14.0  # Default
+            if idx >= 34:  # Need at least 34 rows for 14-period ATR with smoothing
+                high_prev = float(df.iloc[idx-1]['high']) if pd.notna(df.iloc[idx-1]['high']) else float(row['high'])
+                low_prev = float(df.iloc[idx-1]['low']) if pd.notna(df.iloc[idx-1]['low']) else float(row['low'])
+                close_prev = float(df.iloc[idx-1]['close']) if pd.notna(df.iloc[idx-1]['close']) else float(row['close'])
+                high_curr = float(row['high'])
+                low_curr = float(row['low'])
+                
+                # True Range
+                tr1 = high_curr - low_curr
+                tr2 = abs(high_curr - close_prev)
+                tr3 = abs(low_curr - close_prev)
+                tr = max(tr1, tr2, tr3)
+                
+                # Calculate ATR from historical data
+                atr_sum = 0
+                for j in range(idx-13, idx+1):
+                    h = float(df.iloc[j]['high']) if pd.notna(df.iloc[j]['high']) else float(df.iloc[j]['close'])
+                    l = float(df.iloc[j]['low']) if pd.notna(df.iloc[j]['low']) else float(df.iloc[j]['close'])
+                    c = float(df.iloc[j-1]['close']) if j > 0 and pd.notna(df.iloc[j-1]['close']) else float(df.iloc[j]['close'])
+                    tr_j = max(h - l, abs(h - c), abs(l - c))
+                    atr_sum += tr_j
+                atr_val = atr_sum / 14
+            
+            # FV Daily: fv_daily = (vwap * 0.6) + (sma10 * 0.4)
             fv_daily = round((vwap_val * 0.6) + (sma10_val * 0.4), 2)
             
-            # Calculate FV Weekly (sma_20)
-            sma20_val = row['sma_20'] if pd.notna(row['sma_20']) else row['close']
+            # FV Weekly: fv_weekly = (vwap * 0.6) + (sma20 * 0.4)
             fv_weekly = round((vwap_val * 0.6) + (sma20_val * 0.4), 2)
             
-            # Get industry config
-            industry_key = next((k for k in INDUSTRY_CONFIG if k.lower() in industry.lower()), 'Default')
-            config = INDUSTRY_CONFIG.get(industry_key, INDUSTRY_CONFIG['Default'])
-            
-            # Get P/E, P/B từ DB
-            pe_val = 15.0
-            pb_val = 1.5
-            try:
-                stock_db = StockData.objects.get(symbol=symbol)
-                pe_val = stock_db.pe or 15.0
-                pb_val = stock_db.pb or 1.5
-            except:
-                pass
-            
-            # Calculate Fundamental Score (0-100)
+            # Fundamental Score
             fundamental_score = 50
             if config['type'] == 'PB' and pb_val > 0:
-                # Bank/Real Estate: prefer PB < target
                 target_pb = config['target']
                 if pb_val <= target_pb:
                     fundamental_score = 50 + (target_pb - pb_val) / target_pb * 50
                 else:
                     fundamental_score = max(20, 50 - (pb_val - target_pb) / target_pb * 30)
             elif pe_val > 0:
-                # Tech/Retail: prefer PE < target
                 target_pe = config['target']
                 if pe_val <= target_pe:
                     fundamental_score = 50 + (target_pe - pe_val) / target_pe * 50
                 else:
                     fundamental_score = max(20, 50 - (pe_val - target_pe) / target_pe * 30)
             
-            # Calculate Technical Score (0-100)
-            rsi_val = row['rsi'] if pd.notna(row['rsi']) else 50
+            # Technical Score
             technical_score = 50
             if rsi_val < 30:
-                technical_score = 80  # Oversold = good entry
+                technical_score = 80
             elif rsi_val > 70:
-                technical_score = 30  # Overbought = risky
+                technical_score = 30
             elif 40 <= rsi_val <= 60:
-                technical_score = 60  # Neutral zone
+                technical_score = 60
             
-            # Take Profit = FV Daily * 1.05 (5% upside)
-            take_profit = round(fv_daily * 1.05, 2)
+            # Take Profit (3 * ATR above FV Daily)
+            take_profit = round(fv_daily + (atr_val * 3), 2)
+            
+            # Stop Loss (1.5 * ATR below FV Daily)
+            stop_loss = round(fv_daily - (atr_val * 1.5), 2)
+            
+            # ===== VETO CHECK =====
+            is_vetoed = False
+            veto_reason = ""
+            if roe_val < 15:
+                is_vetoed = True
+                veto_reason = "ROE < 15"
+            elif f_score_val < 5:
+                is_vetoed = True
+                veto_reason = "F-Score < 5"
+            elif market_rsi_val > 80:
+                is_vetoed = True
+                veto_reason = "Market RSI > 80"
             
             record = {
-                "Date": str(row['time'])[:10] if pd.notna(row['time']) else "",
-                "Open": round(row['open'], 2) if pd.notna(row['open']) else 0,
-                "High": round(row['high'], 2) if pd.notna(row['high']) else 0,
-                "Low": round(row['low'], 2) if pd.notna(row['low']) else 0,
-                "Close": round(row['close'], 2) if pd.notna(row['close']) else 0,
+                "Date": date_str,
+                "Open": round(float(row['open']), 2) if pd.notna(row['open']) else 0,
+                "High": round(float(row['high']), 2) if pd.notna(row['high']) else 0,
+                "Low": round(float(row['low']), 2) if pd.notna(row['low']) else 0,
+                "Close": round(float(row['close']), 2) if pd.notna(row['close']) else 0,
+                "Volume": int(row['volume']) if pd.notna(row['volume']) else 0,
                 "VWAP": round(vwap_val, 2),
                 "SMA10": round(sma10_val, 2),
                 "SMA20": round(sma20_val, 2),
                 "RSI": round(rsi_val, 1),
+                "Market_RSI": round(market_rsi_val, 1),
+                "CMF": round(cmf_val, 3),
+                "MFI": round(mfi_val, 1),
+                "Foreign_Buy": round(foreign_val, 1),
                 "PE": round(pe_val, 1),
                 "PB": round(pb_val, 2),
+                "ROE": round(roe_val, 1),
+                "F_Score": round(f_score_val, 0),
                 "Fundamental_Score": round(fundamental_score, 0),
                 "Technical_Score": round(technical_score, 0),
+                "ATR": round(atr_val, 2),
                 "FV_Daily": fv_daily,
                 "FV_Weekly": fv_weekly,
                 "Take_Profit": take_profit,
+                "Stop_Loss": stop_loss,
+                "Is_Vetoed": is_vetoed,
+                "Veto_Reason": veto_reason,
                 "Industry": industry,
-                "Industry_Config": config
             }
             data_array.append(record)
         
@@ -1579,3 +1813,112 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
     except Exception as e:
         import traceback
         return JsonResponse({"error": str(e), "trace": traceback.format_exc()}, status=500)
+
+
+# ============== FETCH QUARTERLY FINANCIAL DATA ==============
+
+@csrf_exempt
+def fetch_quarterly_financial(request):
+    """Fetch dữ liệu tài chính quý từ vnstock_data và lưu vào DB"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        
+        if not symbols:
+            return JsonResponse({'error': 'No symbols provided'}, status=400)
+        
+        results = []
+        
+        for symbol in symbols:
+            try:
+                # Try vnstock_data first
+                try:
+                    from vnstock_data import Finance
+                    finance = Finance(source='VCI', symbol=symbol)
+                    
+                    # Get ratio data
+                    df_ratio = finance.ratio(period='quarter', limit=12)
+                    
+                    if df_ratio is not None and not df_ratio.empty:
+                        for _, row in df_ratio.iterrows():
+                            quarter = str(row.get('report_period', ''))
+                            if not quarter:
+                                continue
+                            
+                            # Extract ROE, F-Score components
+                            roe = row.get('ROE', None) or row.get('roe', None)
+                            if roe and isinstance(roe, str):
+                                roe = float(roe.replace('%', ''))
+                            
+                            # Calculate F-Score
+                            f_score_roc = 1 if row.get('roc_change', 0) > 0 else 0
+                            f_score_roa = 1 if (row.get('roa', 0) or 0) > 0 else 0
+                            
+                            f_score = f_score_roc + f_score_roa
+                            
+                            # Save to DB
+                            from .models import QuarterlyFinancial
+                            
+                            # Parse quarter
+                            quarter_date = None
+                            try:
+                                if 'Q1' in quarter: quarter_date = f"{quarter[:4]}-03-31"
+                                elif 'Q2' in quarter: quarter_date = f"{quarter[:4]}-06-30"
+                                elif 'Q3' in quarter: quarter_date = f"{quarter[:4]}-09-30"
+                                elif 'Q4' in quarter: quarter_date = f"{quarter[:4]}-12-31"
+                            except:
+                                pass
+                            
+                            if quarter_date:
+                                qf, created = QuarterlyFinancial.objects.update_or_create(
+                                    symbol=symbol,
+                                    quarter=quarter,
+                                    defaults={
+                                        'quarter_date': quarter_date,
+                                        'roe': roe,
+                                        'f_score': f_score,
+                                        'f_score_roc': f_score_roc,
+                                        'f_score_roa': f_score_roa,
+                                        'is_vetoed': roe < 15 if roe else False,
+                                        'veto_reason': 'ROE < 15' if roe and roe < 15 else '',
+                                        'vci_data': row.to_dict() if hasattr(row, 'to_dict') else {}
+                                    }
+                                )
+                                
+                                results.append({
+                                    'symbol': symbol,
+                                    'quarter': quarter,
+                                    'roe': roe,
+                                    'f_score': f_score,
+                                    'saved': True
+                                })
+                    else:
+                        results.append({'symbol': symbol, 'error': 'No data from vnstock_data'})
+                        
+                except ImportError:
+                    # Fallback: try free vnstock
+                    from vnstock import Finance
+                    finance = Finance(symbol=symbol)
+                    df = finance.ratio(period='quarter')
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'note': 'Used free vnstock',
+                        'data': df.tail(4).to_dict() if df is not None else None
+                    })
+                    
+            except Exception as e:
+                results.append({'symbol': symbol, 'error': str(e)})
+        
+        return JsonResponse({
+            'status': 'success',
+            'results': results,
+            'total': len(results)
+        })
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({'error': str(e), 'trace': traceback.format_exc()}, status=500)
