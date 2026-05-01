@@ -8,10 +8,10 @@ import sqlite3
 from datetime import date, datetime
 from functools import wraps
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
-from django.db import OperationalError
-from django.views.decorators.csrf import csrf_exempt
+from django.http import HttpRequest, HttpResponse, JsonResponse  # pyright: ignore[reportMissingImports]
+from django.shortcuts import render  # pyright: ignore[reportMissingImports]
+from django.db import OperationalError  # pyright: ignore[reportMissingImports]
+from django.views.decorators.csrf import csrf_exempt  # pyright: ignore[reportMissingImports]
 
 from .forms import DynamicFunctionForm
 from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset, VN30_SYMBOLS
@@ -47,7 +47,7 @@ def retry_on_db_lock(max_retries: int = 3, delay: float = 0.5):
                         time.sleep(delay * (attempt + 1))
                         continue
                     raise
-            raise last_error
+            raise last_error  # pyright: ignore[reportGeneralTypeIssues]
         return wrapper
     return decorator
 
@@ -264,7 +264,7 @@ def top_picks(request: HttpRequest) -> HttpResponse:
         context = {
             "top_picks": top_picks,
             "all_stocks": all_stocks,
-            "scan_time": sync_status.get("completed_at", "")[:19] if sync_status.get("completed_at") else "N/A",
+            "scan_time": sync_status.get("completed_at", "")[:19] if sync_status.get("completed_at") else "N/A",  # pyright: ignore[reportOptionalMemberAccess]
             "market_rsi": market_rsi,
             "market_status": "SELL ZONE" if market_rsi > 70 else "NEUTRAL",
             "bullish_count": StockAnalysis.objects.filter(signal__in=["BUY", "STRONG_BUY"]).count(),
@@ -272,8 +272,8 @@ def top_picks(request: HttpRequest) -> HttpResponse:
             "fast_count": fast,
             "total_scanned": total,
             "high_risk_count": StockAnalysis.objects.filter(is_high_risk=True).count(),
-            "is_syncing": sync_status.get("is_running", False),
-            "sync_progress": sync_status.get("progress_percent", 0),
+            "is_syncing": sync_status.get("is_running", False),  # pyright: ignore[reportOptionalMemberAccess]
+            "sync_progress": sync_status.get("progress_percent", 0),  # pyright: ignore[reportOptionalMemberAccess]
             "has_market_warning": market_rsi > 70,
             "market_warning_message": f"⚠️ SELL ZONE - VNIndex RSI: {market_rsi:.0f}" if market_rsi > 70 else "",
             "has_hot_pick": any(p["master_score"] >= 80 for p in top_picks),
@@ -407,7 +407,7 @@ def run_backtest(symbol: str, start_date: str, end_date: str, strategy: str, cap
     Run backtest for a given symbol and strategy.
     Returns trading statistics and equity curve.
     """
-    import pandas as pd
+    import pandas as pd  # pyright: ignore[reportMissingImports]
     from dashboard.analyzers import StockAnalyzer
     
     try:
@@ -818,7 +818,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
 def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     """Export tất cả stocks ra CSV"""
     import csv
-    from django.http import HttpResponse
+    from django.http import HttpResponse  # pyright: ignore[reportMissingImports]
     from .models import StockData, StockAnalysis
 
     analyses = StockAnalysis.objects.select_related("symbol").all()
@@ -911,7 +911,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     """Export chi tiết một mã cổ phiếu ra CSV với cấu trúc theo Sections"""
     import csv
-    from django.http import HttpResponse, Http404
+    from django.http import HttpResponse, Http404  # pyright: ignore[reportMissingImports]
     from .models import StockData, StockAnalysis
 
     try:
@@ -1274,10 +1274,10 @@ def api_backtest(request: HttpRequest) -> JsonResponse:
     """
     try:
         from datetime import timedelta
-        import pandas as pd
-        from django.http import JsonResponse
+        import pandas as pd  # pyright: ignore[reportMissingImports]
+        from django.http import JsonResponse  # pyright: ignore[reportMissingImports]
         from .models import StockData
-        from .sync_service import calculate_technical_indicators, get_stock_data_from_vnstock
+        from .sync_service import calculate_technical_indicators, get_stock_data_from_vnstock  # pyright: ignore[reportAttributeAccessIssue]
         
         symbol = request.GET.get("symbol", "").strip().upper()
         start_date = request.GET.get("start_date", "").strip()  # Format: YYYY-MM-DD
@@ -1441,8 +1441,8 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
     - CMF, MFI, Foreign_Buy cho Smart Money analysis
     """
     try:
-        import pandas as pd
-        import numpy as np
+        import pandas as pd  # pyright: ignore[reportMissingImports]
+        import numpy as np  # pyright: ignore[reportMissingImports]
         
         symbol = request.GET.get("symbol", "").strip().upper()
         limit = int(request.GET.get("limit", 1250))  # ~5 years
@@ -1455,7 +1455,7 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
         
         # Thử vnstock_data trước
         try:
-            from vnstock_data import Market
+            from vnstock_data import Market  # pyright: ignore[reportMissingImports]
             mkt = Market()
             end = pd.Timestamp.today().strftime("%Y-%m-%d")
             start = (pd.Timestamp.today() - pd.DateOffset(days=limit + 60)).strftime("%Y-%m-%d")
@@ -1576,6 +1576,17 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
         df.loc[above_both, 'ichimoku_status'] = 'bullish'
         df.loc[below_both, 'ichimoku_status'] = 'bearish'
         
+        # MACD (12, 26, 9)
+        ema12 = df['close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['close'].ewm(span=26, adjust=False).mean()
+        df['macd'] = ema12 - ema26
+        df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+        df['macd_histogram'] = df['macd'] - df['macd_signal']
+        # MACD status
+        df['macd_status'] = 'neutral'
+        df.loc[(df['macd'] > df['macd_signal']) & (df['macd'] > 0), 'macd_status'] = 'bullish'
+        df.loc[(df['macd'] < df['macd_signal']) & (df['macd'] < 0), 'macd_status'] = 'bearish'
+        
         # Supertrend (ATR-based, multiplier 3)
         atr_period = 10
         df['atr_st'] = (df['high'] - df['low']).rolling(atr_period).mean()
@@ -1617,8 +1628,8 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
             if venv_site not in sys.path:
                 sys.path.insert(0, venv_site)
             
-            from vnstock_data import Quote
-            import pandas as pd
+            from vnstock_data import Quote  # pyright: ignore[reportMissingImports]
+            import pandas as pd  # pyright: ignore[reportMissingImports]
             
             # Fetch VN-Index data for market RSI
             try:
@@ -1703,7 +1714,7 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
             
             time_val = row['time'] if 'time' in df.columns else idx
             if hasattr(time_val, 'strftime'):
-                date_str = time_val.strftime('%Y-%m-%d')
+                date_str = time_val.strftime('%Y-%m-%d')  # pyright: ignore[reportAttributeAccessIssue]
             else:
                 date_str = str(time_val)
             
@@ -1885,6 +1896,13 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "Supertrend_Signal": supertrend_signal,
                 "BB_Pos": round(bb_percent, 1),
                 "Vol_Ratio": round(volume_ratio, 2),
+                # MACD
+                "MACD": round(float(row.get('macd', 0)), 4),
+                "MACD_Signal": round(float(row.get('macd_signal', 0)), 4),
+                "MACD_Status": str(row.get('macd_status', 'neutral')),
+                "MACD_Histogram": round(float(row.get('macd_histogram', 0)), 4),
+                # Foreign Streak
+                "Foreign_Streak": int(float(row.get('foreign_buy', 0))),
             }
             data_array.append(record)
         
@@ -1923,7 +1941,7 @@ def fetch_quarterly_financial(request):
             try:
                 # Try vnstock_data first
                 try:
-                    from vnstock_data import Finance
+                    from vnstock_data import Finance  # pyright: ignore[reportMissingImports]
                     finance = Finance(source='VCI', symbol=symbol)
                     
                     # Get ratio data
@@ -1988,7 +2006,7 @@ def fetch_quarterly_financial(request):
                 except ImportError:
                     # Fallback: try free vnstock
                     from vnstock import Finance
-                    finance = Finance(symbol=symbol)
+                    finance = Finance(symbol=symbol)  # pyright: ignore[reportCallIssue]
                     df = finance.ratio(period='quarter')
                     
                     results.append({

@@ -682,7 +682,7 @@
       document.getElementById('summaryGrid').scrollIntoView({ behavior: 'smooth' });
     }
     
-    // ============== HELPER: Calculate Master Score v7 (FULL Wealth Guard) ==============
+    // ============== HELPER: Calculate Master Score v8 (FULL Wealth Guard + MACD) ==============
     function calculateMasterScore(data, prevData = null) {
       // Lay du lieu
       const rsi = data.RSI || 50;
@@ -706,6 +706,14 @@
       const volRatio = data.Vol_Ratio || 1.0;
       const smaTrend = (data.SMA_Trend || 'neutral').toLowerCase();
       
+      // MACD indicators
+      const macd = data.MACD || 0;
+      const macdSignal = data.MACD_Signal || 0;
+      const macdStatus = (data.MACD_Status || 'neutral').toLowerCase();
+      
+      // Foreign Streak
+      const foreignStreak = data.Foreign_Streak || 0;
+      
       // ========== HỆ THỐNG VETO (KIM BÀI MIỄN TỬ) ==========
       let isVeto = false;
       let vetoReasons = [];
@@ -718,6 +726,8 @@
       if (volRatio < 0.5) {isVeto = true; vetoReasons.push('KL giao dịch thấp');}
       if (smaTrend === 'bearish') {isVeto = true; vetoReasons.push('SMA giảm');}
       if (ichimokuTk === 'bearish') {isVeto = true; vetoReasons.push('TK-KJ giảm');}
+      // MACD VETO: macd < signal AND macd < 0 (Xu hướng giảm mạnh)
+      if (macd < macdSignal && macd < 0) {isVeto = true; vetoReasons.push('MACD giảm mạnh');}
       
       // ========== CHẤM ĐIỂM KỸ THUẬT (tScore) - ĐẦY ĐỦ ==========
       let tScore = 0;
@@ -728,6 +738,17 @@
       if (vwapStatus === 'above') tScore += 10;
       if (smaTrend === 'perfect') tScore += 20;
       if (ichimokuTk === 'bullish') tScore += 10;
+      
+      // ADX scoring (Xu hướng mạnh)
+      if (adx > 25) tScore += 10;
+      else if (adx < 20) tScore -= 5;
+      
+      // MACD scoring
+      if (macd > macdSignal) tScore += 10;
+      
+      // Foreign Streak scoring
+      if (foreignStreak > 3) tScore += 15;
+      else if (foreignStreak > 1) tScore += 10;
       
       // Xung lực (+60 điểm tối đa)
       if (rsi >= 45 && rsi <= 65) tScore += 10;
