@@ -682,7 +682,7 @@
       document.getElementById('summaryGrid').scrollIntoView({ behavior: 'smooth' });
     }
     
-    // ============== HELPER: Calculate Master Score v6 (With Slope & Industry) ==============
+    // ============== HELPER: Calculate Master Score v7 (FULL Wealth Guard) ==============
     function calculateMasterScore(data, prevData = null) {
       // Lay du lieu
       const rsi = data.RSI || 50;
@@ -696,78 +696,68 @@
       const foreign = data.Foreign_Buy || 0;
       const industry = data.Industry || 'Default';
       
-      // === VETO CHECK ===
+      // Additional indicators (from enriched data)
+      const adx = data.ADX || 25;
+      const ichimoku = (data.Ichimoku_Status || 'neutral').toLowerCase();
+      const ichimokuTk = (data.Ichimoku_TK_Cross || 'neutral').toLowerCase();
+      const supertrendSignal = (data.Supertrend_Signal || 'neutral').toLowerCase();
+      const vwapStatus = (data.VWAP_Status || 'neutral').toLowerCase();
+      const bbPos = data.BB_Pos || 50;
+      const volRatio = data.Vol_Ratio || 1.0;
+      const smaTrend = (data.SMA_Trend || 'neutral').toLowerCase();
+      
+      // ========== HỆ THỐNG VETO (KIM BÀI MIỄN TỬ) ==========
       let isVeto = false;
       let vetoReasons = [];
-      if (marketRsi >= 80) {isVeto = true; vetoReasons.push('MKT RSI>80');}
-      if (roe < 15) {isVeto = true; vetoReasons.push('ROE<15');}
-      if (fscore < 5) {isVeto = true; vetoReasons.push('F<5');}
       
-      // === INDUSTRY DETECTION ===
-      const isBanking = /bank|nga|nh|hdb|vcb|bid|ctg|tcb|acb|vpb|mbb|stb/i.test(industry) || 
-                        /Banking|Ngan Hang/i.test(industry);
+      if (marketRsi >= 80) {isVeto = true; vetoReasons.push('MKT quá mua');}
+      if (roe < 15) {isVeto = true; vetoReasons.push('ROE thấp');}
+      if (fscore < 5) {isVeto = true; vetoReasons.push('F-Score yếu');}
+      if (ichimoku === 'bearish') {isVeto = true; vetoReasons.push('Ichimoku giảm');}
+      if (bbPos > 105) {isVeto = true; vetoReasons.push('BB quá mua');}
+      if (volRatio < 0.5) {isVeto = true; vetoReasons.push('KL giao dịch thấp');}
+      if (smaTrend === 'bearish') {isVeto = true; vetoReasons.push('SMA giảm');}
+      if (ichimokuTk === 'bearish') {isVeto = true; vetoReasons.push('TK-KJ giảm');}
       
-      // === TECHNICAL SCORE (0-100) ===
+      // ========== CHẤM ĐIỂM KỸ THUẬT (tScore) - ĐẦY ĐỦ ==========
       let tScore = 0;
       
-      // RSI zones - co dien
-      if (rsi >= 45 && rsi <= 65) tScore += 20;
-      else if (rsi >= 40 && rsi <= 75) tScore += 10;
-      else if (rsi < 30) tScore += 15;
+      // Trạng thái (+65 điểm tối đa)
+      if (ichimoku === 'bullish' || ichimokuTk === 'bullish') tScore += 15;
+      if (supertrendSignal === 'buy') tScore += 10;
+      if (vwapStatus === 'above') tScore += 10;
+      if (smaTrend === 'perfect') tScore += 20;
+      if (ichimokuTk === 'bullish') tScore += 10;
       
-      // MFI
-      if (mfi > 50) tScore += 20;
-      else if (mfi > 30) tScore += 10;
+      // Xung lực (+60 điểm tối đa)
+      if (rsi >= 45 && rsi <= 65) tScore += 10;
+      else if (rsi >= 40 && rsi <= 75) tScore += 5;
+      if (mfi > 50) tScore += 10;
+      else if (mfi > 30) tScore += 5;
+      if (cmf > 0.1) tScore += 15;
+      if (volRatio >= 1.5) tScore += 20;
+      if (bbPos >= 30 && bbPos <= 70) tScore += 15;
       
-      // CMF
-      if (cmf > 0.1) tScore += 25;
-      else if (cmf > 0) tScore += 10;
+      // ========== CHẤM ĐIỂM CƠ BẢN (fScore) ==========
+      let fundScore = 0;
+      if (roe >= 25) fundScore += 50;
+      else if (roe >= 18) fundScore += 30;
+      else fundScore += 10;
+      if (fscore >= 7) fundScore += 40;
+      else if (fscore >= 5) fundScore += 20;
+      if (pe <= 15) fundScore += 10;
       
-      // Foreign
-      if (foreign > 2) tScore += 15;
-      else if (foreign > 1) tScore += 10;
-      
-      // Volume proxy
-      if (cmf > 0.2) tScore += 20;
-      
-      // === FUNDAMENTAL SCORE (0-100) ===
-      let fScore = 0;
-      if (roe >= 25) fScore += 50;
-      else if (roe >= 18) fScore += 30;
-      else fScore += 10;
-      
-      if (fscore >= 7) fScore += 40;
-      else if (fscore >= 5) fScore += 20;
-      
-      if (pe <= 15) fScore += 10;
-      
-      // === INDUSTRY WEIGHTING ===
-      // For Banking: Increase P/B and Foreign weight
-      if (isBanking) {
-        // P/B scoring (Banking quan tam P/B nhieu hon)
-        if (pb <= 1.5) fScore += 20;
-        else if (pb <= 2.0) fScore += 10;
-        
-        // Foreign importance for Banking
-        if (foreign > 3) fScore += 15;
-        else if (foreign > 1.5) fScore += 10;
-        
-        // Reduce RSI weight for Banking (vi du lieu PB/Foreign quan trong hon)
-        tScore = tScore * 0.8;
-      }
-      
-      // === MARKET WEIGHT ===
+      // ========== MARKET WEIGHT ==========
       let marketWeight = 1.0;
       if (marketRsi <= 25) marketWeight = 1.2;
       else if (marketRsi >= 70) marketWeight = 0.8;
       
-      // === MASTER SCORE ===
-      let masterScore = (fScore * 0.4 + tScore * 0.6) * marketWeight;
+      // ========== MASTER SCORE ==========
+      let masterScore = (fundScore * 0.4 + tScore * 0.6) * marketWeight;
       masterScore = Math.min(masterScore, 100);
-      
       if (isVeto) masterScore = Math.min(masterScore, 10);
       
-      // === SLOPE FILTER ===
+      // ========== SLOPE FILTER ==========
       let scoreDelta = 0;
       let scoreTrend = 'STABLE';
       if (prevData) {
@@ -777,37 +767,23 @@
         else if (scoreDelta < -5) scoreTrend = 'FALLING';
       }
       
-      // === RSI OVERBOUGHT WATCH ===
-      let rsiWatch = false;
-      if (rsi > 75 && scoreTrend === 'RISING') {
-        rsiWatch = true;  // Gia dang qua nong nhung van tang = WATCH
-      }
-      
-      // === GROUP ===
+      // ========== GROUP ==========
       let group = 'RISK';
       let signal = 'HOLD';
       
       if (isVeto) {
         group = 'VETO';
         signal = 'SKIP';
-      } else if (rsiWatch) {
-        // RSI qua nong nhung Score van tang = THEO DOI
-        group = 'RISK';
-        signal = 'WATCH';
       } else if (roe >= 25 && masterScore >= 80) {
         group = 'GOLD';
         signal = scoreTrend === 'RISING' ? 'BUY' : 'WATCH';
       } else if (masterScore >= 70 && scoreTrend === 'RISING') {
-        // CHI MUA KHI SCORE DANG TANG
         group = 'GUERRILLA';
         signal = 'BUY';
       } else if (masterScore >= 70) {
         group = 'GUERRILLA';
-        signal = 'WATCH';  // Score cao nhung khong tang = cho them thoi gian
-      } else if (masterScore >= 60 && rsi < 50 && scoreTrend === 'RISING') {
-        group = 'GUERRILLA';
-        signal = 'BUY';
-      } else if (rsi < 30 && masterScore >= 50) {
+        signal = 'WATCH';
+      } else if (masterScore >= 60) {
         group = 'RISK';
         signal = 'WATCH';
       }
@@ -815,14 +791,13 @@
       return {
         masterScore: Math.round(masterScore),
         tScore: Math.round(tScore),
-        fScore: Math.round(fScore),
+        fScore: Math.round(fundScore),
         group,
         signal,
         isVeto,
         vetoReasons: vetoReasons.join(', '),
         scoreDelta: Math.round(scoreDelta),
-        scoreTrend,
-        rsiWatch
+        scoreTrend
       };
     }
     

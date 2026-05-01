@@ -1560,6 +1560,50 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
         df['foreign_buy'] = (price_change > 0).rolling(3).sum()
         df['foreign_buy'] = df['foreign_buy'].fillna(0)
         
+        # Ichimoku (9, 26, 52 periods)
+        def calc_ichimoku(high, low, close, period):
+            hh = high.rolling(period).max()
+            ll = low.rolling(period).min()
+            return (hh + ll) / 2
+        
+        df['ichimoku_tenkan'] = calc_ichimoku(df['high'], df['low'], df['close'], 9)
+        df['ichimoku_kijun'] = calc_ichimoku(df['high'], df['low'], df['close'], 26)
+        
+        # Ichimoku status (Bullish = price above both, Bearish = below both)
+        df['ichimoku_status'] = 'neutral'
+        above_both = (df['close'] > df['ichimoku_tenkan']) & (df['close'] > df['ichimoku_kijun'])
+        below_both = (df['close'] < df['ichimoku_tenkan']) & (df['close'] < df['ichimoku_kijun'])
+        df.loc[above_both, 'ichimoku_status'] = 'bullish'
+        df.loc[below_both, 'ichimoku_status'] = 'bearish'
+        
+        # Supertrend (ATR-based, multiplier 3)
+        atr_period = 10
+        df['atr_st'] = (df['high'] - df['low']).rolling(atr_period).mean()
+        hl2 = (df['high'] + df['low']) / 2
+        df['supertrend_upper'] = hl2 + 3 * df['atr_st']
+        df['supertrend_lower'] = hl2 - 3 * df['atr_st']
+        df['supertrend_signal'] = 'neutral'
+        df.loc[df['close'] > df['supertrend_upper'].shift(1), 'supertrend_signal'] = 'buy'
+        df.loc[df['close'] < df['supertrend_lower'].shift(1), 'supertrend_signal'] = 'sell'
+        
+        # Bollinger Bands
+        bb_period = 20
+        bb_std = df['close'].rolling(bb_period).std()
+        bb_mid = df['close'].rolling(bb_period).mean()
+        df['bb_upper'] = bb_mid + 2 * bb_std
+        df['bb_lower'] = bb_mid - 2 * bb_std
+        df['bb_percent'] = ((df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])) * 100
+        df['bb_percent'] = df['bb_percent'].fillna(50)
+        
+        # Volume Ratio (current vol vs 20-day avg)
+        df['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+        df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+        
+        # VWAP Status
+        df['vwap_status'] = 'neutral'
+        df.loc[df['close'] > df['vwap'], 'vwap_status'] = 'above'
+        df.loc[df['close'] < df['vwap'], 'vwap_status'] = 'below'
+        
         # ROE & F-Score simulation (sử dụng trend-based simulation)
         # Trong thực tế nên load từ financial data API
         df['roe'] = 20.0  # Default simulation
@@ -1769,6 +1813,37 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 is_vetoed = True
                 veto_reason = "Market RSI > 80"
             
+            # Calculate additional indicators
+            adx_val = float(row['adx']) if pd.notna(row.get('adx')) else 25
+            ichimoku_tenkan = float(row['ichimoku_tenkan']) if pd.notna(row.get('ichimoku_tenkan')) else 0
+            ichimoku_kijun = float(row['ichimoku_kijun']) if pd.notna(row.get('ichimoku_kijun')) else 0
+            ichimoku_status = str(row.get('ichimoku_status', 'neutral')).lower() if pd.notna(row.get('ichimoku_status')) else 'neutral'
+            supertrend_signal = str(row.get('supertrend_signal', 'neutral')).lower() if pd.notna(row.get('supertrend_signal')) else 'neutral'
+            bb_percent = float(row.get('bb_percent', 50)) if pd.notna(row.get('bb_percent')) else 50
+            volume_ratio = float(row.get('volume_ratio', 1.0)) if pd.notna(row.get('volume_ratio')) else 1.0
+            vwap_status = str(row.get('vwap_status', 'neutral')).lower() if pd.notna(row.get('vwap_status')) else 'neutral'
+            
+            # SMA50
+            sma50_val = 0
+            if idx >= 49:
+                sma50_val = df.iloc[idx-49:idx+1]['close'].mean()
+            
+            # Calculate SMA Trend
+            sma_trend = 'neutral'
+            if sma10_val > sma20_val > sma50_val:
+                sma_trend = 'perfect'
+            elif sma10_val > sma20_val:
+                sma_trend = 'bullish'
+            elif sma10_val < sma20_val:
+                sma_trend = 'bearish'
+            
+            # Tenkan vs Kijun comparison
+            ichimoku_tk_cross = 'neutral'
+            if ichimoku_tenkan > ichimoku_kijun:
+                ichimoku_tk_cross = 'bullish'
+            elif ichimoku_tenkan < ichimoku_kijun:
+                ichimoku_tk_cross = 'bearish'
+            
             record = {
                 "Date": date_str,
                 "Open": round(float(row['open']), 2) if pd.notna(row['open']) else 0,
@@ -1777,10 +1852,14 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "Close": round(float(row['close']), 2) if pd.notna(row['close']) else 0,
                 "Volume": int(row['volume']) if pd.notna(row['volume']) else 0,
                 "VWAP": round(vwap_val, 2),
+                "VWAP_Status": vwap_status,
                 "SMA10": round(sma10_val, 2),
                 "SMA20": round(sma20_val, 2),
+                "SMA50": round(sma50_val, 2),
+                "SMA_Trend": sma_trend,
                 "RSI": round(rsi_val, 1),
                 "Market_RSI": round(market_rsi_val, 1),
+                "ADX": round(adx_val, 1),
                 "CMF": round(cmf_val, 3),
                 "MFI": round(mfi_val, 1),
                 "Foreign_Buy": round(foreign_val, 1),
@@ -1798,6 +1877,14 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "Is_Vetoed": is_vetoed,
                 "Veto_Reason": veto_reason,
                 "Industry": industry,
+                # Additional indicators for scoring
+                "Ichimoku_Status": ichimoku_status,
+                "Ichimoku_Tenkan": round(ichimoku_tenkan, 2),
+                "Ichimoku_Kijun": round(ichimoku_kijun, 2),
+                "Ichimoku_TK_Cross": ichimoku_tk_cross,
+                "Supertrend_Signal": supertrend_signal,
+                "BB_Pos": round(bb_percent, 1),
+                "Vol_Ratio": round(volume_ratio, 2),
             }
             data_array.append(record)
         
