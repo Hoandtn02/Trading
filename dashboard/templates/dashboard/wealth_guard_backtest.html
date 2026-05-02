@@ -2,1293 +2,1952 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Wealth Guard Logic Backtest</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #0a0f1a 0%, #1a1f3a 50%, #0d1526 100%);
-      color: #e2e8f0;
-      min-height: 100vh;
-      padding: 20px;
-    }
-    .container { max-width: 1600px; margin: 0 auto; }
-    
-    /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 20px 30px;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      border-radius: 16px;
-      margin-bottom: 24px;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .header h1 { color: #fff; font-size: 24px; }
-    .header h1 span { color: #f59e0b; }
-    .nav-links { display: flex; gap: 12px; }
-    .nav-links a {
-      color: rgba(255,255,255,0.7);
-      padding: 10px 20px;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.05);
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-    .nav-links a:hover { background: rgba(255,255,255,0.1); color: white; }
-    
-    /* Controls */
-    .controls {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 24px;
-      padding: 20px;
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .control-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .control-label {
-      font-size: 12px;
-      color: #94a3b8;
-      text-transform: uppercase;
-    }
-    .symbol-select {
-      padding: 12px 16px;
-      border-radius: 8px;
-      border: 2px solid #334155;
-      background: #0f172a;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      min-width: 120px;
-    }
-    .symbol-select:focus { border-color: #f59e0b; outline: none; }
-    
-    .btn {
-      padding: 12px 24px;
-      border-radius: 8px;
-      border: none;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-      color: #0f172a;
-    }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(245,158,11,0.4); }
-    .btn-secondary {
-      background: #334155;
-      color: #fff;
-    }
-    .btn-secondary:hover { background: #475569; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    
-    /* Status */
-    .status-bar {
-      padding: 12px 20px;
-      background: #0f172a;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #94a3b8;
-      display: flex;
-      justify-content: space-between;
-    }
-    .status-bar .symbol-info { color: #f59e0b; font-weight: 600; }
-    .status-bar .data-info { color: #22c55e; }
-    
-    /* Simulation Progress */
-    .simulation-progress {
-      margin: 16px 0;
-      padding: 16px;
-      background: #0f172a;
-      border-radius: 12px;
-      display: none;
-    }
-    .simulation-progress.show { display: block; }
-    .progress-bar {
-      height: 8px;
-      background: #1e293b;
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #22c55e, #16a34a);
-      width: 0%;
-      transition: width 0.3s;
-    }
-    .progress-text { font-size: 12px; color: #94a3b8; }
-    
-    /* Summary Cards */
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .summary-card {
-      padding: 20px;
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-      border-radius: 12px;
-      text-align: center;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .summary-card .value {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .summary-card .label {
-      font-size: 11px;
-      color: #64748b;
-      text-transform: uppercase;
-    }
-    .summary-card.highlight { border-color: #f59e0b; }
-    .summary-card.highlight .value { color: #22c55e; }
-    .summary-card .value.green { color: #22c55e; }
-    .summary-card .value.red { color: #ef4444; }
-    .summary-card .value.yellow { color: #f59e0b; }
-    
-    /* Simulation Table */
-    .simulation-table {
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-      border-radius: 16px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .table-header {
-      padding: 16px 20px;
-      background: #0f172a;
-      border-bottom: 1px solid #334155;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .table-header h3 { font-size: 16px; color: #fff; }
-    .table-controls { display: flex; gap: 8px; }
-    
-    .table-scroll {
-      max-height: 500px;
-      overflow-y: auto;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th, td {
-      padding: 10px 12px;
-      text-align: center;
-      font-size: 12px;
-      border-bottom: 1px solid #1e293b;
-    }
-    th {
-      background: #0f172a;
-      color: #94a3b8;
-      text-transform: uppercase;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-    td { color: #e2e8f0; }
-    td.date { color: #94a3b8; font-weight: 600; }
-    td.price { font-weight: 600; }
-    td.fv { color: #60a5fa; font-weight: 600; }
-    td.deviation { font-weight: 600; }
-    td.deviation.accurate { color: #22c55e; }
-    td.deviation.noise { color: #f59e0b; }
-    td.deviation.error { color: #ef4444; }
-    td.remark { font-size: 11px; color: #94a3b8; text-align: left; }
-    
-    tr.current-step {
-      background: rgba(245, 158, 11, 0.15);
-      border-left: 3px solid #f59e0b;
-    }
-    tr.passed { opacity: 0.6; }
-    
-    /* Accuracy Legend */
-    .legend {
-      display: flex;
-      gap: 20px;
-      padding: 12px 20px;
-      background: #0f172a;
-      border-top: 1px solid #334155;
-      font-size: 12px;
-    }
-    .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-    .legend-dot.accurate { background: #22c55e; }
-    .legend-dot.noise { background: #f59e0b; }
-    .legend-dot.error { background: #ef4444; }
-    
-    /* Loading State */
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: #94a3b8;
-    }
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid #1e293b;
-      border-top-color: #f59e0b;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    
-    /* Tooltip */
-    .tooltip {
-      position: relative;
-      cursor: help;
-    }
-    .tooltip::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 6px 10px;
-      background: #1e293b;
-      color: #fff;
-      font-size: 11px;
-      border-radius: 4px;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s;
-    }
-    .tooltip:hover::after { opacity: 1; }
-    
-    /* Stock Info Panel */
-    .stock-info-panel .info-item {
-      text-align: center;
-    }
-    .stock-info-panel .info-label {
-      font-size: 11px;
-      color: #64748b;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-    .stock-info-panel .info-value {
-      font-size: 16px;
-      font-weight: 600;
-      color: #fff;
-    }
-    
-    /* Positive/Negative colors */
-    .positive { color: #22c55e; }
-    .negative { color: #ef4444; }
-    .neutral { color: #94a3b8; }
-    
-    /* TP/SL badges */
-    .tp-hit { color: #22c55e; background: rgba(34,197,94,0.1); padding: 2px 6px; border-radius: 4px; }
-    .sl-hit { color: #ef4444; background: rgba(239,68,68,0.1); padding: 2px 6px; border-radius: 4px; }
-    .vetoed { color: #f59e0b; background: rgba(245,158,11,0.1); padding: 2px 6px; border-radius: 4px; }
-    .holding { color: #94a3b8; }
-    
-    /* VETO row */
-    .vetoed-row { opacity: 0.5; background: rgba(239,68,68,0.05) !important; }
-    .vetoed-row:hover { opacity: 0.7; }
-    
-    /* Summary highlight */
-    .summary-card.highlight {
-      background: linear-gradient(135deg, rgba(34,197,94,0.2) 0%, rgba(34,197,94,0.05) 100%);
-      border: 1px solid rgba(34,197,94,0.3);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Backtest Logic - Wealth Guard Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .header h1 { font-size: 24px; color: #fff; }
+        .header .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a {
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #1e293b;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #334155; color: #fff; }
+        .nav-links a.active { background: #3b82f6; color: #fff; }
+
+        .export-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .export-btn:hover { opacity: 0.9; }
+
+        /* Summary Cards */
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .summary-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .summary-value.buy { color: #22c55e; }
+        .summary-value.veto { color: #ef4444; }
+        .summary-value.fast { color: #f59e0b; }
+        .summary-value.qualified { color: #8b5cf6; }
+        .summary-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+        /* Filters */
+        .filters {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+        .filters .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filters label {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .filters select, .filters input {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .filters select:focus, .filters input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .filter-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #94a3b8;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover { border-color: #3b82f6; color: #fff; }
+        .filter-btn.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        /* Table */
+        .table-container {
+            background: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .table-scroll {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1400px;
+        }
+        th {
+            background: #0f172a;
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 12px 8px;
+            text-align: left;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+        }
+        th:hover { color: #fff; }
+        td {
+            padding: 10px 8px;
+            font-size: 13px;
+            border-bottom: 1px solid #1e293b;
+            white-space: nowrap;
+        }
+        tr:hover { background: #1e293b; }
+        tr.vetoed { opacity: 0.6; background: rgba(239, 68, 68, 0.05); }
+        tr.fast-pick { background: rgba(245, 158, 11, 0.05); }
+        tr.qualified { background: rgba(34, 197, 94, 0.05); }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-buy { background: #22c55e; color: #fff; }
+        .badge-sell { background: #ef4444; color: #fff; }
+        .badge-wait { background: #64748b; color: #fff; }
+        .badge-veto { background: #ef4444; color: #fff; }
+        .badge-fast { background: #f59e0b; color: #000; }
+        .badge-high-risk { background: #dc2626; color: #fff; }
+        .badge-qualified { background: #8b5cf6; color: #fff; }
+        .badge-very-low { background: #10b981; color: #fff; }
+        .badge-low { background: #22c55e; color: #fff; }
+        .badge-medium { background: #f59e0b; color: #000; }
+        .badge-gold { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
+        .badge-guerrilla { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+        .badge-risk { background: #334155; color: #94a3b8; }
+        .badge-veto-group { background: #dc2626; color: #fff; }
+
+        /* Strategy Filter Bar */
+        .strategy-filter-container {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid #334155;
+        }
+
+        /* Filter Toolbar - New Layout */
+        .filter-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 16px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .toolbar-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        }
+        .toolbar-row:first-child {
+            border-bottom: 1px solid #334155;
+        }
+        .strategy-row {
+            padding: 0;
+        }
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toolbar-input {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 180px;
+        }
+        .toolbar-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .toolbar-select {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #fff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .toolbar-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .toolbar-submit {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+            transition: all 0.2s;
+        }
+        .toolbar-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        .strategy-filter-label {
+            font-size: 13px;
+            color: #94a3b8;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .strategy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.25s ease;
+            background: #0f172a;
+            color: #94a3b8;
+        }
+        .strategy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .strategy-btn.active {
+            border-color: currentColor;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .strategy-btn.all { border-color: #64748b; }
+        .strategy-btn.all.active { background: #64748b; color: #fff; }
+        .strategy-btn.gold { border-color: #f59e0b; color: #f59e0b; }
+        .strategy-btn.gold.active { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
+        .strategy-btn.guerrilla { border-color: #22c55e; color: #22c55e; }
+        .strategy-btn.guerrilla.active { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
+        .strategy-btn.risk { border-color: #94a3b8; color: #94a3b8; }
+        .strategy-btn.risk.active { background: #475569; color: #fff; }
+        .strategy-btn.veto { border-color: #ef4444; color: #ef4444; }
+        .strategy-btn.veto.active { background: #dc2626; color: #fff; }
+        .strategy-count {
+            background: rgba(255,255,255,0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Row veto styling */
+        tr.row-veto {
+            opacity: 0.5;
+            background: rgba(239, 68, 68, 0.05) !important;
+        }
+        tr.row-veto:hover {
+            opacity: 0.8;
+        }
+
+        /* Veto tooltip */
+        .veto-tooltip {
+            position: relative;
+            cursor: help;
+        }
+        .veto-tooltip::after {
+            content: attr(data-veto-reasons);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #ef4444;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+            z-index: 100;
+            border: 1px solid #ef4444;
+            max-width: 300px;
+            white-space: normal;
+            text-align: left;
+        }
+        .veto-tooltip:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Score bar updates */
+        .score-bar.final-high { background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%); }
+        .score-bar.final-medium { background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+        .score-bar.final-low { background: linear-gradient(90deg, #ef4444 0%, #f87171 100%); }
+
+        .score-bar {
+            width: 50px;
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        .score-bar .fill {
+            height: 100%;
+            border-radius: 3px;
+        }
+        .score-high { background: #22c55e; }
+        .score-medium { background: #f59e0b; }
+        .score-low { background: #ef4444; }
+
+        .rsi-indicator {
+            font-weight: 600;
+        }
+        .rsi-overbought { color: #ef4444; }
+        .rsi-oversold { color: #22c55e; }
+        .rsi-neutral { color: #94a3b8; }
+
+        .positive { color: #22c55e; }
+        .negative { color: #ef4444; }
+
+        .symbol-cell {
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .company-cell {
+            font-size: 11px;
+            color: #64748b;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            padding: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state p { font-size: 14px; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 24px;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: #334155;
+            border: none;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { background: #475569; }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #334155;
+        }
+        .modal-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .modal-company { font-size: 14px; color: #94a3b8; margin-top: 4px; }
+        .modal-price {
+            text-align: right;
+        }
+        .modal-price .price { font-size: 32px; font-weight: 700; color: #fff; }
+        .modal-price .change { font-size: 16px; margin-top: 4px; }
+        .modal-section {
+            margin-bottom: 20px;
+        }
+        .modal-section h3 {
+            font-size: 14px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .modal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .modal-item {
+            background: #0f172a;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .modal-item .label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+        .modal-item .value { font-size: 18px; font-weight: 600; color: #fff; }
+        .modal-item .value.positive { color: #22c55e; }
+        .modal-item .value.negative { color: #ef4444; }
+        .modal-item .value.neutral { color: #94a3b8; }
+        .modal-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #334155;
+        }
+        .modal-btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .modal-btn.primary {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .modal-btn.primary:hover { background: #2563eb; }
+        .modal-btn.secondary {
+            background: #334155;
+            color: #fff;
+        }
+        .modal-btn.secondary:hover { background: #475569; }
+
+        /* Industry badges */
+        .industry-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            background: #334155;
+            color: #94a3b8;
+        }
+        .industry-banking { background: #1e3a5f; color: #60a5fa; }
+        .industry-tech { background: #1e3a3f; color: #34d399; }
+        .industry-retail { background: #3f1e5f; color: #a78bfa; }
+        .industry-real-estate { background: #5f3f1e; color: #fbbf24; }
+        .industry-steel { background: #3f3f3f; color: #9ca3af; }
+        .industry-oil { background: #3f1e1e; color: #f87171; }
+        .industry-securities { background: #1e3f1e; color: #4ade80; }
+
+        /* VWAP distance indicator */
+        .vwap-distance {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .vwap-distance.far { color: #f59e0b; }
+
+        /* Timeframe badges */
+        .timeframe-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .timeframe-emerald {
+            background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            color: #fff;
+        }
+        .timeframe-sky {
+            background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+            color: #fff;
+        }
+        .timeframe-amber {
+            background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+            color: #fff;
+        }
+
+        /* Profit/Day badge */
+        .profit-badge {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .profit-high { color: #22c55e; }
+        .profit-medium { color: #3b82f6; }
+        .profit-low { color: #94a3b8; }
+
+        /* Color Coding cho Định giá */
+.fv-daily { color: #f59e0b; } /* Mặc định màu vàng cho Daily */
+
+/* Màu xanh khi giá hiện tại < Giá trị hợp lý (Rẻ) */
+.undervalued { 
+    color: #22c55e !important; 
+    text-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+} 
+
+/* Màu đỏ khi giá hiện tại > Giá trị hợp lý (Đắt) */
+.overvalued { 
+    color: #ef4444 !important; 
+}
+    </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
     <div class="header">
-      <h1>🛡️ Wealth Guard <span>Logic Backtest</span></h1>
-      <div class="nav-links">
-        <a href="/">Dashboard</a>
-        <a href="/top-picks/">Top Picks</a>
-        <a href="/stocks/">Danh Sách</a>
-        <a href="/wealth-guard-backtest/" style="background: #f59e0b; color: #0f172a;">📊 Backtest FV</a>
-      </div>
+        <div>
+            <h1>📊 Danh Sách Cổ Phiếu</h1>
+            <div class="subtitle">Xem chi tiết tất cả cổ phiếu đã quét</div>
+            {% if last_sync %}
+            <div class="subtitle" style="font-size: 11px; color: #64748b;">
+                🔄 Cập nhật lần cuối: {{ last_sync }}
+            </div>
+            {% endif %}
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <nav class="nav-links">
+                <a href="{% url 'home' %}">Trang Chủ</a>
+                <a href="{% url 'market_overview' %}">Tổng Quan</a>
+                <a href="{% url 'top_picks' %}">Top Picks</a>
+                <a href="{% url 'stock_list' %}" class="active">Danh Sách</a>
+                <a href="{% url 'wealth_guard_backtest' %}">📊 Backtest FV</a>
+            </nav>
+            <a href="{% url 'export_stocks_csv' %}" class="export-btn">
+                📥 Export CSV
+            </a>
+        </div>
     </div>
-    
-    <!-- Stock Info Display -->
-    <div id="stockInfoPanel" class="stock-info-panel" style="display: none; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 16px; padding: 20px; margin-bottom: 24px; border: 1px solid rgba(255,255,255,0.1);">
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 20px;">
-        <div class="info-item">
-          <div class="info-label">Ma CK</div>
-          <div class="info-value symbol-value" id="infoSymbol" style="font-size: 24px; font-weight: 700; color: #3b82f6;">--</div>
+
+    <!-- Summary -->
+    <div class="summary-row">
+        <div class="summary-card">
+            <div class="summary-value">{{ total }}</div>
+            <div class="summary-label">Tổng Đã Quét</div>
         </div>
-        <div class="info-item">
-          <div class="info-label">Nganh</div>
-          <div class="info-value" id="infoIndustry">--</div>
+        <div class="summary-card">
+            <div class="summary-value buy">{{ buy_count }}</div>
+            <div class="summary-label">Tín Hiệu Mua</div>
         </div>
-        <div class="info-item">
-          <div class="info-label">Gia HT</div>
-          <div class="info-value" id="infoPrice">--</div>
+        <div class="summary-card">
+            <div class="summary-value veto">{{ veto_count }}</div>
+            <div class="summary-label">Bị Veto</div>
         </div>
-        <div class="info-item">
-          <div class="info-label">RSI</div>
-          <div class="info-value" id="infoRSI">--</div>
+        <div class="summary-card">
+            <div class="summary-value fast">{{ fast_count }}</div>
+            <div class="summary-label">Fast Picks</div>
         </div>
-        <div class="info-item">
-          <div class="info-label">CMF</div>
-          <div class="info-value" id="infoCMF">--</div>
+        <div class="summary-card">
+            <div class="summary-value qualified">{{ qualified_count }}</div>
+            <div class="summary-label">Qualified</div>
         </div>
-        <div class="info-item">
-          <div class="info-label">ROE</div>
-          <div class="info-value" id="infoROE">--</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">Mkt RSI</div>
-          <div class="info-value" id="infoMarketRSI">--</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">Config</div>
-          <div class="info-value" id="infoConfig">--</div>
-        </div>
-      </div>
     </div>
-    
-    <!-- Controls -->
-    <div class="controls">
-      <div class="control-group">
-        <span class="control-label">Mã CK:</span>
-        <select id="symbolSelect" class="symbol-select">
-          <option value="">-- Chọn mã --</option>
-          {% for s in symbols %}
-          <option value="{{ s }}">{{ s }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <button class="btn btn-primary" id="loadBtn" onclick="loadData()">
-        📊 Nạp dữ liệu (5 năm)
-      </button>
-      <button class="btn btn-secondary" id="stepBtn" onclick="runStepByStep()" disabled>
-        ▶️ Chạy bước
-      </button>
-      <button class="btn btn-primary" id="runAllBtn" onclick="runAllSimulation()" disabled>
-        ⏩ Chạy nhanh toàn bộ
-      </button>
-      <button class="btn btn-secondary" id="resetBtn" onclick="resetSimulation()" disabled>
-        🔄 Reset
-      </button>
-    </div>
-    
-    <!-- Status Bar -->
-    <div class="status-bar" id="statusBar">
-      <span>⚡ Chọn mã cổ phiếu và nhấn "Nạp dữ liệu" để bắt đầu</span>
-      <span></span>
-    </div>
-    
-    <!-- Simulation Progress -->
-    <div class="simulation-progress" id="simProgress">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-      <div class="progress-text" id="progressText">Đang xử lý...</div>
-    </div>
-    
-    <!-- Summary Cards v2 -->
-    <div class="summary-grid" id="summaryGrid" style="display: none;">
-      <div class="summary-card highlight">
-        <div class="value green" id="winRate">0%</div>
-        <div class="label">Win Rate (TP)</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="totalTrades">0</div>
-        <div class="label">Tổng lệnh</div>
-      </div>
-      <div class="summary-card">
-        <div class="value green" id="tpHitCount">0</div>
-        <div class="label">TP Hit</div>
-      </div>
-      <div class="summary-card">
-        <div class="value red" id="slHitCount">0</div>
-        <div class="label">SL Hit</div>
-      </div>
-      <div class="summary-card">
-        <div class="value yellow" id="vetoCount">0</div>
-        <div class="label">VETO</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="profitLossRatio">0</div>
-        <div class="label">Profit Factor</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="maxDrawdown">0%</div>
-        <div class="label">Max Drawdown</div>
-      </div>
-      <div class="summary-card">
-        <div class="value green" id="totalRealProfit">0%</div>
-        <div class="label">Tổng P/L thực</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="avgDeviation">0%</div>
-        <div class="label">Sai số TB</div>
-      </div>
-      <div class="summary-card">
-        <div class="value" id="accuracyRate">0%</div>
-        <div class="label">Độ chính xác FV</div>
-      </div>
-    </div>
-    
-    <!-- Simulation Table -->
-    <div class="simulation-table">
-      <div class="table-header">
-        <h3>📋 Nhật ký mô phỏng</h3>
-        <div class="table-controls">
-          <button class="btn btn-secondary" onclick="exportCSV()">📥 Export CSV</button>
+
+    <!-- 1. TOOLBAR CHỌN MÃ VÀ NGÀY -->
+    <div class="filter-toolbar" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: #1e293b; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+        <div class="toolbar-group">
+            <label style="color: #94a3b8; font-size: 13px;">Mã Cổ Phiếu:</label>
+            <select id="bt-symbol" class="toolbar-select" style="min-width: 120px;">
+                {% for sym in symbols %}
+                <option value="{{ sym }}" {% if sym == 'HDB' %}selected{% endif %}>{{ sym }}</option>
+                {% endfor %}
+            </select>
         </div>
-      </div>
-      
-      <div class="table-scroll" id="tableScroll">
+        
+        <div class="toolbar-group">
+            <label style="color: #94a3b8; font-size: 13px;">Từ ngày:</label>
+            <input type="date" id="bt-start" value="{{ default_start }}" class="toolbar-input">
+        </div>
+
+        <div class="toolbar-group">
+            <label style="color: #94a3b8; font-size: 13px;">Đến ngày:</label>
+            <input type="date" id="bt-end" value="{{ default_end }}" class="toolbar-input">
+        </div>
+        
+        <!-- Lưu ý: type="button" để không bị reload trang -->
+        <button type="button" class="toolbar-submit" onclick="runTimeSeriesBacktest()">🚀 Du Hành Thời Gian</button>
+    </div>
+
+   <!-- 2. BẢNG HIỂN THỊ KẾT QUẢ -->
+   <div class="table-container">
+    <div class="table-scroll">
         <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Ngay</th>
-              <th>Gia T</th>
-              <th>RSI</th>
-              <th>Mkt RSI</th>
-              <th>FV Daily</th>
-              <th>Score</th>
-              <th>Trend</th>
-              <th>Nhom</th>
-              <th>Signal</th>
-              <th>T+1</th>
-              <th>Dev%</th>
-              <th>TP/SL</th>
-              <th>P/L%</th>
-              <th>Remark</th>
-            </tr>
-          </thead>
-          <tbody id="simulationLog">
-            <tr>
-              <td colspan="13">
-                <div class="loading">
-                  <div class="spinner"></div>
-                  <div>Đang tải dữ liệu...</div>
-                </div>
-              </td>
-            </tr>
-          </tbody>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Ngày</th>
+                    <th>Nhóm</th>
+                    <th>Giá Đóng Cửa</th>
+                    <th>Định Giá (N/T)</th>
+                    <th>Target Yield</th>
+                    <th>%/Day</th>
+                    <th>Score</th>
+                    <th>Signal</th>
+                    <th>Criteria</th>
+                    <th>R:R</th>
+                    <th>RSI</th>
+                    <th>CMF</th>
+                    <th>Cloud</th>
+                    <th>ROE</th>
+                    <th>F-Score</th>
+                    <th>Timeframe</th>
+                    <th>Trạng Thái</th>
+                </tr>
+            </thead>
+            <!-- ĐÂY LÀ NƠI JAVASCRIPT SẼ BƠM DỮ LIỆU VÀO -->
+            <tbody id="backtest-tbody">
+                <tr>
+                    <td colspan="18" style="text-align: center; padding: 60px; color: #64748b;">
+                        <div style="font-size: 48px; margin-bottom: 16px;">⏱️</div>
+                        <p style="font-size: 16px;">Chọn mã và thời gian, sau đó nhấn "Du Hành Thời Gian" để bắt đầu</p>
+                    </td>
+                </tr>
+            </tbody>
         </table>
-      </div>
-      
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-dot accurate"></div>
-          <span>Chính xác (&lt;1%)</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot noise"></div>
-          <span>Nhiễu (1-5%)</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot error"></div>
-          <span>Sai lệch (&gt;5%)</span>
-        </div>
-        <div class="legend-item" style="margin-left: 20px;">
-          <div class="legend-dot" style="background: #ef4444;"></div>
-          <span>VETO</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot" style="background: #22c55e;"></div>
-          <span>TP Hit</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-dot" style="background: #f59e0b;"></div>
-          <span>SL Hit</span>
-        </div>
-      </div>
     </div>
-  </div>
-  
-  <script>
-    // ============== STATE ==============
-    let stockData = [];
-    let currentIndex = 0;
-    let simulationResults = [];
-    let isRunning = false;
-    let industryConfig = {};
-    
-    // ============== LOAD DATA ==============
-    async function loadData() {
-      const symbol = document.getElementById('symbolSelect').value;
-      if (!symbol) {
-        alert('Vui lòng chọn mã cổ phiếu!');
-        return;
-      }
-      
-      const loadBtn = document.getElementById('loadBtn');
-      const statusBar = document.getElementById('statusBar');
-      
-      loadBtn.disabled = true;
-      loadBtn.innerHTML = '⏳ Đang tải...';
-      statusBar.innerHTML = `<span>🔄 Đang tải dữ liệu ${symbol}...</span><span></span>`;
-      
-      try {
-        const response = await fetch(`/api/wealth-guard/data/?symbol=${symbol}&limit=1250`);
-        const result = await response.json();
-        
-        if (result.error) {
-          throw new Error(result.error);
-        }
-        
-        stockData = result.data;
-        industryConfig = result.industry_config;
-        currentIndex = 0;
-        simulationResults = [];
-        
-        // Hiển thị Stock Info Panel
-        const panel = document.getElementById('stockInfoPanel');
-        panel.style.display = 'block';
-        
-        // Get latest data point
-        const latest = stockData[stockData.length - 1];
-        
-        document.getElementById('infoSymbol').textContent = symbol;
-        document.getElementById('infoIndustry').textContent = result.industry;
-        document.getElementById('infoPrice').textContent = latest ? latest.Close.toLocaleString() : '--';
-        document.getElementById('infoRSI').textContent = latest ? latest.RSI : '--';
-        document.getElementById('infoCMF').textContent = latest ? latest.CMF : '--';
-        document.getElementById('infoROE').textContent = latest ? latest.ROE : '--';
-        document.getElementById('infoMarketRSI').textContent = latest ? latest.Market_RSI : '--';
-        document.getElementById('infoConfig').textContent = result.industry_config.type + ' ' + result.industry_config.target;
-        
-        document.getElementById('statusBar').innerHTML = `
-          <span class="symbol-info">📈 ${symbol}</span>
-          <span class="data-info">${stockData.length} phiên dữ liệu | Ngành: ${result.industry} | Config: ${industryConfig.type} ${industryConfig.target}</span>
-        `;
-        
-        // Enable buttons
-        document.getElementById('stepBtn').disabled = false;
-        document.getElementById('runAllBtn').disabled = false;
-        document.getElementById('resetBtn').disabled = false;
-        
-        // Show empty table
-        renderSimulationLog();
-        
-      } catch (error) {
-        document.getElementById('statusBar').innerHTML = `
-          <span>❌ Lỗi: ${error.message}</span>
-          <span></span>
-        `;
-      } finally {
-        loadBtn.disabled = false;
-        loadBtn.innerHTML = '📊 Nạp dữ liệu (5 năm)';
-      }
-    }
-    
-    // ============== STEP-BY-STEP SIMULATION ==============
-    function runStepByStep() {
-      if (currentIndex >= stockData.length - 1) {
-        alert('Đã chạy hết dữ liệu! Nhấn Reset để chạy lại.');
-        return;
-      }
-      
-      // Run one step
-      runSingleStep(currentIndex);
-      currentIndex++;
-      
-      // Update summary
-      updateSummary();
-      
-      // Scroll to latest
-      const tbody = document.getElementById('simulationLog');
-      const lastRow = tbody.lastElementChild;
-      if (lastRow) {
-        lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-    
-    // ============== RUN ALL SIMULATION ==============
-    async function runAllSimulation() {
-      if (isRunning) return;
-      if (stockData.length === 0) {
-        alert('Vui lòng nạp dữ liệu trước!');
-        return;
-      }
-      
-      isRunning = true;
-      document.getElementById('runAllBtn').disabled = true;
-      document.getElementById('stepBtn').disabled = true;
-      
-      const progressDiv = document.getElementById('simProgress');
-      const progressFill = document.getElementById('progressFill');
-      const progressText = document.getElementById('progressText');
-      
-      progressDiv.classList.add('show');
-      
-      const startIdx = currentIndex;
-      const total = stockData.length - 1 - startIdx;
-      
-      for (let i = startIdx; i < stockData.length - 1; i++) {
-        try {
-          runSingleStep(i);
-          currentIndex = i + 1;
-        } catch (err) {
-          console.error('Error at step', i, err);
-          simulationResults.push({
-            step: i + 1,
-            date: stockData[i]?.Date || 'N/A',
-            error: err.message
-          });
-            currentIndex = i + 1;
-        }
-        
-        // Update progress
-        const progress = Math.round((i - startIdx + 1) / total * 100);
-        progressFill.style.width = progress + '%';
-        progressText.textContent = `Dang xu ly phien ${i - startIdx + 2}/${total} (${progress}%)`;
-        
-        // Small delay for visual effect
-        if (i % 5 === 0) {
-          await new Promise(r => setTimeout(r, 50));
-        }
-      }
-      
-      progressFill.style.width = '100%';
-      progressText.textContent = '✅ Hoan tat!';
-      
-      setTimeout(() => {
-        progressDiv.classList.remove('show');
-      }, 2000);
-      
-      isRunning = false;
-      document.getElementById('runAllBtn').disabled = false;
-      document.getElementById('stepBtn').disabled = false;
-      
-      updateSummary();
-      
-      // Scroll to summary
-      document.getElementById('summaryGrid').scrollIntoView({ behavior: 'smooth' });
-    }
-    
-    // ============== HELPER: Calculate Master Score v8 (FULL Wealth Guard + MACD) ==============
-    function calculateMasterScore(data, prevData = null) {
-      // Lay du lieu
-      const rsi = data.RSI || 50;
-      const cmf = data.CMF || 0;
-      const mfi = data.MFI || 50;
-      const roe = data.ROE || 20;
-      const fscore = data.F_Score || 6;
-      const marketRsi = data.Market_RSI || 50;
-      const pe = data.PE || 15;
-      const pb = data.PB || 1.5;
-      const foreign = data.Foreign_Buy || 0;
-      const industry = data.Industry || 'Default';
-      
-      // Additional indicators (from enriched data)
-      const adx = data.ADX || 25;
-      const ichimoku = (data.Ichimoku_Status || 'neutral').toLowerCase();
-      const ichimokuTk = (data.Ichimoku_TK_Cross || 'neutral').toLowerCase();
-      const supertrendSignal = (data.Supertrend_Signal || 'neutral').toLowerCase();
-      const vwapStatus = (data.VWAP_Status || 'neutral').toLowerCase();
-      const bbPos = data.BB_Pos || 50;
-      const volRatio = data.Vol_Ratio || 1.0;
-      const smaTrend = (data.SMA_Trend || 'neutral').toLowerCase();
-      
-      // MACD indicators
-      const macd = data.MACD || 0;
-      const macdSignal = data.MACD_Signal || 0;
-      const macdStatus = (data.MACD_Status || 'neutral').toLowerCase();
-      
-      // Foreign Streak
-      const foreignStreak = data.Foreign_Streak || 0;
-      
-      // ========== HỆ THỐNG VETO (KIM BÀI MIỄN TỬ) ==========
-      let isVeto = false;
-      let vetoReasons = [];
-      
-      if (marketRsi >= 80) {isVeto = true; vetoReasons.push('MKT quá mua');}
-      if (roe < 15) {isVeto = true; vetoReasons.push('ROE thấp');}
-      if (fscore < 5) {isVeto = true; vetoReasons.push('F-Score yếu');}
-      if (ichimoku === 'bearish') {isVeto = true; vetoReasons.push('Ichimoku giảm');}
-      if (bbPos > 105) {isVeto = true; vetoReasons.push('BB quá mua');}
-      if (volRatio < 0.5) {isVeto = true; vetoReasons.push('KL giao dịch thấp');}
-      if (smaTrend === 'bearish') {isVeto = true; vetoReasons.push('SMA giảm');}
-      if (ichimokuTk === 'bearish') {isVeto = true; vetoReasons.push('TK-KJ giảm');}
-      // MACD VETO: macd < signal AND macd < 0 (Xu hướng giảm mạnh)
-      if (macd < macdSignal && macd < 0) {isVeto = true; vetoReasons.push('MACD giảm mạnh');}
-      
-      // ========== CHẤM ĐIỂM KỸ THUẬT (tScore) - ĐẦY ĐỦ ==========
-      let tScore = 0;
-      
-      // Trạng thái (+65 điểm tối đa)
-      if (ichimoku === 'bullish' || ichimokuTk === 'bullish') tScore += 15;
-      if (supertrendSignal === 'buy') tScore += 10;
-      if (vwapStatus === 'above') tScore += 10;
-      if (smaTrend === 'perfect') tScore += 20;
-      if (ichimokuTk === 'bullish') tScore += 10;
-      
-      // ADX scoring (Xu hướng mạnh)
-      if (adx > 25) tScore += 10;
-      else if (adx < 20) tScore -= 5;
-      
-      // MACD scoring
-      if (macd > macdSignal) tScore += 10;
-      
-      // Foreign Streak scoring
-      if (foreignStreak > 3) tScore += 15;
-      else if (foreignStreak > 1) tScore += 10;
-      
-      // Xung lực (+60 điểm tối đa)
-      if (rsi >= 45 && rsi <= 65) tScore += 10;
-      else if (rsi >= 40 && rsi <= 75) tScore += 5;
-      if (mfi > 50) tScore += 10;
-      else if (mfi > 30) tScore += 5;
-      if (cmf > 0.1) tScore += 15;
-      if (volRatio >= 1.5) tScore += 20;
-      if (bbPos >= 30 && bbPos <= 70) tScore += 15;
-      
-      // ========== CHẤM ĐIỂM CƠ BẢN (fScore) ==========
-      let fundScore = 0;
-      if (roe >= 25) fundScore += 50;
-      else if (roe >= 18) fundScore += 30;
-      else fundScore += 10;
-      if (fscore >= 7) fundScore += 40;
-      else if (fscore >= 5) fundScore += 20;
-      if (pe <= 15) fundScore += 10;
-      
-      // ========== MARKET WEIGHT ==========
-      let marketWeight = 1.0;
-      if (marketRsi <= 25) marketWeight = 1.2;
-      else if (marketRsi >= 70) marketWeight = 0.8;
-      
-      // ========== MASTER SCORE ==========
-      let masterScore = (fundScore * 0.4 + tScore * 0.6) * marketWeight;
-      masterScore = Math.min(masterScore, 100);
-      if (isVeto) masterScore = Math.min(masterScore, 10);
-      
-      // ========== SLOPE FILTER ==========
-      let scoreDelta = 0;
-      let scoreTrend = 'STABLE';
-      if (prevData) {
-        const prevScoring = calculateMasterScore(prevData, null);
-        scoreDelta = masterScore - prevScoring.masterScore;
-        if (scoreDelta > 5) scoreTrend = 'RISING';
-        else if (scoreDelta < -5) scoreTrend = 'FALLING';
-      }
-      
-      // ========== GROUP ==========
-      let group = 'RISK';
-      let signal = 'HOLD';
-      
-      if (isVeto) {
-        group = 'VETO';
-        signal = 'SKIP';
-      } else if (roe >= 25 && masterScore >= 80) {
-        group = 'GOLD';
-        signal = scoreTrend === 'RISING' ? 'BUY' : 'WATCH';
-      } else if (masterScore >= 70 && scoreTrend === 'RISING') {
-        group = 'GUERRILLA';
-        signal = 'BUY';
-      } else if (masterScore >= 70) {
-        group = 'GUERRILLA';
-        signal = 'WATCH';
-      } else if (masterScore >= 60) {
-        group = 'RISK';
-        signal = 'WATCH';
-      }
-      
-      return {
-        masterScore: Math.round(masterScore),
-        tScore: Math.round(tScore),
-        fScore: Math.round(fundScore),
-        group,
-        signal,
-        isVeto,
-        vetoReasons: vetoReasons.join(', '),
-        scoreDelta: Math.round(scoreDelta),
-        scoreTrend
-      };
-    }
-    
-    // ============== RUN SINGLE STEP v6 (Slope Filter) ==============
-    function runSingleStep(index) {
-      const current = stockData[index];
-      if (!current) return;
-      
-      const nextCandle = stockData[index + 1];
-      const t7Candle = stockData[index + 7];
-      const prevCandle = stockData[index - 1];  // Previous day for slope
-      
-      // === CALCULATE MASTER SCORE with Previous Data for Slope ===
-      const scoring = calculateMasterScore(current, prevCandle);
-      const masterScore = scoring.masterScore;
-      const group = scoring.group;
-      const signal = scoring.signal;
-      const isVeto = scoring.isVeto;
-      const vetoReasons = scoring.vetoReasons;
-      const scoreDelta = scoring.scoreDelta;
-      const scoreTrend = scoring.scoreTrend;
-      
-      // === KEY VARIABLES ===
-      let fvDaily = current.FV_Daily || 0;
-      let fvWeekly = current.FV_Weekly || 0;
-      let atr = current.ATR || (fvDaily * 0.02); // Fallback to 2% if no ATR
-      let tp = current.Take_Profit || (fvDaily * 1.05);
-      let sl = current.Stop_Loss || (fvDaily - atr * 2); // SL = FV - 2*ATR
-      let actualPrice = 0;
-      let deviation = 0;
-      let deviationT7 = 0;
-      let priceT7 = 0;
-      let remark = '';
-      
-      // === T+1 Analysis ===
-      if (nextCandle) {
-        actualPrice = nextCandle.Close || 0;
-        deviation = fvDaily > 0 ? ((actualPrice - fvDaily) / fvDaily) * 100 : 0;
-      }
-      
-      // === T+7 Analysis ===
-      if (t7Candle) {
-        priceT7 = t7Candle.Close || 0;
-        deviationT7 = fvWeekly > 0 ? ((priceT7 - fvWeekly) / fvWeekly) * 100 : 0;
-      }
-      
-      // === ENTRY CONDITION CHECK ===
-      let entryMatched = false;
-      let entryPrice = fvDaily;
-      
-      // === ENTRY CONDITION CHECK with Buffer ===
-      // Buffer: Cho phép khớp nếu Low <= FV + 0.2*ATR
-      let entryBuffer = atr * 0.2;
-      let entryCeiling = fvDaily + entryBuffer;
-      
-      if (nextCandle && nextCandle.Low <= entryCeiling && fvDaily > 0) {
-        entryMatched = true;
-        // Entry price: Low chạm buffer = mua ở Low
-        entryPrice = Math.min(nextCandle.Low, fvDaily); 
-      }
-      
-      // === RESULT ===
-      let tpSlResult = 'NO_SIGNAL';
-      let realProfit = 0;
-      
-      // === DECISION: Only trade if BUY signal AND Score >= 75 AND Slope Rising ===
-      if (isVeto) {
-        tpSlResult = 'VETO';
-        remark = 'VETO: ' + vetoReasons;
-      } else if (signal === 'WATCH') {
-        // RSI Watch or Score not rising = WAIT
-        tpSlResult = 'WATCH';
-        remark = 'WATCH | Score: ' + masterScore + ' | ' + group + ' | Trend: ' + scoreTrend;
-      } else if (signal !== 'BUY' || masterScore < 75) {
-        tpSlResult = 'NO_SIGNAL';
-        remark = group + ' | Score: ' + masterScore + ' | ' + scoreTrend + ' | Chua dat chuan';
-      } else if (!entryMatched) {
-        tpSlResult = 'MISSED';
-        remark = 'Low>' + entryCeiling.toFixed(0) + ' | Score: ' + masterScore + ' | ' + group + ' | ' + scoreTrend;
-      } else {
-        // === EXECUTED TRADE ===
-        remark = 'BUY ' + group + ' | Score: ' + masterScore + ' | ' + scoreTrend + ' (Δ' + scoreDelta + ')';
-        
-        // ATR-based SL: Entry - 1.5 * ATR
-        // Với HDB ATR~500đ -> SL = Entry - 750đ (thoáng hơn 2% cố định)
-        let dynamicSL = entryPrice - (atr * 1.5);
-        // TP: Entry + 3*ATR cho R:R tốt (3:1.5 = 2:1)
-        let dynamicTP = entryPrice + (atr * 3);
-        
-        // TP/SL Check
-        let tpHit = false, slHit = false;
-        let tpDay = 0, slDay = 0;
-        
-        for (let d = 1; d <= 10 && index + d < stockData.length; d++) {
-          let fc = stockData[index + d];
-          if (!fc) break;
-          let high = fc.High || 0;
-          let low = fc.Low || 0;
-          
-          // Check TP first
-          if (!tpHit && high >= dynamicTP) {tpHit = true; tpDay = d;}
-          // Check SL (only if not already hit TP)
-          if (!slHit && low <= dynamicSL) {slHit = true; slDay = d;}
-          if (tpHit && !slHit) break;
-        }
-        
-        // Calculate profit with trading cost (0.3% round trip)
-        let tradingCost = 0.3;
-        if (tpHit && (!slHit || tpDay <= slDay)) {
-          tpSlResult = 'TP';
-          let exitPrice = dynamicTP;
-          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
-          remark += ' | TP +' + realProfit.toFixed(1) + '%';
-        } else if (slHit) {
-          tpSlResult = 'SL';
-          let exitPrice = dynamicSL;
-          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
-          remark += ' | SL ' + realProfit.toFixed(1) + '%';
-        } else {
-          tpSlResult = 'EOD+10';
-          let last = stockData[Math.min(index + 10, stockData.length - 1)];
-          let exitPrice = last ? (last.Close || entryPrice) : entryPrice;
-          realProfit = ((exitPrice - entryPrice) / entryPrice) * 100 - tradingCost;
-          remark += ' | EOD ' + realProfit.toFixed(1) + '%';
-        }
-      }
-      
-      // === PUSH RESULT ===
-      simulationResults.push({
-        step: index + 1,
-        date: current.Date || 'N/A',
-        price: current.Close || 0,
-        rsi: current.RSI || 50,
-        fvDaily, fvWeekly,
-        cmf: current.CMF || 0,
-        masterScore,
-        group,
-        signal,
-        isVeto,
-        vetoReasons,
-        actualPrice,
-        priceT7,
-        deviation,
-        deviationT7,
-        tpSlResult,
-        realProfit,
-        remark,
-        scoreDelta,
-        scoreTrend,
-        marketRsi: current.Market_RSI || 50
-      });
-      
-      renderSimulationLog();
-    }
-    
-    // ============== RENDER TABLE v2 ==============
-    function renderSimulationLog() {
-      const tbody = document.getElementById('simulationLog');
-      
-      if (simulationResults.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="13">
-              <div style="padding: 40px; text-align: center; color: #64748b;">
-                Chua co du lieu. Nap du lieu roi "Chay buoc" hoac "Chay nhanh"
-              </div>
-            </td>
-          </tr>
-        `;
-        return;
-      }
-      
-      tbody.innerHTML = simulationResults.map((r, i) => {
-        const isCurrent = i === simulationResults.length - 1;
-        
-        // RSI color
-        const rsiClass = r.rsi < 30 ? 'positive' : (r.rsi > 70 ? 'negative' : 'neutral');
-        
-        // Score color
-        let scoreClass = 'neutral';
-        if (r.masterScore >= 80) scoreClass = 'positive';
-        else if (r.masterScore < 50) scoreClass = 'negative';
-        
-        // Group badge
-        let groupBadge = '';
-        let groupColor = '#94a3b8';
-        if (r.group === 'GOLD') {groupBadge = 'GOLD'; groupColor = '#fbbf24';}
-        else if (r.group === 'GUERRILLA') {groupBadge = 'GUER'; groupColor = '#22c55e';}
-        else if (r.group === 'VETO') {groupBadge = 'VETO'; groupColor = '#ef4444';}
-        else {groupBadge = 'RISK'; groupColor = '#94a3b8';}
-        
-        // TP/SL badge
-        let tpSlBadge = '';
-        let tpSlClass = '';
-        if (r.tpSlResult === 'TP') {
-          tpSlBadge = 'TP';
-          tpSlClass = 'tp-hit';
-        } else if (r.tpSlResult === 'SL') {
-          tpSlBadge = 'SL';
-          tpSlClass = 'sl-hit';
-        } else if (r.tpSlResult === 'MISSED') {
-          tpSlBadge = 'MISS';
-          tpSlClass = 'vetoed';
-        } else if (r.tpSlResult === 'VETO') {
-          tpSlBadge = 'VETO';
-          tpSlClass = 'vetoed';
-        } else if (r.tpSlResult === 'NO_SIGNAL') {
-          tpSlBadge = 'HOLD';
-          tpSlClass = 'holding';
-        } else {
-          tpSlBadge = r.tpSlResult;
-          tpSlClass = 'holding';
-        }
-        
-        // Profit color
-        let profitClass = 'neutral';
-        if (r.realProfit > 0) profitClass = 'positive';
-        else if (r.realProfit < 0) profitClass = 'negative';
-        
-        // Row style
-        let rowStyle = '';
-        if (r.group === 'VETO') rowStyle = 'opacity: 0.5; background: rgba(239,68,68,0.1);';
-        else if (r.group === 'GOLD') rowStyle = 'background: rgba(251,191,36,0.05);';
-        if (isCurrent) rowStyle += ' border-left: 3px solid #3b82f6;';
-        
-        return `
-          <tr style="${rowStyle}">
-            <td>${r.step}</td>
-            <td class="date" style="font-size: 11px;">${r.date}</td>
-            <td class="price">${r.price.toLocaleString()}</td>
-            <td class="${rsiClass}" style="font-weight: 600;">${r.rsi}</td>
-            <td style="font-size: 11px; font-weight: 600; color: ${r.marketRsi > 80 ? '#ef4444' : (r.marketRsi > 70 ? '#f59e0b' : '#94a3b8')};">${r.marketRsi || '--'}</td>
-            <td class="fv">${r.fvDaily.toLocaleString()}</td>
-            <td class="${scoreClass}" style="font-weight: 700;">${r.masterScore}</td>
-            <td style="font-size: 10px; font-weight: 600; color: ${r.scoreTrend === 'RISING' ? '#22c55e' : (r.scoreTrend === 'FALLING' ? '#ef4444' : '#94a3b8')};">${r.scoreTrend || 'STABLE'}</td>
-            <td style="font-weight: 700; color: ${groupColor};">${groupBadge}</td>
-            <td style="font-size: 11px; color: ${r.signal === 'BUY' ? '#22c55e' : (r.signal === 'WATCH' ? '#f59e0b' : '#94a3b8')};">${r.signal}</td>
-            <td class="price">${r.actualPrice > 0 ? r.actualPrice.toLocaleString() : '-'}</td>
-            <td class="${r.deviation > 0 ? 'negative' : (r.deviation < 0 ? 'positive' : '')}" style="font-weight: 600;">
-              ${r.deviation !== 0 ? (r.deviation > 0 ? '+' : '') + r.deviation.toFixed(1) + '%' : '-'}
-            </td>
-            <td class="${tpSlClass}" style="font-weight: 700; font-size: 11px;">${tpSlBadge}</td>
-            <td class="${profitClass}" style="font-weight: 700;">
-              ${r.realProfit !== 0 ? (r.realProfit > 0 ? '+' : '') + r.realProfit.toFixed(1) + '%' : '-'}
-            </td>
-            <td class="remark" style="font-size: 10px; max-width: 200px; overflow: hidden;">${r.remark}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-    
-    // ============== UPDATE SUMMARY v5 (Full Metrics) ==============
-    function updateSummary() {
-      if (simulationResults.length === 0) return;
+</div>
 
-      const total = simulationResults.length;
-      
-      // === FILTERS ===
-      const vetoTrades = simulationResults.filter(r => r.group === 'VETO');
-      const goldTrades = simulationResults.filter(r => r.group === 'GOLD');
-      const guerTrades = simulationResults.filter(r => r.group === 'GUERRILLA');
-      const riskTrades = simulationResults.filter(r => r.group === 'RISK');
-      
-      // === EXECUTED vs SKIPPED ===
-      const executedTrades = simulationResults.filter(r => r.tpSlResult === 'TP' || r.tpSlResult === 'SL' || r.tpSlResult === 'EOD+10');
-      const tpHits = executedTrades.filter(r => r.tpSlResult === 'TP');
-      const slHits = executedTrades.filter(r => r.tpSlResult === 'SL');
-      const missedTrades = simulationResults.filter(r => r.tpSlResult === 'MISSED');
-      const noSignalTrades = simulationResults.filter(r => r.tpSlResult === 'NO_SIGNAL');
-      
-      // === WIN RATE ===
-      const winRate = executedTrades.length > 0 ? (tpHits.length / executedTrades.length * 100) : 0;
-      
-      // === P/L ===
-      const totalProfit = tpHits.reduce((sum, r) => sum + Math.max(0, r.realProfit), 0);
-      const totalLoss = Math.abs(slHits.reduce((sum, r) => sum + Math.min(0, r.realProfit), 0));
-      
-      // === PROFIT FACTOR ===
-      const profitFactor = totalLoss > 0 ? (totalProfit / totalLoss) : (totalProfit > 0 ? totalProfit : 0);
-      
-      const totalRealProfit = executedTrades.reduce((sum, r) => sum + r.realProfit, 0);
-      
-      // === DRAWDOWN ===
-      let peakBalance = 100;
-      let maxDrawdown = 0;
-      let currentBalance = 100;
-      let maxConsecutiveLoss = 0;
-      let currentConsecutiveLoss = 0;
-      
-      const sorted = [...executedTrades].sort((a, b) => a.step - b.step);
-      for (const t of sorted) {
-        currentBalance += t.realProfit;
-        if (currentBalance > peakBalance) peakBalance = currentBalance;
-        const dd = ((peakBalance - currentBalance) / peakBalance) * 100;
-        if (dd > maxDrawdown) maxDrawdown = dd;
-        if (t.realProfit < 0) currentConsecutiveLoss++;
-        else {
-          if (currentConsecutiveLoss > maxConsecutiveLoss) maxConsecutiveLoss = currentConsecutiveLoss;
-          currentConsecutiveLoss = 0;
+<script>
+    const INDUSTRY_CONFIG = {
+        'Banking': { type: 'PB', target: 1.65 },
+        'Real Estate': { type: 'PB', target: 1.8 },
+        'Securities': { type: 'PB', target: 2.0 },
+        'Technology': { type: 'PE', target: 18.0 },
+        'Retail': { type: 'PE', target: 15.0 },
+        'FMCG': { type: 'PE', target: 14.0 },
+        'Oil & Gas': { type: 'PE', target: 9.0 },
+        'Steel': { type: 'PE', target: 8.5 },
+        'Default': { type: 'PE', target: 11.0 }
+    };
+
+    // ========== CHUẨN HÓA DATA ATTRIBUTES ==========
+    function normalizeDataAttributes() {
+        const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+        
+        rows.forEach(row => {
+            let avgVol = parseFloat(row.dataset.avgVolume) || 0;
+            row.setAttribute('data-vol-ratio', avgVol > 0 ? '1.0' : '1.0');
+            
+            let bbPercent = row.dataset.bbPercent;
+            if (bbPercent !== null && bbPercent !== undefined) {
+                let normalizedBB = String(bbPercent).replace(',', '.');
+                row.setAttribute('data-bb-pos', normalizedBB);
+            }
+            
+            let sma10 = parseFloat(row.dataset.sma10) || 0;
+            let sma20 = parseFloat(row.dataset.sma20) || 0;
+            let sma50 = parseFloat(row.dataset.sma50) || 0;
+            let smaTrend = 'neutral';
+            if (sma10 > sma20 && sma20 > sma50) {
+                smaTrend = 'perfect';
+            } else if (sma10 < sma20 && sma20 < sma50) {
+                smaTrend = 'bearish';
+            }
+            row.setAttribute('data-sma-trend', smaTrend);
+            
+            let tenkan = parseFloat(row.dataset.ichimokuTenkan) || 0;
+            let kijun = parseFloat(row.dataset.ichimokuKijun) || 0;
+            let ichimokuTk = 'neutral';
+            if (tenkan > kijun) {
+                ichimokuTk = 'bullish';
+            } else if (tenkan < kijun) {
+                ichimokuTk = 'bearish';
+            }
+            row.setAttribute('data-ichimoku-tk', ichimokuTk);
+            
+            let atr = parseFloat(row.dataset.atr);
+            if (!atr || isNaN(atr) || atr <= 0) {
+                atr = 1000;
+            }
+            row.setAttribute('data-atr', String(atr).replace(',', '.'));
+            
+            const numericAttrs = [
+                'price', 'change', 'targetYield', 'score', 'baseScore', 'marketWeight',
+                'techScore', 'fundScore', 'rr', 'rsi', 'adx', 'cmf', 'mfi', 'vwap', 
+                'ichimokuTenkan', 'ichimokuKijun', 'entry', 'sl', 'tp', 'roe', 'pe', 'pb', 
+                'sma10', 'sma20', 'sma50', 'bbUpper', 'bbLower', 'bbPercent', 
+                'macd', 'macdSignal', 'profitGrowth', 'avgVolume', 'volRatio', 'bbPos',
+                'profitPerDay', 'upsidePerDay', 'marketRsi', 'hardRiskPct', 'supportPrice',
+                'foreignStreak', 'foreignBonus', 'industryPerf'
+            ];
+            
+            numericAttrs.forEach(attr => {
+                let val = row.getAttribute(`data-${attr.toLowerCase()}`);
+                if (val && typeof val === 'string') {
+                    let normalized = val.replace(',', '.');
+                    row.setAttribute(`data-${attr.toLowerCase()}`, normalized);
+                }
+            });
+            
+            let roe = row.getAttribute('data-roe');
+            if (roe === 'None' || roe === null || roe === '' || roe === undefined) {
+                row.setAttribute('data-roe', '0');
+            } else {
+                let roeNum = parseFloat(String(roe).replace(',', '.'));
+                if (isNaN(roeNum)) row.setAttribute('data-roe', '0');
+                else row.setAttribute('data-roe', String(roeNum));
+            }
+            
+            let fscore = row.getAttribute('data-fscore');
+            if (fscore === 'None' || fscore === null || fscore === '' || fscore === undefined) {
+                row.setAttribute('data-fscore', '0');
+            } else {
+                let fscoreNum = parseInt(String(fscore).replace(',', '.'));
+                if (isNaN(fscoreNum)) row.setAttribute('data-fscore', '0');
+                else row.setAttribute('data-fscore', String(fscoreNum));
+            }
+        });
+        console.log(`[Data Normalize] Đã chuẩn hóa ${rows.length} dòng dữ liệu`);
+    }
+
+    // ========== WEALTH GUARD LOGIC - BỘ NÃO TÍNH ĐIỂM ==========
+    function processStockRow(row) {
+        const marketRsi = parseFloat(row.dataset.marketRsi) || 50;
+        const roe = parseFloat(row.dataset.roe) || 0;
+        const fscore = parseInt(row.dataset.fscore) || 0;
+        const ichimoku = row.dataset.ichimoku || 'neutral';
+        const bbPos = parseFloat(row.dataset.bbPos) || 50;
+        const volRatio = parseFloat(row.dataset.volRatio) || 1.0;
+        const smaTrend = row.dataset.smaTrend || 'neutral';
+        const ichimokuTk = row.dataset.ichimokuTk || 'neutral';
+        const pe = parseFloat(row.dataset.pe) || 999;
+        const rr = parseFloat(row.dataset.rr) || 0;
+        
+        const supertrendSignal = row.dataset.supertrendSignal || 'neutral';
+        const vwapStatus = row.dataset.vwapStatus || 'neutral';
+        const rsi = parseFloat(row.dataset.rsi) || 50;
+        const mfi = parseFloat(row.dataset.mfi) || 50;
+        const cmf = parseFloat(row.dataset.cmf) || 0;
+        
+        let isVeto = false;
+        let vetoReasons = [];
+        
+        if (marketRsi >= 80) { isVeto = true; vetoReasons.push('MKT quá mua'); }
+        if (roe < 15) { isVeto = true; vetoReasons.push('ROE thấp'); }
+        if (fscore < 5) { isVeto = true; vetoReasons.push('F-Score yếu'); }
+        if (ichimoku === 'bearish') { isVeto = true; vetoReasons.push('Ichimoku giảm'); }
+        if (bbPos > 105) { isVeto = true; vetoReasons.push('BB quá mua'); }
+        if (volRatio < 0.5) { isVeto = true; vetoReasons.push('KL giao dịch thấp'); }
+        if (smaTrend === 'bearish') { isVeto = true; vetoReasons.push('SMA giảm'); }
+        if (ichimokuTk === 'bearish') { isVeto = true; vetoReasons.push('TK-KJ giảm'); }
+        
+        let tScore = 0;
+        if (ichimoku === 'bullish' || ichimokuTk === 'bullish') tScore += 15;
+        if (supertrendSignal === 'buy') tScore += 10;
+        if (vwapStatus === 'above') tScore += 10;
+        if (smaTrend === 'perfect') tScore += 20;
+        if (ichimokuTk === 'bullish') tScore += 10;
+        
+        if (rsi >= 45 && rsi <= 65) tScore += 10;
+        else if (rsi >= 40 && rsi <= 75) tScore += 5;
+        
+        if (mfi > 50) tScore += 10;
+        else if (mfi > 30) tScore += 5;
+        
+        if (cmf > 0.1) tScore += 15;
+        if (volRatio >= 1.5) tScore += 20;
+        if (bbPos >= 30 && bbPos <= 70) tScore += 15;
+        
+        let fundScore = 0;
+        if (roe >= 25) fundScore += 50;
+        else if (roe >= 18) fundScore += 30;
+        else fundScore += 10;
+        
+        if (fscore >= 7) fundScore += 40;
+        else if (fscore >= 5) fundScore += 20;
+        
+        if (pe <= 15) fundScore += 10;
+        
+        let marketWeight = 1.0;
+        if (marketRsi <= 25) marketWeight = 1.2;
+        
+        let masterScore = (fundScore * 0.4 + tScore * 0.6) * marketWeight;
+        masterScore = Math.min(masterScore, 100);
+        
+        if (isVeto) masterScore = Math.min(masterScore, 10);
+        
+        let group = 'RISK';
+        if (isVeto) group = 'VETO';
+        else if (roe >= 25 && masterScore >= 80) group = 'GOLD';
+        else if (rr >= 1.5 && masterScore >= 60) group = 'GUERRILLA';
+        
+        row.setAttribute('data-final-score', Math.round(masterScore));
+        row.setAttribute('data-final-group', group);
+        row.setAttribute('data-veto-reasons', vetoReasons.join('; '));
+        row.setAttribute('data-t-score', Math.round(tScore));
+        row.setAttribute('data-f-score-calc', Math.round(fundScore));
+        row.setAttribute('data-is-veto', isVeto ? 'true' : 'false');
+        
+        return {
+            masterScore: Math.round(masterScore),
+            group: group,
+            isVeto: isVeto,
+            vetoReasons: vetoReasons,
+            tScore: Math.round(tScore),
+            fundScore: Math.round(fundScore)
+        };
+    }
+    
+    function applyWealthGuardLogic() {
+        const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+        let stats = { gold: 0, guerrilla: 0, risk: 0, veto: 0 };
+        
+        rows.forEach(row => {
+            const result = processStockRow(row);
+            stats[result.group.toLowerCase()]++;
+        });
+        
+        console.log(`[Wealth Guard] Hoàn thành: GOLD=${stats.gold}, GUERRILLA=${stats.guerrilla}, RISK=${stats.risk}, VETO=${stats.veto}`);
+        return stats;
+    }
+
+    function updateGroupBadges() {
+        document.querySelectorAll('table tbody tr[data-symbol]').forEach(row => {
+            const group = row.dataset.finalGroup;
+            const score = parseInt(row.dataset.finalScore) || 0;
+            const isVeto = row.dataset.isVeto === 'true';
+            
+            if (isVeto) row.classList.add('row-veto');
+            else row.classList.remove('row-veto');
+            
+            // --- SỬA LỖI TẠI ĐÂY: Tìm bằng CLASS thay vì nth-child ---
+            const scoreCell = row.querySelector('.score-value-cell'); 
+            if (scoreCell) {
+                scoreCell.textContent = score;
+                if (score >= 70) scoreCell.style.color = '#22c55e';
+                else if (score >= 50) scoreCell.style.color = '#f59e0b';
+                else scoreCell.style.color = '#ef4444';
+            }
+            // --------------------------------------------------------
+            
+            const statusCell = row.querySelector('.status-cell');
+            if (statusCell && group) {
+                statusCell.innerHTML = '';
+                const groupConfig = {
+                    'GOLD': { text: '💎 GOLD', class: 'badge-gold' },
+                    'GUERRILLA': { text: '🚀 GUERRILLA', class: 'badge-guerrilla' },
+                    'RISK': { text: '⚠️ RISK', class: 'badge-risk' },
+                    'VETO': { text: '🚫 VETO', class: 'badge-veto-group' }
+                };
+                const config = groupConfig[group] || groupConfig['RISK'];
+                const badge = document.createElement('span');
+                badge.className = 'badge ' + config.class;
+                badge.textContent = config.text;
+                statusCell.appendChild(badge);
+            }
+        });
+
+    // Bổ sung hàm runWealthGuardMaster dành riêng cho Backtest để tránh lỗi trùng ID
+    function runWealthGuardMaster_BacktestMode() {
+        const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+        rows.forEach(row => {
+            const d = row.dataset;
+            const price = parseFloat(d.price) || 0;
+            const vwap = parseFloat(d.vwap) || price;
+            const sma10 = parseFloat(d.sma10) || price;
+            const tp = parseFloat(d.tp) || (price * 1.05);
+            const pb = parseFloat(d.pb) || 1;
+            const pe = parseFloat(d.pe) || 10;
+            const marketRsi = parseFloat(d.marketRsi) || 50;
+
+            const config = INDUSTRY_CONFIG[d.industry] || INDUSTRY_CONFIG['Default'];
+
+            const fv_daily = (vwap * 0.6) + (sma10 * 0.4);
+            let intrinsic = (config.type === 'PB') ? (config.target / pb) * price : (config.target / pe) * price;
+            const fundS = parseFloat(d.fundScore) || 50;
+            const techS = parseFloat(d.techScore) || 50;
+            
+            let fv_weekly = ((intrinsic * fundS) + (tp * techS)) / (fundS + techS + 0.001);
+            if (marketRsi > 75) fv_weekly *= 0.95; 
+            if (marketRsi < 30) fv_weekly *= 1.05;
+
+            // Cập nhật lên UI trực tiếp bằng class
+            const valCell = row.querySelector('.valuation-cell');
+            if (valCell) {
+                valCell.querySelector('.fv-daily').textContent = `Day: ${Math.round(fv_daily).toLocaleString('vi-VN')}`;
+                valCell.querySelector('.fv-weekly').textContent = `Week: ${Math.round(fv_weekly).toLocaleString('vi-VN')}`;
+                valCell.querySelector('.fv-weekly').style.color = (price < fv_weekly) ? "#22c55e" : "#ef4444";
+            }
+
+            row.setAttribute('data-fv-daily', fv_daily);
+            row.setAttribute('data-fv-weekly', fv_weekly);
+        });
+    }
+    
+    // ... Các hàm Modal như cũ (openStockModalFromRow, showModal, closeModal, v.v...)
+        function showModal(stockData) {
+            // Populate modal header
+            document.getElementById('modalSymbol').textContent = stockData.symbol;
+            document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
+            document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
+            // 1. Đổ số vào 2 ô Daily/Weekly trong Modal
+document.getElementById('modalFVDaily').textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
+document.getElementById('modalFVWeekly').textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
+
+// 2. Điều khiển chấm trắng trên thanh Gauge (Đắt/Rẻ)
+const price = stockData.price || 0;
+const fv = stockData.fv_weekly || 0;
+let gaugePos = 50; // Mặc định ở giữa
+if (fv > 0 && price > 0) {
+    gaugePos = (fv / price) * 50; 
+    gaugePos = Math.min(95, Math.max(5, gaugePos)); 
+}
+const valDot = document.getElementById('modalValDot');
+if (valDot) valDot.style.left = gaugePos + '%';
+            // Target Yield (thay vì change_percent)
+            const targetYield = stockData.target_yield_pct || 0;
+            document.getElementById('modalChange').textContent = (targetYield >= 0 ? '+' : '') + targetYield.toFixed(1) + '%';
+            document.getElementById('modalChange').className = 'change ' + (targetYield >= 0 ? 'positive' : 'negative');
+
+            // Scores
+            document.getElementById('modalScore').textContent = stockData.master_score + '/100';
+            
+            // Show score breakdown if market weight was applied
+            const scoreDetailEl = document.getElementById('modalScoreDetail');
+            if (stockData.base_score && stockData.market_weight !== 0) {
+                const weightSign = stockData.market_weight > 0 ? '+' : '';
+                const mktLabel = stockData.market_weight < 0 ? 'MKT Risk' : 'MKT Oversold';
+                scoreDetailEl.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span> <span style="color:#f59e0b;">(${weightSign}${stockData.market_weight} ${mktLabel})</span>`;
+            } else if (stockData.base_score && stockData.base_score !== stockData.master_score) {
+                scoreDetailEl.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span>`;
+            } else {
+                scoreDetailEl.innerHTML = '';
+            }
+            
+            document.getElementById('modalTechScore').textContent = stockData.technical_score + '/100';
+            document.getElementById('modalFundScore').textContent = stockData.fundamental_score + '/100';
+            document.getElementById('modalSignal').textContent = stockData.signal;
+            document.getElementById('modalSignal').className = 'value ' + getSignalClass(stockData.signal);
+            document.getElementById('modalTrend').textContent = stockData.trend;
+            document.getElementById('modalCriteria').textContent = stockData.criteria_met + '/12';
+
+            // Trading Levels
+            document.getElementById('modalEntry').textContent = formatNumber(stockData.entry_price, 1);
+            document.getElementById('modalSL').textContent = formatNumber(stockData.stop_loss, 1);
+            document.getElementById('modalTP').textContent = formatNumber(stockData.take_profit, 1);
+            document.getElementById('modalRR').textContent = stockData.risk_reward_ratio.toFixed(2);
+
+            // Investment Horizon
+            const timeframeLabelEl = document.getElementById('modalTimeframeLabel');
+            const estDaysEl = document.getElementById('modalEstDays');
+            const profitPerDayEl = document.getElementById('modalProfitPerDay');
+            const upsidePerDayEl = document.getElementById('modalUpsidePerDay');
+
+            if (stockData.timeframe_label) {
+                timeframeLabelEl.textContent = stockData.timeframe_label;
+                timeframeLabelEl.className = 'value ' + (stockData.timeframe_color === 'emerald' ? 'positive' : stockData.timeframe_color === 'sky' ? '' : '');
+                timeframeLabelEl.style.color = stockData.timeframe_color === 'emerald' ? '#22c55e' : stockData.timeframe_color === 'sky' ? '#3b82f6' : '#f59e0b';
+            }
+            estDaysEl.textContent = stockData.estimated_days > 0 ? stockData.estimated_days.toFixed(1) + ' phiên' : 'N/A';
+            profitPerDayEl.textContent = stockData.expected_profit_per_day > 0 ? '+' + formatNumber(stockData.expected_profit_per_day, 0) + '/ngày' : 'N/A';
+            upsidePerDayEl.textContent = stockData.upside_per_day > 0 ? '+' + stockData.upside_per_day.toFixed(2) + '%' : 'N/A';
+
+            // 5% Progress Bar
+            const entryPrice = stockData.entry_price || stockData.price;
+            const targetPrice = entryPrice * 1.05; // Target = Entry + 5%
+            const currentPrice = stockData.price;
+            const targetYieldPct = stockData.target_yield_pct || 0;
+            
+            document.getElementById('modalTargetPct').textContent = '+' + targetYieldPct.toFixed(1) + '%';
+            document.getElementById('modalEntryPrice').textContent = formatNumber(entryPrice, 0);
+            document.getElementById('modalTargetPrice').textContent = formatNumber(targetPrice, 0);
+            document.getElementById('modalProgressText').textContent = 'Entry → Target';
+            
+            // Calculate progress (0-100%) based on target yield
+            const progressPct = Math.min(100, (targetYieldPct / 5) * 100);
+            document.getElementById('modalProgressBar').style.width = progressPct + '%';
+            
+            // Early Exit Sensor visibility
+            const earlyExitSection = document.getElementById('modalEarlyExitSection');
+            if (targetYieldPct >= 2) {
+                earlyExitSection.style.display = 'block';
+                const triggerPct = stockData.early_exit_trigger_pct || 2;
+                const dropPct = stockData.early_exit_drop_pct || 0.7;
+                document.getElementById('modalEarlyExitDetail').textContent = 
+                    'Lãi ≥' + triggerPct + '% → Sụt ' + dropPct + '% = Bán ngay';
+            } else {
+                earlyExitSection.style.display = 'none';
+            }
+
+            // Technical Indicators
+            document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
+            document.getElementById('modalRSI').className = 'value ' + getRSIClass(stockData.rsi);
+            document.getElementById('modalADX').textContent = stockData.adx.toFixed(0);
+            document.getElementById('modalCMF').textContent = (stockData.cmf >= 0 ? '+' : '') + stockData.cmf.toFixed(3);
+            document.getElementById('modalCMF').className = 'value ' + (stockData.cmf >= 0 ? 'positive' : 'negative');
+            document.getElementById('modalMFI').textContent = stockData.mfi.toFixed(0);
+            document.getElementById('modalMFI').className = 'value ' + (stockData.mfi >= 50 ? 'positive' : 'negative');
+
+            // VWAP with distance
+            const vwapEl = document.getElementById('modalVWAP');
+            if (stockData.vwap > 0) {
+                vwapEl.textContent = formatNumber(stockData.vwap, 1);
+                const distance = ((stockData.price - stockData.vwap) / stockData.vwap * 100).toFixed(2);
+                vwapEl.className = 'value ' + (Math.abs(distance) > 3 ? (distance > 0 ? 'positive' : 'negative') : 'neutral');
+            } else {
+                vwapEl.textContent = 'N/A';
+                vwapEl.className = 'value neutral';
+            }
+
+            // Ichimoku
+            document.getElementById('modalIchimoku').textContent = stockData.ichimoku_status.toUpperCase();
+            document.getElementById('modalIchimoku').className = 'value ' + (stockData.ichimoku_status === 'bullish' ? 'positive' : stockData.ichimoku_status === 'bearish' ? 'negative' : 'neutral');
+            document.getElementById('modalTenkan').textContent = stockData.ichimoku_tenkan > 0 ? formatNumber(stockData.ichimoku_tenkan, 1) : 'N/A';
+            document.getElementById('modalKijun').textContent = stockData.ichimoku_kijun > 0 ? formatNumber(stockData.ichimoku_kijun, 1) : 'N/A';
+
+            // SuperTrend
+            document.getElementById('modalST').textContent = stockData.supertrend_signal.toUpperCase();
+            document.getElementById('modalST').className = 'value ' + (stockData.supertrend_signal === 'buy' ? 'positive' : stockData.supertrend_signal === 'sell' ? 'negative' : 'neutral');
+            document.getElementById('modalSTValue').textContent = stockData.supertrend > 0 ? formatNumber(stockData.supertrend, 1) : 'N/A';
+
+            // Moving Averages
+            document.getElementById('modalSMA10').textContent = stockData.sma_10 > 0 ? formatNumber(stockData.sma_10, 1) : 'N/A';
+            document.getElementById('modalSMA20').textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
+            document.getElementById('modalSMA50').textContent = stockData.sma_50 > 0 ? formatNumber(stockData.sma_50, 1) : 'N/A';
+
+            // Bollinger Bands
+            document.getElementById('modalBBUpper').textContent = stockData.bb_upper > 0 ? formatNumber(stockData.bb_upper, 1) : 'N/A';
+            document.getElementById('modalBBLower').textContent = stockData.bb_lower > 0 ? formatNumber(stockData.bb_lower, 1) : 'N/A';
+            document.getElementById('modalBBPercent').textContent = stockData.bb_percent.toFixed(0) + '%';
+
+            // MACD
+            document.getElementById('modalMACD').textContent = (stockData.macd >= 0 ? '+' : '') + stockData.macd.toFixed(2);
+            document.getElementById('modalMACD').className = 'value ' + (stockData.macd > 0 ? 'positive' : 'negative');
+            document.getElementById('modalMACDSignal').textContent = (stockData.macd_signal >= 0 ? '+' : '') + stockData.macd_signal.toFixed(2);
+
+            // Fundamental
+            document.getElementById('modalFScore').textContent = stockData.f_score + '/9';
+            document.getElementById('modalFScore').className = 'value ' + (stockData.f_score >= 7 ? 'positive' : stockData.f_score >= 4 ? 'neutral' : 'negative');
+            document.getElementById('modalROE').textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
+            document.getElementById('modalPE').textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
+            document.getElementById('modalPB').textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+            // Profit Growth
+            const profitGrowthEl = document.getElementById('modalProfitGrowth');
+            if (stockData.profit_growth !== null && stockData.profit_growth !== undefined) {
+                const pg = stockData.profit_growth;
+                profitGrowthEl.textContent = (pg >= 0 ? '+' : '') + pg.toFixed(1) + '%';
+                profitGrowthEl.className = 'value ' + (pg >= 0 ? 'positive' : 'negative');
+            } else {
+                profitGrowthEl.textContent = 'N/A';
+                profitGrowthEl.className = 'value neutral';
+            }
+
+            // Market RSI
+            document.getElementById('modalMarketRSI').textContent = stockData.market_rsi.toFixed(0);
+
+            // Risk Assessment
+            const marketRiskEl = document.getElementById('modalMarketRisk');
+            if (stockData.is_market_high_risk) {
+                marketRiskEl.textContent = 'Danger 🚨';
+                marketRiskEl.className = 'value negative';
+            } else {
+                marketRiskEl.textContent = 'Safe ✅';
+                marketRiskEl.className = 'value positive';
+            }
+
+            const stockRiskEl = document.getElementById('modalStockRisk');
+            stockRiskEl.textContent = stockData.stock_risk_level || 'Medium';
+            if (stockData.stock_risk_level === 'High' || stockData.stock_risk_level === 'Medium') {
+                stockRiskEl.className = 'value negative';
+            } else {
+                stockRiskEl.className = 'value positive';
+            }
+            // Tìm trong hàm showModal của ông và dán thêm 3 dòng này:
+            document.getElementById('modalFVDaily').textContent = formatNumber(stockData.fv_daily, 0);
+            document.getElementById('modalFVWeekly').textContent = formatNumber(stockData.fv_weekly, 0);
+
+            // Cập nhật thanh Gauge (Thước đo)
+            const pos = Math.min(100, Math.max(0, (stockData.fv_weekly / stockData.price) * 50));
+            document.getElementById('modalValDot').style.left = pos + '%';
+
+            // Risk Reason
+            const riskReasonEl = document.getElementById('modalRiskReason');
+            let riskReasonText = '';
+            if (stockData.is_market_high_risk) {
+                riskReasonText += '⚠️ Thị trường chung đang quá mua (VNIndex RSI > 80). ';
+            }
+            riskReasonText += '📊 Stock Risk: ' + (stockData.stock_risk_level || 'Medium');
+            if (stockData.stock_risk_reason) {
+                riskReasonText += ' - ' + stockData.stock_risk_reason;
+            }
+            if (stockData.is_safe_entry) {
+                riskReasonText += ' | ✅ Vùng giá an toàn (SMA20 ±2%)';
+            } else {
+                riskReasonText += ' | ⚠️ Giá ngoài vùng an toàn';
+            }
+            if (stockData.has_high_resistance) {
+                riskReasonText += ' | ⚠️ Kháng cự mạnh (TP trên Bollinger Upper)';
+            }
+            riskReasonEl.textContent = riskReasonText;
+            
+            // Trend Factor
+            if (typeof stockData.trend_factor === 'number' && stockData.trend_factor > 0) {
+                let tfLabel = 'Sideways';
+                if (stockData.trend_factor >= 0.8) tfLabel = 'Strong Trend';
+                else if (stockData.trend_factor <= 0.4) tfLabel = 'Weak';
+                riskReasonEl.innerHTML += `<br><span style="color:#60a5fa;">Trend Factor: ${stockData.trend_factor} (${tfLabel})</span>`;
+            }
+
+            // Show Wealth Guard Scores Section
+            const wgSection = document.getElementById('modalWGSection');
+            if (stockData.final_score !== undefined && stockData.final_score > 0) {
+                wgSection.style.display = 'block';
+                document.getElementById('modalFinalScore').textContent = stockData.final_score + '/100';
+                document.getElementById('modalFinalScore').className = 'value ' + 
+                    (stockData.final_score >= 70 ? 'positive' : stockData.final_score >= 50 ? '' : 'negative');
+                
+                const groupColors = { 'GOLD': '#f59e0b', 'GUERRILLA': '#22c55e', 'RISK': '#94a3b8', 'VETO': '#ef4444' };
+                document.getElementById('modalFinalGroup').textContent = stockData.final_group;
+                document.getElementById('modalFinalGroup').style.color = groupColors[stockData.final_group] || '#94a3b8';
+                
+                document.getElementById('modalTScore').textContent = stockData.t_score + '/125';
+                document.getElementById('modalFScoreCalc').textContent = stockData.f_score_calc + '/100';
+            } else {
+                wgSection.style.display = 'none';
+            }
+
+            // Show/Hide Wealth Guard VETO Section
+            const vetoSection = document.getElementById('modalVetoSection');
+            const vetoReasonsEl = document.getElementById('modalVetoReasons');
+            
+            if (stockData.is_veto_wg && stockData.veto_reasons) {
+                vetoSection.style.display = 'block';
+                // Format reasons as bullet list
+                const reasons = stockData.veto_reasons.split(';').map(r => r.trim()).filter(r => r);
+                vetoReasonsEl.innerHTML = '<strong>Lý do loại bỏ:</strong><br>• ' + reasons.join('<br>• ');
+            } else {
+                vetoSection.style.display = 'none';
+            }
+
+            // AI Verdict
+            const verdictEl = document.getElementById('modalVerdict');
+            verdictEl.innerHTML = generateAIVerdict(stockData);
+
+            // LÝ DO VETO - Hiện/Ẩn theo is_vetoed
+            const modalVetoSection = document.getElementById('modalVetoSection');
+            const modalVetoReason = document.getElementById('modalVetoReason');
+            if (stockData.is_vetoed) {
+                modalVetoSection.style.display = 'block';
+                modalVetoReason.innerHTML = stockData.veto_reason || 'Không xác định';
+            } else {
+                modalVetoSection.style.display = 'none';
+            }
+
+            // Criteria List
+            const criteriaEl = document.getElementById('modalCriteriaList');
+            if (stockData.criteria_list && stockData.criteria_list.length > 0) {
+                criteriaEl.innerHTML = stockData.criteria_list.map(c => {
+                    const passed = c.includes('✓') || c.includes('PASS');
+                    return `<span class="criteria-item ${passed ? 'passed' : 'failed'}">${c}</span>`;
+                }).join('');
+            } else {
+                criteriaEl.innerHTML = '<span class="neutral">No criteria data</span>';
+            }
+
+            // Badges
+            const badgesContainer = document.getElementById('modalBadges');
+            badgesContainer.innerHTML = '';
+            
+            // Market Risk Badge
+            if (stockData.is_market_high_risk) {
+                badgesContainer.innerHTML += '<span class="badge badge-high-risk">Market: Danger 🚨</span>';
+            } else {
+                badgesContainer.innerHTML += '<span class="badge badge-buy">Market: Safe ✅</span>';
+            }
+            
+            // Stock Risk Badge
+            const riskColors = {
+                'Very Low': 'badge-buy',
+                'Low': 'badge-buy',
+                'Medium': 'badge-wait',
+                'High': 'badge-high-risk'
+            };
+            const riskColorClass = riskColors[stockData.stock_risk_level] || 'badge-wait';
+            badgesContainer.innerHTML += `<span class="badge ${riskColorClass}">Stock Risk: ${stockData.stock_risk_level}</span>`;
+            
+            // Veto Badge
+            if (stockData.is_vetoed) {
+                badgesContainer.innerHTML += '<span class="badge badge-veto">VETO: ' + stockData.veto_reason + '</span>';
+            }
+            // Fast Pick Badge
+            if (stockData.is_fast_pick) {
+                badgesContainer.innerHTML += '<span class="badge badge-fast">FAST PICK</span>';
+            }
+            // Criteria Badge
+            if (stockData.criteria_met >= 9) {
+                badgesContainer.innerHTML += '<span class="badge badge-qualified">EXCELLENT</span>';
+            } else if (stockData.criteria_met >= 7) {
+                badgesContainer.innerHTML += '<span class="badge badge-qualified">QUALIFIED</span>';
+            }
+            // Days Badge
+            if (stockData.estimated_days > 0) {
+                badgesContainer.innerHTML += '<span class="badge badge-buy">' + stockData.estimated_days.toFixed(0) + ' ngày</span>';
+            }
+
+            // Show modal
+            document.getElementById('stockModal').classList.add('active');
         }
-      }
-      
-      // === VETO PROTECTION ===
-      const vetoAvoidedLoss = vetoTrades.reduce((sum, r) => {
-        // Estimate loss if these trades were executed
-        if (r.deviation < -3) return sum + 3; // Rough estimate
-        return sum;
-      }, 0);
-      
-      // === AVG TRADE ===
-      const avgWin = tpHits.length > 0 ? (totalProfit / tpHits.length) : 0;
-      const avgLoss = slHits.length > 0 ? (totalLoss / slHits.length) : 0;
-      
-      // === UPDATE UI ===
-      document.getElementById('summaryGrid').style.display = 'grid';
-      
-      document.getElementById('winRate').textContent = winRate.toFixed(1) + '%';
-      document.getElementById('winRate').className = 'value ' + (winRate >= 60 ? 'green' : (winRate >= 40 ? 'yellow' : 'red'));
-      
-      document.getElementById('totalTrades').textContent = total;
-      document.getElementById('tpHitCount').textContent = tpHits.length;
-      document.getElementById('slHitCount').textContent = slHits.length;
-      document.getElementById('vetoCount').textContent = vetoTrades.length;
-      
-      document.getElementById('profitLossRatio').textContent = profitFactor.toFixed(2);
-      document.getElementById('profitLossRatio').className = 'value ' + (profitFactor >= 1.5 ? 'green' : (profitFactor >= 1 ? 'yellow' : 'red'));
-      
-      document.getElementById('maxDrawdown').textContent = maxDrawdown.toFixed(1) + '%';
-      document.getElementById('maxDrawdown').className = 'value ' + (maxDrawdown < 10 ? 'green' : (maxDrawdown < 20 ? 'yellow' : 'red'));
-      
-      document.getElementById('totalRealProfit').textContent = (totalRealProfit >= 0 ? '+' : '') + totalRealProfit.toFixed(1) + '%';
-      document.getElementById('totalRealProfit').className = 'value ' + (totalRealProfit >= 0 ? 'green' : 'red');
-      
-      document.getElementById('avgDeviation').textContent = executedTrades.length + ' trades';
-      document.getElementById('accuracyRate').textContent = goldTrades.length + '/' + guerTrades.length;
-      
-      // === UPDATE OR CREATE CARDS ===
-      const summaryGrid = document.getElementById('summaryGrid');
-      
-      // Max Drawdown
-      let ddCard = document.getElementById('maxDrawdownCard');
-      if (!ddCard) {
-        ddCard = document.createElement('div');
-        ddCard.className = 'summary-card';
-        ddCard.id = 'maxDrawdownCard';
-        ddCard.innerHTML = `<div class="value red" id="maxDrawdown">0%</div><div class="label">Max Drawdown</div>`;
-        summaryGrid.appendChild(ddCard);
-      }
-      document.getElementById('maxDrawdown').textContent = maxDrawdown.toFixed(1) + '%';
-      document.getElementById('maxDrawdown').className = 'value ' + (maxDrawdown < 5 ? 'green' : (maxDrawdown < 15 ? 'yellow' : 'red'));
-      
-      // Max Consecutive Loss
-      let lossCard = document.getElementById('consecutiveLossCard');
-      if (!lossCard) {
-        lossCard = document.createElement('div');
-        lossCard.className = 'summary-card';
-        lossCard.id = 'consecutiveLossCard';
-        lossCard.innerHTML = `<div class="value yellow" id="maxConsecutiveLoss">0</div><div class="label">Max Thua LienTuc</div>`;
-        summaryGrid.appendChild(lossCard);
-      }
-      document.getElementById('maxConsecutiveLoss').textContent = maxConsecutiveLoss;
-      
-      // GOLD Signals
-      let goldCard = document.getElementById('goldCard');
-      if (!goldCard) {
-        goldCard = document.createElement('div');
-        goldCard.className = 'summary-card';
-        goldCard.id = 'goldCard';
-        goldCard.innerHTML = `<div class="value" style="color: #fbbf24;" id="goldCount">0</div><div class="label">GOLD Signals</div>`;
-        summaryGrid.appendChild(goldCard);
-      }
-      document.getElementById('goldCount').textContent = goldTrades.length;
-      
-      // GUER Signals
-      let guerCard = document.getElementById('guerCard');
-      if (!guerCard) {
-        guerCard = document.createElement('div');
-        guerCard.className = 'summary-card';
-        guerCard.id = 'guerCard';
-        guerCard.innerHTML = `<div class="value" style="color: #22c55e;" id="guerCount">0</div><div class="label">GUER Signals</div>`;
-        summaryGrid.appendChild(guerCard);
-      }
-      document.getElementById('guerCount').textContent = guerTrades.length;
-      
-      // Profit Factor
-      let pfCard = document.getElementById('profitFactorCard');
-      if (!pfCard) {
-        pfCard = document.createElement('div');
-        pfCard.className = 'summary-card';
-        pfCard.id = 'profitFactorCard';
-        pfCard.innerHTML = `<div class="value" id="profitFactor">0</div><div class="label">Profit Factor</div>`;
-        summaryGrid.appendChild(pfCard);
-      }
-      document.getElementById('profitFactor').textContent = profitFactor.toFixed(2);
-      document.getElementById('profitFactor').className = 'value ' + (profitFactor >= 1.5 ? 'green' : (profitFactor >= 1 ? 'yellow' : 'red'));
-      
-      // Veto Protected
-      let vetoCard = document.getElementById('vetoProtectedCard');
-      if (!vetoCard) {
-        vetoCard = document.createElement('div');
-        vetoCard.className = 'summary-card';
-        vetoCard.id = 'vetoProtectedCard';
-        vetoCard.innerHTML = `<div class="value" id="vetoProtected">0</div><div class="label">VETO Protected</div>`;
-        summaryGrid.appendChild(vetoCard);
-      }
-      document.getElementById('vetoProtected').textContent = vetoTrades.length;
-      document.getElementById('vetoProtected').className = 'value ' + (vetoTrades.length > 10 ? 'green' : 'yellow');
-    }
-    
-    // ============== RESET ==============
-    function resetSimulation() {
-      currentIndex = 0;
-      simulationResults = [];
 
-      document.getElementById('summaryGrid').style.display = 'none';
-      document.getElementById('stockInfoPanel').style.display = 'none';
-      renderSimulationLog();
+        function generateAIVerdict(s) {
+            const techRating = s.technical_score >= 70 ? 'Mạnh' : s.technical_score >= 50 ? 'Trung bình' : 'Yếu';
+            const fundRating = s.fundamental_score >= 70 ? 'Tốt' : s.fundamental_score >= 50 ? 'Trung bình' : 'Yếu';
+            let verdict = `Kỹ thuật: ${techRating} (${s.technical_score}/100) | Tài chính: ${fundRating} (${s.fundamental_score}/100). `;
 
-      document.getElementById('stepBtn').disabled = false;
-      document.getElementById('runAllBtn').disabled = false;
+            // Sử dụng veto_reasons từ Wealth Guard
+            if (s.is_veto_wg && s.veto_reasons) {
+                verdict += `🚫 CẢNH BÁO VETO: ${s.veto_reasons.replace(/;/g, ', ')}. `;
+            } else if (s.is_vetoed && s.veto_reason) {
+                verdict += '🚫 CẢNH BÁO: ' + s.veto_reason + '. ';
+            }
+            if (s.is_fast_pick) {
+                verdict += 'Có thể đánh T+ nhanh. ';
+            }
+            if (s.price < s.sma_50 && s.sma_50 > 0) {
+                verdict += 'CẢNH BÁO: Giá dưới SMA50 (xu hướng dài hạn giảm). ';
+            }
+            if (s.criteria_met >= 9) {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - CỰC MẠNH.';
+            } else if (s.criteria_met >= 7) {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - Khả quan.';
+            } else {
+                verdict += 'Đạt ' + s.criteria_met + '/12 tiêu chí - Chờ thêm tín hiệu.';
+            }
+            return verdict;
+        }
+
+        function closeModal() {
+            document.getElementById('stockModal').classList.remove('active');
+        }
+
+        function runAnalysis() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            window.location.href = '/?function=stock_analysis&symbol=' + symbol;
+        }
+
+        function addToWatchlist() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            alert('Đã thêm ' + symbol + ' vào watchlist!');
+            closeModal();
+        }
+
+        function exportDetail() {
+            const symbol = document.getElementById('modalSymbol').textContent;
+            window.location.href = '/stocks/' + symbol + '/export/';
+        }
+
+        function formatNumber(num, decimals = 0) {
+            if (num === null || num === undefined || isNaN(num)) return 'N/A';
+            return num.toLocaleString('vi-VN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        }
+
+        function getSignalClass(signal) {
+            if (signal === 'BUY' || signal === 'STRONG_BUY' || signal === 'ACCUMULATE') return 'positive';
+            if (signal === 'SELL') return 'negative';
+            return 'neutral';
+        }
+
+        function getRSIClass(rsi) {
+            if (rsi >= 70) return 'negative';
+            if (rsi <= 30) return 'positive';
+            return 'neutral';
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // Close modal on click outside
+        document.getElementById('stockModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        async function runTimeSeriesBacktest() {
+    const symbol = document.getElementById('bt-symbol').value;
+    const startDate = document.getElementById('bt-start').value;
+    const endDate = document.getElementById('bt-end').value;
+    const tbody = document.getElementById('backtest-tbody');
+
+    tbody.innerHTML = `<tr><td colspan="18" style="text-align: center; padding: 40px; color: #3b82f6;">⏳ Đang tải dữ liệu chuẩn từ hệ thống...</td></tr>`;
+
+    try {
+        const res = await fetch(`/api/wealth-guard-data/?symbol=${symbol}&limit=1000`);
+        const json = await res.json();
+        
+        if (json.status !== "success") throw new Error(json.error);
+
+        const filteredData = json.data
+            .filter(d => d.Date >= startDate && d.Date <= endDate)
+            .sort((a, b) => b.Date.localeCompare(a.Date));
+
+        let html = '';
+        filteredData.forEach((d, index) => {
+            // Lấy dữ liệu từ API
+            const price = d.Close || 0;
+            const masterScore = d.Master_Score || 50;
+            const signal = d.Signal || 'WAIT';
+            const criteriaMet = d.Criteria || 0;
+            const timeframe = d.Timeframe || 'INTRA';
+            const targetYield = d.Target_Yield || 0;
+            const pctPerDay = d.Pct_Per_Day || 0;
+            const estDays = d.Est_Days || 0;
+            const rR = d.R_R || 0;
+            const isVetoed = d.Is_Vetoed || false;
+            const vetoReason = d.Veto_Reason || '';
+            const techScore = d.Technical_Score || 50;
+            const fundScore = d.Fundamental_Score || 50;
+
+            // Badge class cho Signal
+            const signalClass = signal === 'BUY' ? 'badge-buy' : signal === 'HOLD' ? 'badge-fast' : signal === 'VETO' ? 'badge-veto' : 'badge-wait';
+
+            // Badge class cho Criteria
+            const criteriaClass = criteriaMet >= 9 ? 'badge-qualified' : criteriaMet >= 7 ? 'badge-buy' : 'badge-wait';
+
+            // Row class
+            const rowClass = isVetoed ? 'row-veto' : masterScore >= 70 ? 'qualified' : '';
+
+            // Score color
+            const scoreColor = masterScore >= 70 ? '#22c55e' : masterScore >= 50 ? '#f59e0b' : '#ef4444';
+
+            // Ichimoku icon
+            const ichimokuIcon = d.Ichimoku_Status === 'bullish' ? '🟢' : d.Ichimoku_Status === 'bearish' ? '🔴' : '🟡';
+
+            html += `
+            <tr class="backtest-row ${rowClass}"
+                data-symbol="${symbol}"
+                data-company="Ngày: ${d.Date}"
+                data-industry="${d.Industry || 'Default'}"
+                data-market-group="VN30"
+                data-price="${price}"
+                data-change="0"
+                data-target-yield="${targetYield}"
+                data-score="${masterScore}"
+                data-base-score="${masterScore}"
+                data-market-weight="0"
+                data-tech-score="${techScore}"
+                data-fund-score="${fundScore}"
+                data-signal="${signal}"
+                data-criteria="${criteriaMet}"
+                data-rr="${rR}"
+                data-rsi="${d.RSI || 50}"
+                data-adx="25"
+                data-cmf="${d.CMF || 0}"
+                data-mfi="50"
+                data-vwap="${d.VWAP || price}"
+                data-vwap-status="${d.VWAP_Status || 'neutral'}"
+                data-ichimoku-tenkan="${d.Tenkan || 0}"
+                data-ichimoku-kijun="${d.Kijun || 0}"
+                data-ichimoku="${d.Ichimoku_Status || 'neutral'}"
+                data-entry="${price}"
+                data-sl="${d.Stop_Loss || price}"
+                data-tp="${d.Take_Profit || price}"
+                data-roe="${d.ROE || 0}"
+                data-pe="${d.PE || 15}"
+                data-pb="${d.PB || 1.5}"
+                data-fscore="${d.F_Score || 6}"
+                data-trend="${d.SMA_Trend || 'neutral'}"
+                data-sma10="${d.SMA10 || price}"
+                data-sma20="${d.SMA20 || price}"
+                data-sma50="${d.SMA50 || price}"
+                data-supertrend="0"
+                data-supertrend-signal="neutral"
+                data-bb-upper="${d.BB_Upper || price}"
+                data-bb-lower="${d.BB_Lower || price}"
+                data-bb-percent="${d.BB_Percent || 50}"
+                data-macd="${d.MACD || 0}"
+                data-macd-signal="${d.MACD_Signal || 0}"
+                data-vetoed="${isVetoed}"
+                data-veto-reason="${vetoReason}"
+                data-high-risk="${isVetoed}"
+                data-days="${estDays}"
+                data-timeframe-label="${timeframe}"
+                data-profit-per-day="${pctPerDay}"
+                data-upside-per-day="${pctPerDay}"
+                data-market-rsi="50"
+                data-stock-risk-level="${isVetoed ? 'High' : 'Medium'}"
+                data-stock-risk-reason="${vetoReason}"
+                data-trend-factor="0.6"
+                data-avg-volume="${d.Volume || 0}"
+                data-atr="${d.ATR || 0}"
+                data-fv-daily="${d.FV_Daily || price}"
+                data-fv-weekly="${d.FV_Weekly || price}"
+                onclick="openStockModalFromRow(this)"
+                style="cursor: pointer;">
+                
+                <td>${index + 1}</td>
+                <td><span class="symbol-cell" style="color: #3b82f6;">${d.Date}</span></td>
+                <td><span class="badge badge-qualified">VN30</span></td>
+                <td style="font-weight: bold;">${price.toLocaleString()}</td>
+                <td>
+                    <div class="fv-daily" style="font-size: 11px; color: #f59e0b;">Day: ${(d.FV_Daily || 0).toLocaleString()}</div>
+                    <div class="fv-weekly" style="font-size: 12px; color: #3b82f6;">Week: ${(d.FV_Weekly || 0).toLocaleString()}</div>
+                </td>
+                <td class="positive">+${targetYield}%</td>
+                <td class="positive">
+                    +${pctPerDay}%<br>
+                    <small style="color: #64748b;">${estDays} ngày</small>
+                </td>
+                <td class="score-value-cell" style="font-weight: bold; color: ${scoreColor};">${masterScore}</td>
+                <td><span class="badge ${signalClass}">${signal}</span></td>
+                <td><span class="badge ${criteriaClass}">${criteriaMet}/12</span></td>
+                <td>${rR}</td>
+                <td class="rsi-indicator">${d.RSI || 50}</td>
+                <td>${(d.CMF || 0).toFixed(3)}</td>
+                <td>${ichimokuIcon}</td>
+                <td>${d.ROE || 0}%</td>
+                <td><span class="badge badge-buy">${d.F_Score || 6}/9</span></td>
+                <td>${timeframe}</td>
+                <td class="status-cell">
+                    ${isVetoed ? '<span class="badge badge-veto">🚫 VETO</span>' : 
+                      (d.ROE >= 25 && masterScore >= 80) ? '<span class="badge badge-gold">💎 GOLD</span>' :
+                      '<span class="badge badge-guerrilla">🚀 GUERRILLA</span>'}
+                </td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = html;
+        if (typeof normalizeDataAttributes === 'function') normalizeDataAttributes();
+
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="18" style="text-align: center; color: #ef4444;">Lỗi: ${err.message}</td></tr>`;
     }
-    
-    // ============== EXPORT CSV ==============
-    function exportCSV() {
-      if (simulationResults.length === 0) {
-        alert('Chua co du lieu!');
-        return;
-      }
-      
-      const headers = ['Buoc', 'Ngay', 'Gia', 'RSI', 'MktRSI', 'FV_Daily', 'Score', 'Trend', 'Nhom', 'Signal', 'T+1', 'Dev%', 'TP/SL', 'PL%', 'Remark'];
-      const rows = simulationResults.map(r => [
-        r.step,
-        r.date,
-        r.price || 0,
-        r.rsi,
-        r.marketRsi || 50,
-        r.fvDaily,
-        r.masterScore,
-        r.scoreTrend || 'STABLE',
-        r.group,
-        r.signal,
-        r.actualPrice || 0,
-        r.deviation ? r.deviation.toFixed(2) : 0,
-        r.tpSlResult,
-        r.realProfit ? r.realProfit.toFixed(2) : 0,
-        (r.remark || '').replace(/"/g, '""')
-      ]);
-      
-      let csv = headers.join(';') + '\n';
-      rows.forEach(row => {
-        csv += row.map(cell => String(cell)).join(';') + '\n';
-      });
-      
-      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'backtest_v5_' + (document.getElementById('symbolSelect')?.value || 'unknown') + '_' + new Date().toISOString().slice(0,10) + '.csv';
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-    
-    // ============== INIT ==============
-    document.addEventListener('DOMContentLoaded', function() {
-      // Auto-select VCB if available
-      const select = document.getElementById('symbolSelect');
-      if (select.options.length > 1) {
-        // Keep first selected
-      }
+}
+
+// Bổ sung hàm runWealthGuardMaster dành riêng cho Backtest
+// Lý do: Các dòng bây giờ cùng chung 1 mã (VD cùng là FPT), nếu dùng ID="val-FPT" nó sẽ đè lên nhau.
+// Nên tôi tìm thẻ con '.valuation-cell' bên trong dòng đó để gán giá trị luôn.
+function runWealthGuardMaster_BacktestMode() {
+    const rows = document.querySelectorAll('table tbody tr[data-symbol]');
+    rows.forEach(row => {
+        const d = row.dataset;
+        const price = parseFloat(d.price) || 0;
+        const vwap = parseFloat(d.vwap) || price;
+        const sma10 = parseFloat(d.sma10) || price;
+        const tp = parseFloat(d.tp) || (price * 1.05);
+        const pb = parseFloat(d.pb) || 1;
+        const pe = parseFloat(d.pe) || 10;
+        const marketRsi = parseFloat(d.marketRsi) || 50;
+
+        const config = INDUSTRY_CONFIG[d.industry] || INDUSTRY_CONFIG['Default'];
+
+        const fv_daily = (vwap * 0.6) + (sma10 * 0.4);
+        let intrinsic = (config.type === 'PB') ? (config.target / pb) * price : (config.target / pe) * price;
+        const fundS = parseFloat(d.fundScore) || 50;
+        const techS = parseFloat(d.techScore) || 50;
+        
+        let fv_weekly = ((intrinsic * fundS) + (tp * techS)) / (fundS + techS + 0.001);
+        if (marketRsi > 75) fv_weekly *= 0.95; 
+        if (marketRsi < 30) fv_weekly *= 1.05;
+
+        // Cập nhật lên UI trực tiếp
+        const valCell = row.querySelector('.valuation-cell');
+        if (valCell) {
+            valCell.querySelector('.fv-daily').textContent = `Day: ${Math.round(fv_daily).toLocaleString('vi-VN')}`;
+            valCell.querySelector('.fv-weekly').textContent = `Week: ${Math.round(fv_weekly).toLocaleString('vi-VN')}`;
+            valCell.querySelector('.fv-weekly').style.color = (price < fv_weekly) ? "#22c55e" : "#ef4444";
+        }
+
+        row.setAttribute('data-fv-daily', fv_daily);
+        row.setAttribute('data-fv-weekly', fv_weekly);
     });
-  </script>
+}
+    </script>
+    <!-- Modal for stock details -->
+    <div id="stockModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" id="modalSymbol">VCB</div>
+                    <div class="modal-company" id="modalCompany">Ngân hàng TMCP Ngoại Thương Việt Nam</div>
+                </div>
+                <div class="modal-price">
+                    <div class="price" id="modalPrice">95,000</div>
+                    <div class="label" style="color: #94a3b8; font-size: 10px;">Target Yield</div>
+                    <div class="change positive" id="modalChange" style="font-size: 18px;">+2.5%</div>
+                </div>
+            </div>
+
+            <!-- AI Verdict -->
+            <div class="modal-section" style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <div class="label" style="color: #60a5fa; margin-bottom: 8px;">📊 AI Verdict</div>
+                <div id="modalVerdict" style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">
+                    Kỹ thuật: Mạnh (85/100) | Tài chính: Tốt (80/100). Có thể đánh T+ nhanh.
+                </div>
+            </div>
+
+            <!-- LÝ DO VETO - Hiện khi bị loại -->
+            <div id="modalVetoSection" style="background: rgba(220, 38, 38, 0.1); border: 1px solid #dc2626; border-radius: 8px; padding: 12px; margin-bottom: 20px; display: none;">
+                <div style="color: #ef4444; font-weight: bold; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                    <span>⚠️</span> LÝ DO LOẠI BỎ (VETO)
+                </div>
+                <div id="modalVetoReason" style="color: #fca5a5; font-size: 13px; line-height: 1.4;"></div>
+            </div>
+
+            <!-- Signal & Score -->
+            <div class="modal-section">
+                <!-- Bổ sung khu vực Định Giá trong Modal -->
+<div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+    <h3 style="color: #f8fafc; border: none; margin-bottom: 15px;">🎯 Dự Báo Giá Trị Hợp Lý (Wealth Guard)</h3>
+    <div class="modal-grid">
+        <div class="modal-item" style="border: 1px solid #f59e0b;">
+            <div class="label" style="color: #f59e0b;">FV Trong Ngày (Daily)</div>
+            <div class="value" id="modalFVDaily" style="color: #f59e0b;">--</div>
+            <div style="font-size: 10px; color: #64748b;">Dựa trên VWAP & SMA10</div>
+        </div>
+        <div class="modal-item" style="border: 1px solid #3b82f6;">
+            <div class="label" style="color: #3b82f6;">FV Trong Tuần (Weekly)</div>
+            <div class="value" id="modalFVWeekly" style="color: #3b82f6;">--</div>
+            <div style="font-size: 10px; color: #64748b;">Nội tại ngành & Kỹ thuật</div>
+        </div>
+    </div>
+    
+    <!-- Thanh Gauge trực quan so sánh Giá hiện tại và Định giá -->
+    <div style="margin-top: 20px; position: relative; padding: 0 10px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
+            <span>Đắt (Overvalued)</span>
+            <span>Rẻ (Undervalued)</span>
+        </div>
+        <div style="height: 8px; background: linear-gradient(90deg, #ef4444 0%, #22c55e 100%); border-radius: 4px; position: relative;">
+            <div id="modalValDot" style="width: 12px; height: 12px; background: #fff; border: 2px solid #000; border-radius: 50%; position: absolute; top: -2px; left: 50%; transition: all 0.5s ease;"></div>
+        </div>
+    </div>
+</div>
+                <h3>Đánh Giá Tổng Quan</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Master Score</div>
+                        <div class="value" id="modalScore">75/100</div>
+                        <div style="font-size: 10px; color: #64748b; margin-top: 2px;" id="modalScoreDetail"></div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tech Score</div>
+                        <div class="value" id="modalTechScore">80/100</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Fund Score</div>
+                        <div class="value" id="modalFundScore">70/100</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Signal</div>
+                        <div class="value positive" id="modalSignal">BUY</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Xu hướng</div>
+                        <div class="value" id="modalTrend">UPTREND</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Criteria Đạt</div>
+                        <div class="value" id="modalCriteria">8/12</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Market RSI</div>
+                        <div class="value" id="modalMarketRSI">55</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Wealth Guard Scores -->
+            <div class="modal-section" id="modalWGSection" style="display: none;">
+                <h3>🛡️ Wealth Guard Analysis</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Final Score</div>
+                        <div class="value" id="modalFinalScore" style="font-size: 24px; font-weight: 700;">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Nhóm Chiến Thuật</div>
+                        <div class="value" id="modalFinalGroup">-</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tech Score (tScore)</div>
+                        <div class="value" id="modalTScore">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Fund Score (fScore)</div>
+                        <div class="value" id="modalFScoreCalc">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Assessment -->
+            <div class="modal-section" id="modalRiskSection">
+                <h3>Rủi Ro Đánh Giá</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Market Risk</div>
+                        <div class="value" id="modalMarketRisk">Safe ✅</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Stock Risk</div>
+                        <div class="value" id="modalStockRisk">Low</div>
+                    </div>
+                </div>
+                <div id="modalRiskReason" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; font-size: 12px; color: #94a3b8;"></div>
+            </div>
+
+            <!-- Wealth Guard VETO Section -->
+            <div class="modal-section" id="modalVetoSection" style="display: none;">
+                <div style="background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(220,38,38,0.1) 100%); border: 2px solid #ef4444; border-radius: 12px; padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <span style="font-size: 24px;">🚫</span>
+                        <div>
+                            <div style="color: #ef4444; font-size: 16px; font-weight: 700;">CỔ PHIẾU BỊ LOẠI (VETO)</div>
+                            <div style="color: #f87171; font-size: 12px;">Wealth Guard - Không đạt tiêu chí đầu tư</div>
+                        </div>
+                    </div>
+                    <div id="modalVetoReasons" style="color: #fca5a5; font-size: 13px; line-height: 1.6;"></div>
+                </div>
+            </div>
+
+            <!-- Criteria List -->
+            <div class="modal-section">
+                <h3>Chi Tiết Criteria</h3>
+                <div id="modalCriteriaList" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                </div>
+            </div>
+
+            <!-- Badges -->
+            <div class="modal-section" style="margin-bottom: 20px;">
+                <div id="modalBadges" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                </div>
+            </div>
+
+            <!-- Mức Giao Dịch & Investment Horizon -->
+            <div class="modal-section">
+                <h3>Mức Giao Dịch</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Entry Price</div>
+                        <div class="value positive" id="modalEntry">95,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Stop Loss</div>
+                        <div class="value negative" id="modalSL">91,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Take Profit</div>
+                        <div class="value positive" id="modalTP">100,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">R:R Ratio</div>
+                        <div class="value" id="modalRR">2.5</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Investment Horizon & Progress Bar -->
+            <div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="color: #f8fafc; margin-bottom: 12px;">📊 Investment Horizon</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Khung Thời Gian</div>
+                        <div class="value" id="modalTimeframeLabel" style="font-size: 16px;">Swing Trading</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Est. Days</div>
+                        <div class="value" id="modalEstDays">7.5</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Lợi Nhuận Dự Kiến</div>
+                        <div class="value positive" id="modalProfitPerDay">+850/ngày</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">% Upside / Ngày</div>
+                        <div class="value" id="modalUpsidePerDay">0.85%</div>
+                    </div>
+                </div>
+                
+                <!-- 5% Progress Bar -->
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #334155;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="color: #f8fafc; font-size: 13px;">🎯 Target 5% Progress</span>
+                        <span id="modalTargetPct" style="color: #22c55e; font-weight: bold;">0%</span>
+                    </div>
+                    <div style="background: #0f172a; border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
+                        <div id="modalProgressBar" style="background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%); height: 100%; width: 0%; transition: width 0.5s ease; border-radius: 8px;"></div>
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 11px; font-weight: bold;" id="modalProgressText">Entry → Target</div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #64748b;">
+                        <span id="modalEntryPrice">Entry</span>
+                        <span id="modalTargetPrice">Target 5%</span>
+                    </div>
+                </div>
+                
+                <!-- Early Exit Sensor -->
+                <div id="modalEarlyExitSection" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; display: none;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">🚨</span>
+                        <div>
+                            <div style="color: #f59e0b; font-weight: bold; font-size: 12px;" id="modalEarlyExitLabel">Early Exit Alert</div>
+                            <div style="color: #94a3b8; font-size: 11px;" id="modalEarlyExitDetail">Lãi ≥2% → Sụt 0.7% = Bán ngay</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #334155; font-size: 11px; color: #64748b;">
+                    💡 Đưa trên biên động ATR trung bình 14 phiên
+                </div>
+            </div>
+
+            <!-- Technical Indicators -->
+            <div class="modal-section">
+                <h3>Chỉ Báo Kỹ Thuật</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">RSI (14)</div>
+                        <div class="value" id="modalRSI">55</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">ADX</div>
+                        <div class="value" id="modalADX">28</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">CMF</div>
+                        <div class="value" id="modalCMF">+0.15</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MFI</div>
+                        <div class="value" id="modalMFI">58</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced TA -->
+            <div class="modal-section">
+                <h3>Chỉ Báo Nâng Cao</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">VWAP</div>
+                        <div class="value" id="modalVWAP">94,500</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Ichimoku</div>
+                        <div class="value" id="modalIchimoku">BULLISH</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tenkan</div>
+                        <div class="value" id="modalTenkan">95,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Kijun</div>
+                        <div class="value" id="modalKijun">94,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SuperTrend</div>
+                        <div class="value" id="modalST">BUY</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">ST Value</div>
+                        <div class="value" id="modalSTValue">94,500</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Moving Averages & MACD -->
+            <div class="modal-section">
+                <h3>Trung Bình Động & MACD</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">SMA 10</div>
+                        <div class="value" id="modalSMA10">94,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SMA 20</div>
+                        <div class="value" id="modalSMA20">92,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">SMA 50</div>
+                        <div class="value" id="modalSMA50">90,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MACD</div>
+                        <div class="value" id="modalMACD">+150</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">MACD Signal</div>
+                        <div class="value" id="modalMACDSignal">+120</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bollinger Bands -->
+            <div class="modal-section">
+                <h3>Bollinger Bands</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">BB Upper</div>
+                        <div class="value" id="modalBBUpper">97,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">BB Lower</div>
+                        <div class="value" id="modalBBLower">91,000</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">BB Position</div>
+                        <div class="value" id="modalBBPercent">55%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fundamental -->
+            <div class="modal-section">
+                <h3>Sức Khỏe Tài Chính</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">F-Score</div>
+                        <div class="value" id="modalFScore">7/9</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">ROE</div>
+                        <div class="value" id="modalROE">22.5%</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">P/E</div>
+                        <div class="value" id="modalPE">12.5</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">P/B</div>
+                        <div class="value" id="modalPB">2.1</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Tăng trưởng LN</div>
+                        <div class="value" id="modalProfitGrowth">+15.2%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn primary" onclick="runAnalysis()">🔍 Phân Tích Chi Tiết</button>
+                <button class="modal-btn secondary" onclick="exportDetail()">📥 Export Detail</button>
+                <button class="modal-btn secondary" onclick="addToWatchlist()">⭐ Thêm Vào Watchlist</button>
+                <button class="modal-btn secondary" onclick="closeModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

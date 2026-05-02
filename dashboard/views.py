@@ -1412,22 +1412,33 @@ def api_backtest(request: HttpRequest) -> JsonResponse:
 # ============== WEALTH GUARD LOGIC BACKTEST ==============
 
 def wealth_guard_backtest(request: HttpRequest) -> HttpResponse:
-    """Wealth Guard Logic Backtest - Chế độ mô phỏng đối chiếu dữ liệu lịch sử"""
+    """Trang Backtest Time-series: Xem lịch sử của 1 mã bất kỳ trong toàn bộ DB"""
     from .models import StockData, VN30_SYMBOLS
+    from datetime import datetime, timedelta
     
-    # Lấy VN30 và các mã từ DB
+    # 1. Mặc định backtest 3 tháng gần nhất
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    
+    # 2. LẤY TOÀN BỘ MÃ CỔ PHIẾU ĐÃ QUÉT
+    # Lấy VN30 làm gốc
     all_symbols = list(VN30_SYMBOLS)
+    
+    # Kéo thêm toàn bộ mã từ bảng StockData (Giống cách ông làm ở strategy_lab)
     db_symbols = StockData.objects.values_list('symbol', flat=True)
     for s in db_symbols:
         if s not in all_symbols:
             all_symbols.append(s)
+            
+    # Sắp xếp theo thứ tự A-Z
     all_symbols = sorted(set(all_symbols))
     
-    return render(request, "dashboard/wealth_guard_backtest.html", {
-        "symbols": all_symbols
-    })
-
-
+    context = {
+        "symbols": all_symbols, 
+        "default_start": start_date,
+        "default_end": end_date,
+    }
+    return render(request, "dashboard/wealth_guard_backtest.html", context)
 @csrf_exempt
 def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
     """
@@ -1855,6 +1866,74 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
             elif ichimoku_tenkan < ichimoku_kijun:
                 ichimoku_tk_cross = 'bearish'
             
+            # ===== MASTER SCORE & SIGNAL (đồng bộ với sync_service.py) =====
+            # Technical Score (60% weight)
+            t_score = 50
+            if rsi_val >= 30 and rsi_val <= 70:
+                t_score += 20
+            if volume_ratio >= 1.3:
+                t_score += 15
+            if vwap_status == 'above':
+                t_score += 10
+            if sma_trend in ['perfect', 'bullish']:
+                t_score += 10
+            if ichimoku_status == 'bullish':
+                t_score += 10
+            if supertrend_signal == 'buy':
+                t_score += 10
+            if bb_percent >= 30 and bb_percent <= 70:
+                t_score += 10
+            t_score = min(100, t_score)
+            
+            # Fundamental Score (40% weight) - đã tính ở trên
+            fund_score = fundamental_score
+            
+            # Master Score
+            master_score = round(fund_score * 0.4 + t_score * 0.6)
+            
+            # Price for calculations
+            price = float(row['close']) if pd.notna(row['close']) else 0
+            
+            # Risk/Reward
+            risk = fv_daily - stop_loss if stop_loss > 0 else atr_val * 1.5
+            reward = take_profit - fv_daily if take_profit > 0 else atr_val * 3
+            rr_ratio = round(reward / risk, 2) if risk > 0 else 0
+            
+            # Signal
+            if is_vetoed:
+                signal = 'VETO'
+            elif master_score >= 80:
+                signal = 'BUY'
+            elif master_score >= 65:
+                signal = 'HOLD'
+            elif master_score >= 50:
+                signal = 'WAIT'
+            else:
+                signal = 'SELL'
+            
+            # Criteria count (8 criteria max)
+            criteria_met = 0
+            if rsi_val >= 30 and rsi_val <= 70: criteria_met += 1
+            if volume_ratio >= 1.3: criteria_met += 1
+            if sma10_val > sma20_val: criteria_met += 1
+            if vwap_status == 'above': criteria_met += 1
+            if ichimoku_status == 'bullish': criteria_met += 1
+            if supertrend_signal == 'buy': criteria_met += 1
+            if bb_percent >= 30 and bb_percent <= 70: criteria_met += 1
+            if rr_ratio >= 2: criteria_met += 1
+            
+            # Timeframe
+            est_days = max(1, min(30, round(rr_ratio * 5)))
+            pct_per_day = round(reward / price * 100 / est_days, 2) if price > 0 and est_days > 0 else 0
+            target_yield = round(reward / price * 100, 2) if price > 0 else 0
+            
+            if est_days > 10:
+                timeframe = 'SWING'
+            elif est_days > 3:
+                timeframe = 'INTRA'
+            else:
+                timeframe = 'T+0'
+            
             record = {
                 "Date": date_str,
                 "Open": round(float(row['open']), 2) if pd.notna(row['open']) else 0,
@@ -1878,8 +1957,16 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "PB": round(pb_val, 2),
                 "ROE": round(roe_val, 1),
                 "F_Score": round(f_score_val, 0),
-                "Fundamental_Score": round(fundamental_score, 0),
-                "Technical_Score": round(technical_score, 0),
+                "Fundamental_Score": round(fund_score, 0),
+                "Technical_Score": round(t_score, 0),
+                "Master_Score": master_score,
+                "Signal": signal,
+                "Criteria": criteria_met,
+                "R_R": rr_ratio,
+                "Timeframe": timeframe,
+                "Target_Yield": target_yield,
+                "Pct_Per_Day": pct_per_day,
+                "Est_Days": est_days,
                 "ATR": round(atr_val, 2),
                 "FV_Daily": fv_daily,
                 "FV_Weekly": fv_weekly,

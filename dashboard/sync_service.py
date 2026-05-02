@@ -11,9 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from time import sleep
 from typing import List, Optional, Dict, Any
-import pandas as pd
+import pandas as pd  # pyright: ignore[reportMissingImports]  # pyright: ignore[reportMissingImports]
 
-from django.utils import timezone
+from django.utils import timezone  # pyright: ignore[reportMissingImports]
 from dashboard.models import StockData, StockAnalysis, SyncStatus, VN30_SYMBOLS
 
 
@@ -93,7 +93,7 @@ def get_fundamental_data(symbol: str, fast_mode: bool = False) -> Dict[str, Any]
 
     # Try vnstock_data first (Silver+)
     try:
-        from vnstock_data import Fundamental
+        from vnstock_data import Fundamental  # pyright: ignore[reportMissingImports]  # pyright: ignore[reportMissingImports]
         import warnings as w
         w.filterwarnings('ignore')
 
@@ -253,7 +253,7 @@ def get_industry_pe_average(symbol: str) -> Optional[float]:
         if not industry:
             # Fallback: lấy P/E thị trường VNINDEX
             try:
-                from vnstock_data import Market
+                from vnstock_data import Market  # pyright: ignore[reportMissingImports]  # pyright: ignore[reportMissingImports]
                 mkt = Market()
                 pe_data = mkt.pe(duration="1Y")
                 if pe_data is not None and len(pe_data) > 0:
@@ -265,13 +265,13 @@ def get_industry_pe_average(symbol: str) -> Optional[float]:
         # Tính P/E trung bình của ngành từ top gainers
         # (Đây là ước lượng vì API không có direct industry PE)
         try:
-            from vnstock_data import TopStock
+            from vnstock_data import TopStock  # pyright: ignore[reportMissingImports]  # pyright: ignore[reportMissingImports]
             insights = TopStock()
             gainers = insights.gainer(limit=20)
             
             if gainers is not None and len(gainers) > 0:
                 # Lấy P/E của các mã top - sử dụng Fundamential
-                from vnstock_data import Fundamental
+                from vnstock_data import Fundamental  # pyright: ignore[reportMissingImports]
                 fun = Fundamental()
                 
                 pe_sum = 0
@@ -300,7 +300,7 @@ def get_industry_pe_average(symbol: str) -> Optional[float]:
         
         # Fallback cuối: P/E thị trường
         try:
-            from vnstock_data import Market
+            from vnstock_data import Market  # pyright: ignore[reportMissingImports]  # pyright: ignore[reportMissingImports]
             mkt = Market()
             pe_data = mkt.pe(duration="1Y")
             if pe_data is not None and len(pe_data) > 0:
@@ -360,7 +360,7 @@ def get_foreign_buy_streak(symbol: str, lookback: int = 5) -> int:
     Returns: Số phiên mua ròng liên tiếp (0 = không có)
     """
     try:
-        from vnstock_data import TopStock
+        from vnstock_data import TopStock  # pyright: ignore[reportMissingImports]
         insights = TopStock()
         
         # Lấy dữ liệu foreign buy gần đây
@@ -426,7 +426,7 @@ def get_industry_performance(symbol: str, df: pd.DataFrame, lookback: int = 5) -
         
         # Lấy danh sách cổ phiếu cùng ngành từ vnstock
         try:
-            from vnstock_data import Listing
+            from vnstock_data import Listing  # pyright: ignore[reportMissingImports]
             lst = Listing(source="kbs")
             
             # Lấy industry của mã (từ stock data)
@@ -463,7 +463,7 @@ def calculate_profit_growth(symbol: str) -> Optional[float]:
     Returns growth percentage or None if unavailable
     """
     try:
-        from vnstock_data import Fundamental
+        from vnstock_data import Fundamental  # pyright: ignore[reportMissingImports]
         import warnings as w
         w.filterwarnings('ignore')
 
@@ -493,7 +493,7 @@ def calculate_profit_growth(symbol: str) -> Optional[float]:
             return None
 
         # Find same quarter last year - iterate through rows to match quarter
-        import pandas as pd
+        import pandas as pd  # pyright: ignore[reportMissingImports]
         if isinstance(latest_date, str):
             latest_dt = pd.to_datetime(latest_date)
         else:
@@ -523,7 +523,7 @@ def calculate_profit_growth(symbol: str) -> Optional[float]:
     return None
 
 
-def calculate_f_score(symbol: str, fund_data: dict = None) -> int:
+def calculate_f_score(symbol: str, fund_data: dict = None) -> int:  # pyright: ignore[reportArgumentType]
     """
     Calculate Piotroski F-Score (0-9)
     fund_data: Optional dict with ROE, PE, PB to use in score calculation
@@ -531,7 +531,7 @@ def calculate_f_score(symbol: str, fund_data: dict = None) -> int:
     score = 0
 
     try:
-        from vnstock_data import Fundamental
+        from vnstock_data import Fundamental  # pyright: ignore[reportMissingImports]
         import warnings as w
         w.filterwarnings('ignore')
 
@@ -779,7 +779,7 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
 
         # Try vnstock_ta
         try:
-            from vnstock_ta import Indicator
+            from vnstock_ta import Indicator  # pyright: ignore[reportMissingImports]
             ind = Indicator(data=df)
 
             # RSI
@@ -1009,7 +1009,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False
         # Get Price Data - try vnstock_data first
         df = None
         try:
-            from vnstock_data import Market
+            from vnstock_data import Market  # pyright: ignore[reportMissingImports]
             mkt = Market()
             df = mkt.equity(symbol).ohlcv(
                 start=(datetime.now() - pd.Timedelta(days=250)).strftime("%Y-%m-%d"),
@@ -1749,7 +1749,7 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
 
     # Get VN30 list
     try:
-        from vnstock_data import Reference
+        from vnstock_data import Reference  # pyright: ignore[reportMissingImports]
         ref = Reference()
         vn30_list = list(ref.equity.list_by_group(group="VN30")['symbol'].str.upper())
     except:
@@ -1873,7 +1873,7 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
 
 def get_top_picks_from_db(limit: int = 5) -> List[Dict[str, Any]]:
     """Lấy top picks từ Database - SORTED by Profit/Day for best efficiency"""
-    from django.db.models import F, ExpressionWrapper, FloatField
+    from django.db.models import F, ExpressionWrapper, FloatField  # pyright: ignore[reportMissingImports]
 
     # Get non-vetoed stocks, calculate profit_per_day and sort by it
     # Profit/Day = (take_profit - entry_price) / estimated_days_to_target / entry_price * 100

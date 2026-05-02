@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path  # pyright: ignore[reportMissingImports]
 
 from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv, strategy_lab, api_simulate, api_backtest, api_get_stock_data, api_get_all_symbols, wealth_guard_backtest, api_wealth_guard_data, fetch_quarterly_financial
 
@@ -23,4 +23,6 @@ urlpatterns = [
     path("wealth-guard-backtest/", wealth_guard_backtest, name="wealth_guard_backtest"),
     path("api/wealth-guard/data/", api_wealth_guard_data, name="api_wealth_guard_data"),
     path("api/quarterly-financial/", fetch_quarterly_financial, name="fetch_quarterly_financial"),
+    path('wealth-guard-backtest/', wealth_guard_backtest, name='wealth_guard_backtest'),
+    path('api/wealth-guard-data/', api_wealth_guard_data, name='api_wealth_guard_data'),
 ]
