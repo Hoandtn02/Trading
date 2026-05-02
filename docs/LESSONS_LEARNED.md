@@ -809,3 +809,373 @@ RSI: 79.5 ✓
 VWAP: 1916.68 ✓
 Term Structure: N/A (F2M/F3M not available)
 ```
+
+---
+
+## 14. Wealth Guard Scoring Synchronization (2026-05-01)
+
+### 14.1 The Problem - Backtest vs Live Mismatch
+**Problem:** Backtest page was scoring differently from live stock_list page, causing:
+- Missing ~60% of indicators (ADX, Ichimoku, Supertrend, SMA Perfect, Bollinger, Volume Ratio)
+- Inconsistent Master Score between backtest and live system
+- Wrong trading decisions based on incomplete analysis
+
+**Root Cause:** 
+- `calculateMasterScore()` in backtest was a simplified version
+- Backend API wasn't returning all required indicators
+- Two separate scoring algorithms that weren't synchronized
+
+### 14.2 Solution Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    UNIFIED SCORING SYSTEM                    │
+├─────────────────────────────────────────────────────────────┤
+│  BACKEND (views.py)                                        │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ - Calculate ALL technical indicators                 │   │
+│  │ - Return full dataset to frontend                   │   │
+│  │ - Ichimoku, Supertrend, MACD, ADX, BB, Vol Ratio   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                          ↓                                 │
+│  FRONTEND (JS calculateMasterScore)                        │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ - Single source of truth for scoring logic          │   │
+│  │ - Same VETO rules as live system                   │   │
+│  │ - Same scoring weights as live system               │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 14.3 Backend Indicators Required
+**Must return these columns from `/api/wealth-guard/data/`:**
+
+```python
+# Technical Indicators
+"RSI", "CMF", "MFI", "ADX"
+"Ichimoku_Status", "Ichimoku_Tenkan", "Ichimoku_Kijun", "Ichimoku_TK_Cross"
+"Supertrend_Signal", "VWAP_Status"
+"SMA10", "SMA20", "SMA50", "SMA_Trend"
+"BB_Pos", "Vol_Ratio"
+"MACD", "MACD_Signal", "MACD_Status", "MACD_Histogram"
+"Foreign_Streak"
+
+# Fundamental Indicators  
+"ROE", "F_Score", "PE", "PB", "Market_RSI"
+```
+
+### 14.4 Ichimoku Calculation (Manual)
+```python
+# Ichimoku (9, 26, 52 periods)
+def calc_ichimoku(high, low, close, period):
+    hh = high.rolling(period).max()
+    ll = low.rolling(period).min()
+    return (hh + ll) / 2
+
+df['ichimoku_tenkan'] = calc_ichimoku(df['high'], df['low'], df['close'], 9)
+df['ichimoku_kijun'] = calc_ichimoku(df['high'], df['low'], df['close'], 26)
+
+# Status: Bullish = price above both, Bearish = below both
+df['ichimoku_status'] = 'neutral'
+above_both = (df['close'] > df['ichimoku_tenkan']) & (df['close'] > df['ichimoku_kijun'])
+below_both = (df['close'] < df['ichimoku_tenkan']) & (df['close'] < df['ichimoku_kijun'])
+df.loc[above_both, 'ichimoku_status'] = 'bullish'
+df.loc[below_both, 'ichimoku_status'] = 'bearish'
+```
+
+### 14.5 MACD Calculation (Manual)
+```python
+# MACD (12, 26, 9)
+ema12 = df['close'].ewm(span=12, adjust=False).mean()
+ema26 = df['close'].ewm(span=26, adjust=False).mean()
+df['macd'] = ema12 - ema26
+df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+df['macd_histogram'] = df['macd'] - df['macd_signal']
+
+# MACD Status
+df['macd_status'] = 'neutral'
+df.loc[(df['macd'] > df['macd_signal']) & (df['macd'] > 0), 'macd_status'] = 'bullish'
+df.loc[(df['macd'] < df['macd_signal']) & (df['macd'] < 0), 'macd_status'] = 'bearish'
+```
+
+### 14.6 Supertrend Calculation (Manual)
+```python
+# Supertrend (ATR-based, multiplier 3)
+atr_period = 10
+df['atr_st'] = (df['high'] - df['low']).rolling(atr_period).mean()
+hl2 = (df['high'] + df['low']) / 2
+df['supertrend_upper'] = hl2 + 3 * df['atr_st']
+df['supertrend_lower'] = hl2 - 3 * df['atr_st']
+
+df['supertrend_signal'] = 'neutral'
+df.loc[df['close'] > df['supertrend_upper'].shift(1), 'supertrend_signal'] = 'buy'
+df.loc[df['close'] < df['supertrend_lower'].shift(1), 'supertrend_signal'] = 'sell'
+```
+
+### 14.7 Bollinger Bands Position
+```python
+# Bollinger Bands Position (0-100)
+bb_period = 20
+bb_std = df['close'].rolling(bb_period).std()
+bb_mid = df['close'].rolling(bb_period).mean()
+df['bb_upper'] = bb_mid + 2 * bb_std
+df['bb_lower'] = bb_mid - 2 * bb_std
+df['bb_percent'] = ((df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])) * 100
+df['bb_percent'] = df['bb_percent'].fillna(50)
+```
+
+### 14.8 Volume Ratio
+```python
+# Volume Ratio (current vol vs 20-day avg)
+df['volume_ratio'] = df['volume'] / df['volume'].rolling(20).mean()
+df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+```
+
+### 14.9 Complete VETO System
+```javascript
+// ========== HỆ THỐNG VETO (KIM BÀI MIỄN TỬ) ==========
+let isVeto = false;
+let vetoReasons = [];
+
+if (marketRsi >= 80) {isVeto = true; vetoReasons.push('MKT quá mua');}
+if (roe < 15) {isVeto = true; vetoReasons.push('ROE thấp');}
+if (fscore < 5) {isVeto = true; vetoReasons.push('F-Score yếu');}
+if (ichimoku === 'bearish') {isVeto = true; vetoReasons.push('Ichimoku giảm');}
+if (bbPos > 105) {isVeto = true; vetoReasons.push('BB quá mua');}
+if (volRatio < 0.5) {isVeto = true; vetoReasons.push('KL giao dịch thấp');}
+if (smaTrend === 'bearish') {isVeto = true; vetoReasons.push('SMA giảm');}
+if (ichimokuTk === 'bearish') {isVeto = true; vetoReasons.push('TK-KJ giảm');}
+if (macd < macdSignal && macd < 0) {isVeto = true; vetoReasons.push('MACD giảm mạnh');}
+```
+
+### 14.10 Complete Technical Scoring
+```javascript
+// ========== CHẤM ĐIỂM KỸ THUẬT (tScore) ==========
+let tScore = 0;
+
+// Trạng thái (+65 điểm tối đa)
+if (ichimoku === 'bullish' || ichimokuTk === 'bullish') tScore += 15;
+if (supertrendSignal === 'buy') tScore += 10;
+if (vwapStatus === 'above') tScore += 10;
+if (smaTrend === 'perfect') tScore += 20;
+if (ichimokuTk === 'bullish') tScore += 10;
+
+// ADX scoring
+if (adx > 25) tScore += 10;
+else if (adx < 20) tScore -= 5;
+
+// MACD scoring
+if (macd > macdSignal) tScore += 10;
+
+// Foreign Streak scoring
+if (foreignStreak > 3) tScore += 15;
+else if (foreignStreak > 1) tScore += 10;
+
+// Xung lực (+60 điểm tối đa)
+if (rsi >= 45 && rsi <= 65) tScore += 10;
+else if (rsi >= 40 && rsi <= 75) tScore += 5;
+if (mfi > 50) tScore += 10;
+else if (mfi > 30) tScore += 5;
+if (cmf > 0.1) tScore += 15;
+if (volRatio >= 1.5) tScore += 20;
+if (bbPos >= 30 && bbPos <= 70) tScore += 15;
+```
+
+### 14.11 Common Errors During Development
+
+**Error 1: JavaScript Dead Code (Unused Variables)**
+```javascript
+// WRONG: Declared but never used
+const adx = data.ADX || 25;
+// ... later ...
+// adx was never used in scoring!
+
+// FIX: Actually use it
+if (adx > 25) tScore += 10;
+else if (adx < 20) tScore -= 5;
+```
+
+**Error 2: Duplicate Function Definitions**
+```javascript
+// WRONG: Two calculateMasterScore functions cause confusion
+function calculateMasterScore(data) { /* version 1 */ }
+function calculateMasterScore(data, prevData) { /* version 2 */ }
+
+// FIX: Single unified function with optional parameters
+function calculateMasterScore(data, prevData = null) { /* unified */ }
+```
+
+**Error 3: Indentation/Scope Errors**
+```javascript
+// WRONG: Mixed indentation causes logic errors
+else {
+    remark = `BUY ${group}...`;
+        // === EXECUTED TRADE ===  // Wrong indentation!
+        remark = 'BUY ' + group + '...';  // This runs outside else!
+}
+
+// FIX: Consistent indentation
+else {
+    remark = 'BUY ' + group + '...';
+    // All code properly indented inside else block
+}
+```
+
+**Error 4: Python Variable in JavaScript**
+```javascript
+// WRONG: Python variable used in JS
+return {
+    marketRsi: market_rsi_val || 50  // market_rsi_val is Python!
+};
+
+// FIX: Use JavaScript variable
+return {
+    marketRsi: current.Market_RSI || 50
+};
+```
+
+### 14.12 Quarterly Financial Data Model
+```python
+# models.py
+class QuarterlyFinancial(models.Model):
+    symbol = models.CharField(max_length=10, db_index=True)
+    quarter = models.CharField(max_length=10)  # e.g., "2026-Q1"
+    quarter_date = models.DateField()
+    roe = models.FloatField(default=0)
+    f_score = models.IntegerField(default=0)
+    is_vetoed = models.BooleanField(default=False)
+    veto_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+```
+
+### 14.13 Fetching Quarterly Financial Data
+```python
+# views.py - fetch_quarterly_financial
+@csrf_exempt
+def fetch_quarterly_financial(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        
+        for symbol in symbols:
+            try:
+                from vnstock_data import Fundamental
+                fun = Fundamental()
+                
+                # Get ratios
+                ratios = fun.equity(symbol).ratio(limit=4)
+                if ratios is not None and len(ratios) > 0:
+                    latest = ratios.iloc[0]
+                    # Extract ROE, etc.
+                    
+                # Save to QuarterlyFinancial model
+                qf, created = QuarterlyFinancial.objects.update_or_create(
+                    symbol=symbol,
+                    quarter=quarter,
+                    defaults={'roe': roe, 'f_score': f_score, ...}
+                )
+            except Exception as e:
+                print(f"Error for {symbol}: {e}")
+        
+        return JsonResponse({'status': 'success', ...})
+```
+
+### 14.14 Key Lessons
+
+1. **Single Source of Truth**: Keep scoring logic in ONE place (JavaScript) and have backend return all required data
+
+2. **Complete Data Transfer**: Backend must return ALL indicators needed for scoring - don't assume frontend will calculate missing ones
+
+3. **Test Incrementally**: After adding each indicator, verify it's actually used in scoring
+
+4. **Match Live System**: Backtest MUST use exact same scoring algorithm as live system for meaningful results
+
+5. **Verify Variable Usage**: Check that all declared variables are actually used in calculations
+
+6. **Consistent Formatting**: Keep indentation consistent to avoid scope errors
+
+7. **Error Visibility**: Make errors visible (console.log, return error messages) not silent
+
+8. **Data Consistency**: Ensure frontend variable names match backend column names exactly
+
+---
+
+## 15. Debugging Strategies
+
+### 15.1 Check API Response
+```javascript
+// Add this to loadData function
+console.log('API Response keys:', Object.keys(result));
+console.log('Sample data point:', result.data[0]);
+console.log('Has Ichimoku_Status?', 'Ichimoku_Status' in result.data[0]);
+```
+
+### 15.2 Check Scoring Breakdown
+```javascript
+function debugScore(data) {
+    const scoring = calculateMasterScore(data);
+    console.log('=== SCORE BREAKDOWN ===');
+    console.log('Master:', scoring.masterScore);
+    console.log('tScore:', scoring.tScore);
+    console.log('fScore:', scoring.fScore);
+    console.log('VETO:', scoring.isVeto, scoring.vetoReasons);
+    console.log('Signal:', scoring.signal);
+    console.log('Group:', scoring.group);
+    return scoring;
+}
+```
+
+### 15.3 Terminal Check
+```powershell
+# Check what server is returning
+curl http://localhost:8000/api/wealth-guard/data/?symbol=HDB&limit=5 | ConvertFrom-Json | ConvertTo-Json -Depth 5
+```
+
+### 15.4 Browser Console
+```javascript
+// Paste in browser console on backtest page
+stockData.forEach((d, i) => {
+    if (d.Ichimoku_Status && d.Ichimoku_Status !== 'neutral') {
+        console.log(`Day ${i}: Ichimoku=${d.Ichimoku_Status}, MACD=${d.MACD_Status}`);
+    }
+});
+```
+
+---
+
+## 16. File Structure Reference
+
+### Backend Files
+```
+dashboard/
+├── views.py                    # API endpoints
+│   ├── wealth_guard_data()     # Main backtest data API
+│   ├── fetch_quarterly_financial()  # Fetch fundamental data
+│   └── ...
+└── models.py                  # Database models
+    ├── StockData
+    ├── QuarterlyFinancial      # Quarterly fundamentals
+    └── ...
+```
+
+### Frontend Files
+```
+dashboard/templates/dashboard/
+├── stock_list.html             # Live scoring (source of truth)
+│   ├── processStockRow()      # Live scoring algorithm
+│   └── normalizeDataAttributes()
+└── wealth_guard_backtest.html  # Backtest page
+    ├── calculateMasterScore()  # MUST MATCH stock_list.html
+    ├── runSingleStep()
+    └── exportCSV()
+```
+
+### Key Principle
+```
+stock_list.html::processStockRow()  ===  wealth_guard_backtest.html::calculateMasterScore()
+
+Both must produce IDENTICAL scores for the same input data.
+```
