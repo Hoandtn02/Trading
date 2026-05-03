@@ -957,6 +957,7 @@
                 statusCell.appendChild(badge);
             }
         });
+    }
 
     // Bổ sung hàm runWealthGuardMaster dành riêng cho Backtest để tránh lỗi trùng ID
     function runWealthGuardMaster_BacktestMode() {
@@ -996,12 +997,130 @@
     }
     
     // ... Các hàm Modal như cũ (openStockModalFromRow, showModal, closeModal, v.v...)
-        function showModal(stockData) {
-            // Populate modal header
-            document.getElementById('modalSymbol').textContent = stockData.symbol;
-            document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
-            document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
-            // 1. Đổ số vào 2 ô Daily/Weekly trong Modal
+    
+    function openStockModalFromRow(row) {
+        const stockData = {
+            symbol: row.dataset.symbol || '',
+            company_name: row.dataset.company || row.dataset.symbol || '',
+            industry: row.dataset.industry || 'Other',
+            market_group: row.dataset.marketGroup || 'MIDCAP',
+            price: parseFloat(row.dataset.price) || 0,
+            change_percent: parseFloat(row.dataset.change) || 0,
+            target_yield_pct: parseFloat(row.dataset.targetYield) || 0,
+            master_score: parseInt(row.dataset.score) || 0,
+            base_score: parseInt(row.dataset.baseScore) || 0,
+            market_weight: parseInt(row.dataset.marketWeight) || 0,
+            technical_score: parseInt(row.dataset.techScore) || 0,
+            fundamental_score: parseInt(row.dataset.fundScore) || 0,
+            signal: row.dataset.signal || 'WAIT',
+            criteria_met: parseInt(row.dataset.criteria) || 0,
+            risk_reward_ratio: parseFloat(row.dataset.rr) || 0,
+            rsi: parseFloat(row.dataset.rsi) || 50,
+            adx: parseFloat(row.dataset.adx) || 0,
+            cmf: parseFloat(row.dataset.cmf) || 0,
+            mfi: parseFloat(row.dataset.mfi) || 50,
+            vwap: parseFloat(row.dataset.vwap) || 0,
+            vwap_status: row.dataset.vwapStatus || 'neutral',
+            ichimoku_tenkan: parseFloat(row.dataset.ichimokuTenkan) || 0,
+            ichimoku_kijun: parseFloat(row.dataset.ichimokuKijun) || 0,
+            ichimoku_status: row.dataset.ichimoku || 'neutral',
+            supertrend: parseFloat(row.dataset.supertrend) || 0,
+            supertrend_signal: row.dataset.supertrendSignal || 'neutral',
+            fv_daily: parseFloat(row.dataset.fvDaily) || 0,
+            fv_weekly: parseFloat(row.dataset.fvWeekly) || 0,
+            entry_price: parseFloat(row.dataset.entry) || 0,
+            stop_loss: parseFloat(row.dataset.stopLoss) || 0,
+            take_profit: parseFloat(row.dataset.tp) || 0,
+            is_vetoed: row.dataset.vetoed === 'true',
+            veto_reason: row.dataset.vetoReason || '',
+            is_fast_pick: row.dataset.fastPick === 'true',
+            is_high_risk: row.dataset.highRisk === 'true',
+            is_market_high_risk: row.dataset.marketHighRisk === 'true',
+            stock_risk_level: row.dataset.riskLevel || 'Medium',
+            stock_risk_reason: row.dataset.riskReason || '',
+            is_safe_entry: row.dataset.safeEntry === 'true',
+            has_high_resistance: row.dataset.highResistance === 'true',
+            market_rsi: parseFloat(row.dataset.marketRsi) || 50,
+            trend: row.dataset.trend || 'SIDEWAYS',
+            breakout_status: row.dataset.breakout || 'WAIT',
+            criteria_list: [],
+            pe: parseFloat(row.dataset.pe) || 0,
+            pb: parseFloat(row.dataset.pb) || 0,
+            roe: parseFloat(row.dataset.roe) || 0,
+            f_score: parseInt(row.dataset.fscore) || 0,
+            volume_ratio: parseFloat(row.dataset.volumeRatio) || 0,
+            avg_volume_value: parseFloat(row.dataset.avgVolume) || 0,
+        };
+        showModal(stockData);
+    }
+    
+    function showModal(stockData) {
+        // Populate modal header
+        document.getElementById('modalSymbol').textContent = stockData.symbol;
+        document.getElementById('modalCompany').textContent = stockData.company_name + ' | ' + stockData.industry + ' | ' + stockData.market_group;
+        document.getElementById('modalPrice').textContent = formatNumber(stockData.price, 1);
+        document.getElementById('modalFVDaily').textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
+        document.getElementById('modalFVWeekly').textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
+        
+        const price = stockData.price || 0;
+        const fv = stockData.fv_weekly || 0;
+        let gaugePos = 50;
+        if (fv > 0 && price > 0) {
+            gaugePos = Math.min(95, Math.max(5, (fv / price) * 50));
+        }
+        const valDot = document.getElementById('modalValDot');
+        if (valDot) valDot.style.left = gaugePos + '%';
+        
+        const targetYield = stockData.target_yield_pct || 0;
+        document.getElementById('modalChange').textContent = (targetYield >= 0 ? '+' : '') + targetYield.toFixed(1) + '%';
+        document.getElementById('modalChange').className = 'change ' + (targetYield >= 0 ? 'positive' : 'negative');
+        document.getElementById('modalScore').textContent = stockData.master_score + '/100';
+        const scoreDetailEl = document.getElementById('modalScoreDetail');
+        if (stockData.base_score && stockData.market_weight !== 0) {
+            const weightSign = stockData.market_weight > 0 ? '+' : '';
+            const mktLabel = stockData.market_weight < 0 ? 'MKT Risk' : 'MKT Oversold';
+            scoreDetailEl.innerHTML = '<span style="color:#94a3b8;">Base: ' + stockData.base_score + '</span> <span style="color:#f59e0b;">(' + weightSign + stockData.market_weight + ' ' + mktLabel + ')</span>';
+        } else {
+            scoreDetailEl.innerHTML = '';
+        }
+        document.getElementById('modalTechScore').textContent = stockData.technical_score + '/100';
+        document.getElementById('modalFundScore').textContent = stockData.fundamental_score + '/100';
+        document.getElementById('modalSignal').textContent = stockData.signal;
+        document.getElementById('modalSignal').className = 'value ' + getSignalClass(stockData.signal);
+        document.getElementById('modalTrend').textContent = stockData.trend;
+        document.getElementById('modalCriteria').textContent = stockData.criteria_met + '/12';
+        document.getElementById('modalEntry').textContent = formatNumber(stockData.entry_price, 1);
+        document.getElementById('modalSL').textContent = formatNumber(stockData.stop_loss, 1);
+        document.getElementById('modalTP').textContent = formatNumber(stockData.take_profit, 1);
+        document.getElementById('modalRR').textContent = stockData.risk_reward_ratio.toFixed(2);
+        document.getElementById('modalRSI').textContent = stockData.rsi.toFixed(0);
+        document.getElementById('modalRSI').className = 'value ' + getRSIClass(stockData.rsi);
+        document.getElementById('modalCMF').textContent = (stockData.cmf >= 0 ? '+' : '') + stockData.cmf.toFixed(3);
+        document.getElementById('modalCMF').className = 'value ' + (stockData.cmf >= 0 ? 'positive' : 'negative');
+        document.getElementById('modalMFI').textContent = stockData.mfi.toFixed(0);
+        document.getElementById('modalVWAP').textContent = stockData.vwap > 0 ? formatNumber(stockData.vwap, 1) : 'N/A';
+        document.getElementById('modalMACD').textContent = (stockData.macd >= 0 ? '+' : '') + stockData.macd.toFixed(2);
+        document.getElementById('modalMACD').className = 'value ' + (stockData.macd > 0 ? 'positive' : 'negative');
+        document.getElementById('modalMACDSignal').textContent = (stockData.macd_signal >= 0 ? '+' : '') + stockData.macd_signal.toFixed(2);
+        document.getElementById('modalFScore').textContent = stockData.f_score + '/9';
+        document.getElementById('modalFScore').className = 'value ' + (stockData.f_score >= 7 ? 'positive' : stockData.f_score >= 4 ? 'neutral' : 'negative');
+        document.getElementById('modalROE').textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
+        document.getElementById('modalPE').textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
+        document.getElementById('modalPB').textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+        document.getElementById('modalMarketRSI').textContent = stockData.market_rsi.toFixed(0);
+        const marketRiskEl = document.getElementById('modalMarketRisk');
+        if (stockData.is_market_high_risk) {
+            marketRiskEl.textContent = 'Danger';
+            marketRiskEl.className = 'value negative';
+        } else {
+            marketRiskEl.textContent = 'Safe';
+            marketRiskEl.className = 'value positive';
+        }
+        document.getElementById('modalStockRisk').textContent = stockData.stock_risk_level || 'Medium';
+        document.getElementById('stockModal').style.display = 'flex';
+    }
+    
+    function closeModal() {
 document.getElementById('modalFVDaily').textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
 document.getElementById('modalFVWeekly').textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
 

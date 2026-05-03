@@ -16,20 +16,7 @@ from django.views.decorators.csrf import csrf_exempt  # pyright: ignore[reportMi
 from .forms import DynamicFunctionForm
 from .models import ExecutionResult, FunctionDefinition, FunctionGroup, UserPreset, VN30_SYMBOLS
 from .services import get_function_definition, iter_registry_functions, run_registry_function
-from dashboard.sync_service import sync_market_data, get_top_picks_from_db, get_sync_status
-
-# Industry Configuration for Fair Value calculation
-INDUSTRY_CONFIG = {
-    'Banking': {'type': 'PB', 'target': 1.65},
-    'Real Estate': {'type': 'PB', 'target': 1.8},
-    'Securities': {'type': 'PB', 'target': 2.0},
-    'Technology': {'type': 'PE', 'target': 18.0},
-    'Retail': {'type': 'PE', 'target': 15.0},
-    'FMCG': {'type': 'PE', 'target': 14.0},
-    'Oil & Gas': {'type': 'PE', 'target': 9.0},
-    'Steel': {'type': 'PE', 'target': 8.5},
-    'Default': {'type': 'PE', 'target': 11.0}
-}
+from dashboard.sync_service import sync_market_data, get_top_picks_from_db, get_sync_status, compute_core_logic, INDUSTRY_CONFIG
 
 
 def retry_on_db_lock(max_retries: int = 3, delay: float = 0.5):
@@ -1715,225 +1702,117 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
             except:
                 return None
         
-        # ===== BUILD DATA ARRAY =====
+        # ===== BUILD DATA ARRAY ===== (REFACTORED to use compute_core_logic)
         data_array = []
+        
+        # Prepare fund_data from DB values (static for historical backtest)
+        fund_data = {
+            'roe': roe_val,
+            'pe': pe_val,
+            'pb': pb_val,
+            'f_score': 6,  # Default
+            'industry': industry,
+            'pe_industry_avg': None,
+            'foreign_buy_streak': 0,
+            'industry_performance': 0,
+            'is_industry_leader': True,
+        }
+        
         for idx in range(len(df)):
-            if idx < 20:
+            if idx < 50:  # Need 50 bars for SMA50
                 continue
                 
             row = df.iloc[idx]
             
+            # Get date string
             time_val = row['time'] if 'time' in df.columns else idx
             if hasattr(time_val, 'strftime'):
-                date_str = time_val.strftime('%Y-%m-%d')  # pyright: ignore[reportAttributeAccessIssue]
+                date_str = time_val.strftime('%Y-%m-%d')
             else:
                 date_str = str(time_val)
             
-            # Get quarter for this date
-            quarter = get_quarter(date_str)
+            # Build tech dict from calculated indicators
+            tech = {
+                'price': float(row['close']) if pd.notna(row['close']) else 0,
+                'change_percent': 0,
+                'volume': int(row['volume']) if pd.notna(row['volume']) else 0,
+                'rsi': float(row['rsi']) if pd.notna(row.get('rsi')) else 50,
+                'mfi': float(row['mfi']) if pd.notna(row.get('mfi')) else 50,
+                'adx': float(row.get('adx', 25)) if pd.notna(row.get('adx')) else 25,
+                'plus_di': float(row.get('plus_di', 0)) if pd.notna(row.get('plus_di')) else 0,
+                'minus_di': float(row.get('minus_di', 0)) if pd.notna(row.get('minus_di')) else 0,
+                'cmf': float(row['cmf']) if pd.notna(row['cmf']) else 0,
+                'atr': float(row.get('atr', 0)) if pd.notna(row.get('atr')) else 0,
+                'sma_10': float(row['sma_10']) if pd.notna(row['sma_10']) else float(row['close']),
+                'sma_20': float(row['sma_20']) if pd.notna(row['sma_20']) else float(row['close']),
+                'sma_50': float(row['sma_50']) if pd.notna(row['sma_50']) else float(row['close']),
+                'sma_200': float(row.get('sma_200', 0)) if pd.notna(row.get('sma_200')) else 0,
+                'bb_upper': float(row.get('bb_upper', 0)) if pd.notna(row.get('bb_upper')) else 0,
+                'bb_middle': float(row.get('bb_middle', 0)) if pd.notna(row.get('bb_middle')) else 0,
+                'bb_lower': float(row.get('bb_lower', 0)) if pd.notna(row.get('bb_lower')) else 0,
+                'bb_percent': float(row.get('bb_percent', 50)) if pd.notna(row.get('bb_percent')) else 50,
+                'macd': float(row.get('macd', 0)) if pd.notna(row.get('macd')) else 0,
+                'macd_signal': float(row.get('macd_signal', 0)) if pd.notna(row.get('macd_signal')) else 0,
+                'volume_ratio': float(row.get('volume_ratio', 1.0)) if pd.notna(row.get('volume_ratio')) else 1.0,
+                'vwap': float(row['vwap']) if pd.notna(row['vwap']) else float(row['close']),
+                'vwap_status': str(row.get('vwap_status', 'neutral')).lower() if pd.notna(row.get('vwap_status')) else 'neutral',
+                'ichimoku_tenkan': float(row.get('ichimoku_tenkan', 0)) if pd.notna(row.get('ichimoku_tenkan')) else 0,
+                'ichimoku_kijun': float(row.get('ichimoku_kijun', 0)) if pd.notna(row.get('ichimoku_kijun')) else 0,
+                'ichimoku_status': str(row.get('ichimoku_status', 'neutral')).lower() if pd.notna(row.get('ichimoku_status')) else 'neutral',
+                'supertrend': float(row.get('supertrend', 0)) if pd.notna(row.get('supertrend')) else 0,
+                'supertrend_signal': str(row.get('supertrend_signal', 'neutral')).lower() if pd.notna(row.get('supertrend_signal')) else 'neutral',
+            }
             
-            vwap_val = float(row['vwap']) if pd.notna(row['vwap']) else float(row['close'])
-            sma10_val = float(row['sma_10']) if pd.notna(row['sma_10']) else float(row['close'])
-            sma20_val = float(row['sma_20']) if pd.notna(row['sma_20']) else float(row['close'])
-            rsi_val = float(row['rsi']) if pd.notna(row['rsi']) else 50
-            cmf_val = float(row['cmf']) if pd.notna(row['cmf']) else 0
-            mfi_val = float(row['mfi']) if pd.notna(row['mfi']) else 50
-            foreign_val = float(row['foreign_buy']) if pd.notna(row['foreign_buy']) else 0
-            # Get date string for market RSI lookup
-            date_str = str(row.get('time', ''))[:10] if 'time' in df.columns else str(idx)
+            # Calculate ATR if not present
+            if tech['atr'] <= 0 and idx >= 14:
+                try:
+                    high_curr = float(row['high'])
+                    low_curr = float(row['low'])
+                    close_prev = float(df.iloc[idx-1]['close']) if pd.notna(df.iloc[idx-1]['close']) else high_curr
+                    tr1 = high_curr - low_curr
+                    tr2 = abs(high_curr - close_prev)
+                    tr3 = abs(low_curr - close_prev)
+                    tr = max(tr1, tr2, tr3)
+                    atr_sum = tr
+                    for j in range(idx-13, idx):
+                        h = float(df.iloc[j]['high']) if pd.notna(df.iloc[j]['high']) else float(df.iloc[j]['close'])
+                        l = float(df.iloc[j]['low']) if pd.notna(df.iloc[j]['low']) else float(df.iloc[j]['close'])
+                        c = float(df.iloc[j-1]['close']) if j > 0 and pd.notna(df.iloc[j-1]['close']) else h
+                        atr_sum += max(h - l, abs(h - c), abs(l - c))
+                    tech['atr'] = atr_sum / 14
+                except:
+                    pass
             
-            # Market RSI: Ưu tiên VN-Index thực, fallback proxy
+            # Get market RSI (VN-Index at that time)
+            market_rsi_val = 50
             if 'vndx_rsi' in dir() and date_str in vndx_rsi:
                 market_rsi_val = vndx_rsi[date_str]
-            else:
-                market_rsi_val = float(row['market_rsi']) if pd.notna(row['market_rsi']) else 50
             
-            # Use quarterly data if available, else fallback to static
-            if quarter and quarter in quarterly_data:
-                qd = quarterly_data[quarter]
-                roe_val = qd.get('roe') or roe_val
-                f_score_val = qd.get('f_score') or 6
-                is_vetoed = qd.get('is_vetoed', False)
-                veto_reason = qd.get('veto_reason', '')
-            else:
-                roe_val = float(row['roe']) if pd.notna(row['roe']) else 20.0
-                f_score_val = float(row['f_score']) if pd.notna(row['f_score']) else 6
-                is_vetoed = False
-                veto_reason = ""
+            # Prepare fund_data with quarterly override if available
+            fund_data_with_quarterly = dict(fund_data)
+            try:
+                dt_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                quarter = f"{dt_obj.year}-Q{(dt_obj.month - 1) // 3 + 1}"
+                if quarter in quarterly_data:
+                    qd = quarterly_data[quarter]
+                    fund_data_with_quarterly['roe'] = qd.get('roe') or fund_data['roe']
+                    fund_data_with_quarterly['f_score'] = qd.get('f_score') or fund_data['f_score']
+            except:
+                pass
             
-            # === ATR Calculation (14-period) ===
-            atr_val = 14.0  # Default
-            if idx >= 34:  # Need at least 34 rows for 14-period ATR with smoothing
-                high_prev = float(df.iloc[idx-1]['high']) if pd.notna(df.iloc[idx-1]['high']) else float(row['high'])
-                low_prev = float(df.iloc[idx-1]['low']) if pd.notna(df.iloc[idx-1]['low']) else float(row['low'])
-                close_prev = float(df.iloc[idx-1]['close']) if pd.notna(df.iloc[idx-1]['close']) else float(row['close'])
-                high_curr = float(row['high'])
-                low_curr = float(row['low'])
-                
-                # True Range
-                tr1 = high_curr - low_curr
-                tr2 = abs(high_curr - close_prev)
-                tr3 = abs(low_curr - close_prev)
-                tr = max(tr1, tr2, tr3)
-                
-                # Calculate ATR from historical data
-                atr_sum = 0
-                for j in range(idx-13, idx+1):
-                    h = float(df.iloc[j]['high']) if pd.notna(df.iloc[j]['high']) else float(df.iloc[j]['close'])
-                    l = float(df.iloc[j]['low']) if pd.notna(df.iloc[j]['low']) else float(df.iloc[j]['close'])
-                    c = float(df.iloc[j-1]['close']) if j > 0 and pd.notna(df.iloc[j-1]['close']) else float(df.iloc[j]['close'])
-                    tr_j = max(h - l, abs(h - c), abs(l - c))
-                    atr_sum += tr_j
-                atr_val = atr_sum / 14
+            # Call compute_core_logic
+            result = compute_core_logic(
+                symbol=symbol,
+                tech=tech,
+                fund_data=fund_data_with_quarterly,
+                market_rsi=market_rsi_val,
+                market_group='VN30',  # Assume VN30 for backtest
+                df=df,
+                quarterly_data=quarterly_data,
+                date_str=date_str
+            )
             
-            # FV Daily: fv_daily = (vwap * 0.6) + (sma10 * 0.4)
-            fv_daily = round((vwap_val * 0.6) + (sma10_val * 0.4), 2)
-            
-            # FV Weekly: fv_weekly = (vwap * 0.6) + (sma20 * 0.4)
-            fv_weekly = round((vwap_val * 0.6) + (sma20_val * 0.4), 2)
-            
-            # Fundamental Score
-            fundamental_score = 50
-            if config['type'] == 'PB' and pb_val > 0:
-                target_pb = config['target']
-                if pb_val <= target_pb:
-                    fundamental_score = 50 + (target_pb - pb_val) / target_pb * 50
-                else:
-                    fundamental_score = max(20, 50 - (pb_val - target_pb) / target_pb * 30)
-            elif pe_val > 0:
-                target_pe = config['target']
-                if pe_val <= target_pe:
-                    fundamental_score = 50 + (target_pe - pe_val) / target_pe * 50
-                else:
-                    fundamental_score = max(20, 50 - (pe_val - target_pe) / target_pe * 30)
-            
-            # Technical Score
-            technical_score = 50
-            if rsi_val < 30:
-                technical_score = 80
-            elif rsi_val > 70:
-                technical_score = 30
-            elif 40 <= rsi_val <= 60:
-                technical_score = 60
-            
-            # Take Profit (3 * ATR above FV Daily)
-            take_profit = round(fv_daily + (atr_val * 3), 2)
-            
-            # Stop Loss (1.5 * ATR below FV Daily)
-            stop_loss = round(fv_daily - (atr_val * 1.5), 2)
-            
-            # ===== VETO CHECK =====
-            is_vetoed = False
-            veto_reason = ""
-            if roe_val < 15:
-                is_vetoed = True
-                veto_reason = "ROE < 15"
-            elif f_score_val < 5:
-                is_vetoed = True
-                veto_reason = "F-Score < 5"
-            elif market_rsi_val > 80:
-                is_vetoed = True
-                veto_reason = "Market RSI > 80"
-            
-            # Calculate additional indicators
-            adx_val = float(row['adx']) if pd.notna(row.get('adx')) else 25
-            ichimoku_tenkan = float(row['ichimoku_tenkan']) if pd.notna(row.get('ichimoku_tenkan')) else 0
-            ichimoku_kijun = float(row['ichimoku_kijun']) if pd.notna(row.get('ichimoku_kijun')) else 0
-            ichimoku_status = str(row.get('ichimoku_status', 'neutral')).lower() if pd.notna(row.get('ichimoku_status')) else 'neutral'
-            supertrend_signal = str(row.get('supertrend_signal', 'neutral')).lower() if pd.notna(row.get('supertrend_signal')) else 'neutral'
-            bb_percent = float(row.get('bb_percent', 50)) if pd.notna(row.get('bb_percent')) else 50
-            volume_ratio = float(row.get('volume_ratio', 1.0)) if pd.notna(row.get('volume_ratio')) else 1.0
-            vwap_status = str(row.get('vwap_status', 'neutral')).lower() if pd.notna(row.get('vwap_status')) else 'neutral'
-            
-            # SMA50
-            sma50_val = 0
-            if idx >= 49:
-                sma50_val = df.iloc[idx-49:idx+1]['close'].mean()
-            
-            # Calculate SMA Trend
-            sma_trend = 'neutral'
-            if sma10_val > sma20_val > sma50_val:
-                sma_trend = 'perfect'
-            elif sma10_val > sma20_val:
-                sma_trend = 'bullish'
-            elif sma10_val < sma20_val:
-                sma_trend = 'bearish'
-            
-            # Tenkan vs Kijun comparison
-            ichimoku_tk_cross = 'neutral'
-            if ichimoku_tenkan > ichimoku_kijun:
-                ichimoku_tk_cross = 'bullish'
-            elif ichimoku_tenkan < ichimoku_kijun:
-                ichimoku_tk_cross = 'bearish'
-            
-            # ===== MASTER SCORE & SIGNAL (đồng bộ với sync_service.py) =====
-            # Technical Score (60% weight)
-            t_score = 50
-            if rsi_val >= 30 and rsi_val <= 70:
-                t_score += 20
-            if volume_ratio >= 1.3:
-                t_score += 15
-            if vwap_status == 'above':
-                t_score += 10
-            if sma_trend in ['perfect', 'bullish']:
-                t_score += 10
-            if ichimoku_status == 'bullish':
-                t_score += 10
-            if supertrend_signal == 'buy':
-                t_score += 10
-            if bb_percent >= 30 and bb_percent <= 70:
-                t_score += 10
-            t_score = min(100, t_score)
-            
-            # Fundamental Score (40% weight) - đã tính ở trên
-            fund_score = fundamental_score
-            
-            # Master Score
-            master_score = round(fund_score * 0.4 + t_score * 0.6)
-            
-            # Price for calculations
-            price = float(row['close']) if pd.notna(row['close']) else 0
-            
-            # Risk/Reward
-            risk = fv_daily - stop_loss if stop_loss > 0 else atr_val * 1.5
-            reward = take_profit - fv_daily if take_profit > 0 else atr_val * 3
-            rr_ratio = round(reward / risk, 2) if risk > 0 else 0
-            
-            # Signal
-            if is_vetoed:
-                signal = 'VETO'
-            elif master_score >= 80:
-                signal = 'BUY'
-            elif master_score >= 65:
-                signal = 'HOLD'
-            elif master_score >= 50:
-                signal = 'WAIT'
-            else:
-                signal = 'SELL'
-            
-            # Criteria count (8 criteria max)
-            criteria_met = 0
-            if rsi_val >= 30 and rsi_val <= 70: criteria_met += 1
-            if volume_ratio >= 1.3: criteria_met += 1
-            if sma10_val > sma20_val: criteria_met += 1
-            if vwap_status == 'above': criteria_met += 1
-            if ichimoku_status == 'bullish': criteria_met += 1
-            if supertrend_signal == 'buy': criteria_met += 1
-            if bb_percent >= 30 and bb_percent <= 70: criteria_met += 1
-            if rr_ratio >= 2: criteria_met += 1
-            
-            # Timeframe
-            est_days = max(1, min(30, round(rr_ratio * 5)))
-            pct_per_day = round(reward / price * 100 / est_days, 2) if price > 0 and est_days > 0 else 0
-            target_yield = round(reward / price * 100, 2) if price > 0 else 0
-            
-            if est_days > 10:
-                timeframe = 'SWING'
-            elif est_days > 3:
-                timeframe = 'INTRA'
-            else:
-                timeframe = 'T+0'
-            
+            # Build record from result
             record = {
                 "Date": date_str,
                 "Open": round(float(row['open']), 2) if pd.notna(row['open']) else 0,
@@ -1941,55 +1820,53 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "Low": round(float(row['low']), 2) if pd.notna(row['low']) else 0,
                 "Close": round(float(row['close']), 2) if pd.notna(row['close']) else 0,
                 "Volume": int(row['volume']) if pd.notna(row['volume']) else 0,
-                "VWAP": round(vwap_val, 2),
-                "VWAP_Status": vwap_status,
-                "SMA10": round(sma10_val, 2),
-                "SMA20": round(sma20_val, 2),
-                "SMA50": round(sma50_val, 2),
-                "SMA_Trend": sma_trend,
-                "RSI": round(rsi_val, 1),
-                "Market_RSI": round(market_rsi_val, 1),
-                "ADX": round(adx_val, 1),
-                "CMF": round(cmf_val, 3),
-                "MFI": round(mfi_val, 1),
-                "Foreign_Buy": round(foreign_val, 1),
-                "PE": round(pe_val, 1),
-                "PB": round(pb_val, 2),
-                "ROE": round(roe_val, 1),
-                "F_Score": round(f_score_val, 0),
-                "Fundamental_Score": round(fund_score, 0),
-                "Technical_Score": round(t_score, 0),
-                "Master_Score": master_score,
-                "Signal": signal,
-                "Criteria": criteria_met,
-                "R_R": rr_ratio,
-                "Timeframe": timeframe,
-                "Target_Yield": target_yield,
-                "Pct_Per_Day": pct_per_day,
-                "Est_Days": est_days,
-                "ATR": round(atr_val, 2),
-                "FV_Daily": fv_daily,
-                "FV_Weekly": fv_weekly,
-                "Take_Profit": take_profit,
-                "Stop_Loss": stop_loss,
-                "Is_Vetoed": is_vetoed,
-                "Veto_Reason": veto_reason,
-                "Industry": industry,
-                # Additional indicators for scoring
-                "Ichimoku_Status": ichimoku_status,
-                "Ichimoku_Tenkan": round(ichimoku_tenkan, 2),
-                "Ichimoku_Kijun": round(ichimoku_kijun, 2),
-                "Ichimoku_TK_Cross": ichimoku_tk_cross,
-                "Supertrend_Signal": supertrend_signal,
-                "BB_Pos": round(bb_percent, 1),
-                "Vol_Ratio": round(volume_ratio, 2),
-                # MACD
-                "MACD": round(float(row.get('macd', 0)), 4),
-                "MACD_Signal": round(float(row.get('macd_signal', 0)), 4),
-                "MACD_Status": str(row.get('macd_status', 'neutral')),
-                "MACD_Histogram": round(float(row.get('macd_histogram', 0)), 4),
-                # Foreign Streak
-                "Foreign_Streak": int(float(row.get('foreign_buy', 0))),
+                "VWAP": round(result.get('vwap', 0), 2),
+                "VWAP_Status": result.get('vwap_status', 'neutral'),
+                "SMA10": round(result.get('sma_10', 0), 2),
+                "SMA20": round(result.get('sma_20', 0), 2),
+                "SMA50": round(result.get('sma_50', 0), 2),
+                "SMA_Trend": result.get('trend', 'SIDEWAYS'),
+                "RSI": round(result.get('rsi', 50), 1),
+                "Market_RSI": round(result.get('market_rsi', 50), 1),
+                "ADX": round(result.get('adx', 25), 1),
+                "CMF": round(result.get('cmf', 0), 3),
+                "MFI": round(result.get('mfi', 50), 1),
+                "Foreign_Buy": 0,
+                "PE": round(result.get('pe', 15), 1),
+                "PB": round(result.get('pb', 1.5), 2),
+                "ROE": round(result.get('roe', 20), 1),
+                "F_Score": round(result.get('f_score', 6), 0),
+                "Fundamental_Score": round(result.get('fundamental_score', 50), 0),
+                "Technical_Score": round(result.get('technical_score', 50), 0),
+                "Master_Score": result.get('master_score', 50),
+                "Signal": result.get('signal', 'WAIT'),
+                "Criteria": result.get('criteria_met', 0),
+                "R_R": result.get('risk_reward_ratio', 1.5),
+                "Timeframe": result.get('timeframe_label', 'SWING'),
+                "Target_Yield": round(result.get('target_yield_pct', 0), 2),
+                "Pct_Per_Day": round(result.get('expected_profit_per_day', 0), 2),
+                "Est_Days": result.get('estimated_days_to_target', 15),
+                "ATR": round(result.get('atr', 0), 2),
+                "FV_Daily": round(result.get('fv_daily', 0), 2),
+                "FV_Weekly": round(result.get('fv_weekly', 0), 2),
+                "Take_Profit": result.get('take_profit', 0),
+                "Stop_Loss": result.get('stop_loss', 0),
+                "Is_Vetoed": result.get('is_vetoed', False),
+                "Veto_Reason": result.get('veto_reason', ''),
+                "Industry": result.get('industry', industry),
+                # Additional indicators
+                "Ichimoku_Status": result.get('ichimoku_status', 'neutral'),
+                "Ichimoku_Tenkan": round(result.get('ichimoku_tenkan', 0), 2),
+                "Ichimoku_Kijun": round(result.get('ichimoku_kijun', 0), 2),
+                "Ichimoku_TK_Cross": 'neutral',
+                "Supertrend_Signal": result.get('supertrend_signal', 'neutral'),
+                "BB_Pos": round(result.get('bb_percent', 50), 1),
+                "Vol_Ratio": round(result.get('volume_ratio', 1), 2),
+                "MACD": round(result.get('macd', 0), 4),
+                "MACD_Signal": round(result.get('macd_signal', 0), 4),
+                "MACD_Status": 'neutral',
+                "MACD_Histogram": 0,
+                "Foreign_Streak": result.get('foreign_buy_streak', 0),
             }
             data_array.append(record)
         
