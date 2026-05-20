@@ -816,7 +816,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     import csv
     from django.http import HttpResponse
     from .models import StockData, StockAnalysis
-    from .services.valuation_engine import get_valuation_service
+    from .service_modules.valuation_engine import get_valuation_service
 
     analyses = StockAnalysis.objects.select_related("symbol").all()
     valuation_service = get_valuation_service()
@@ -903,7 +903,7 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     import csv
     from django.http import HttpResponse, Http404
     from .models import StockData, StockAnalysis
-    from .services.valuation_engine import get_valuation_service
+    from .service_modules.valuation_engine import get_valuation_service
 
     try:
         stock = StockData.objects.get(symbol=symbol.upper())
