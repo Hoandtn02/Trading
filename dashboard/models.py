@@ -255,6 +255,10 @@ class StockAnalysis(models.Model):
     valuation_source = models.CharField(max_length=10, default="static")  # "dynamic" or "static"
     valuation_cap_applied = models.BooleanField(default=False)  # Wealth Guard Cap was applied
 
+    # Relative Strength (RS) - FIX v2: Store RS metrics for CSV export
+    rs_label = models.CharField(max_length=20, default="NEUTRAL")  # "LEADER", "NEUTRAL", "LAGGARD"
+    rs_bonus = models.IntegerField(default=0)  # Bonus points from RS (e.g., +15, -10)
+
     # Trend
     trend = models.CharField(max_length=20, default="SIDEWAYS")
     breakout_status = models.CharField(max_length=50, default="")

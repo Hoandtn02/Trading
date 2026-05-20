@@ -827,10 +827,11 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
     writer = csv.writer(response)
     writer.writerow([
-        "Symbol", "Company", "Industry", "Price", "Change%",
+        "Symbol", "Company", "Industry", "Sector Category", "Price", "Change%",
         "FV Daily", "FV Weekly", "Valuation Status",
         "Signal", "Recommendation Label", "Strategy Group",
         "Master Score", "Tech Score", "Fund Score",
+        "RS Label", "RS Bonus", "RS Industry Perf %",
         "R:R Ratio", "R:R Quality", "Hard Risk %",
         "Est. Days", "Timeframe", "Trend Factor",
         "Entry", "Stop Loss", "Take Profit",
@@ -878,12 +879,22 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         # Extract strategy group from recommendation_label (format: "SIGNAL (GROUP)")
         recommendation_label = getattr(a, 'recommendation_label', '') or ''
         strategy_group = recommendation_label.split('(')[-1].replace(')', '').strip() if '(' in recommendation_label else ''
+        
+        # Get sector category (fix for SAB and other consumer stocks)
+        from dashboard.sync_service import get_sector_category
+        sector_category = get_sector_category(industry)
+        
+        # Get RS info from analysis fields
+        rs_label = getattr(a, 'rs_label', 'NEUTRAL') or 'NEUTRAL'
+        rs_bonus = getattr(a, 'rs_bonus', 0) or 0
+        rs_industry_perf = getattr(a, 'industry_performance', 0) or 0
 
         writer.writerow([
-            s.symbol, s.company_name, s.industry or s.get_industry(), s.price, s.change_percent,
+            s.symbol, s.company_name, s.industry or s.get_industry(), sector_category, s.price, s.change_percent,
             fv_daily, fv_weekly, valuation_status,
             a.signal, recommendation_label, strategy_group,
             a.master_score, a.technical_score, a.fundamental_score,
+            rs_label, rs_bonus, rs_industry_perf,
             a.risk_reward_ratio, getattr(a, 'rr_quality', ''), getattr(a, 'hard_risk_pct', 0),
             round(a.estimated_days_to_target, 1) if a.estimated_days_to_target else '',
             a.timeframe_label, getattr(a, 'trend_factor', 0.6),

@@ -776,52 +776,85 @@ def get_foreign_buy_streak(symbol: str, lookback: int = 5) -> int:
         return 0
 
 
-def get_industry_performance(symbol: str, df: pd.DataFrame, lookback: int = 5) -> float:
+def get_industry_performance(symbol: str, df: pd.DataFrame = None, lookback: int = 5) -> float:
     """
-    So sánh hiệu suất mã với trung bình ngành
-    Returns: % chênh lệch so với ngành (dương = mạnh hơn ngành)
+    Lấy RS (Relative Strength) của mã so với VNIndex
+    Returns: % chênh lệch so với VNIndex (dương = mạnh hơn thị trường)
+    
+    FIX v6: Khởi tạo Quote riêng cho từng symbol để tránh cache
     """
     try:
-        # Tính % tăng của mã trong N phiên
-        if df is None or len(df) < lookback:
-            return 0
+        from vnstock_data import Quote
+        import warnings
+        warnings.filterwarnings('ignore')
         
-        stock_return = 0
-        if 'close' in df.columns and len(df) >= lookback:
-            current_price = float(df['close'].iloc[-1])
-            past_price = float(df['close'].iloc[-lookback])
-            if past_price > 0:
-                stock_return = ((current_price - past_price) / past_price) * 100
+        lookback = min(lookback, 20)  # Giới hạn max 20 ngày
         
-        # Lấy danh sách cổ phiếu cùng ngành từ vnstock
+        # Thử 1: Lấy từ Insights.screener() cho các mã có sẵn
         try:
-            from vnstock_data import Listing
-            lst = Listing(source="kbs")
+            from vnstock_data import Insights
+            ins = Insights()
+            screener_df = ins.screener().filter(2000)
             
-            # Lấy industry của mã (từ stock data)
-            from .models import StockData
-            try:
-                stock = StockData.objects.get(symbol=symbol.upper())
-                industry = stock.industry or stock.get_industry()
-            except:
-                industry = None
-            
-            if industry:
-                # Lấy danh sách top stocks theo ngành (lấy mẫu)
-                # So sánh với top gainers
-                top = lst.top_gainers()
+            if screener_df is not None and len(screener_df) > 0:
+                ticker_col = 'symbol' if 'symbol' in screener_df.columns else 'ticker'
+                stock_row = screener_df[screener_df[ticker_col] == symbol.upper()]
                 
-                if top is not None and len(top) > 0:
-                    # Tính trung bình % tăng của top stocks
-                    industry_return = top['change_percent'].mean() if 'change_percent' in top.columns else 0
-                    
-                    # Chênh lệch = Stock - Industry
-                    return round(stock_return - industry_return, 2)
+                if len(stock_row) > 0:
+                    if 'outperforms_index_3m' in stock_row.columns:
+                        rs_value = stock_row['outperforms_index_3m'].iloc[0]
+                        if rs_value is not None and pd.notna(rs_value):
+                            return round(float(rs_value), 2)
+                    if 'rs_3m' in stock_row.columns:
+                        rs_value = stock_row['rs_3m'].iloc[0]
+                        if rs_value is not None and pd.notna(rs_value):
+                            return round(float(rs_value), 2)
         except:
             pass
         
-        # Fallback: so sánh với VNIndex (thị trường chung)
-        return 0  # Không đủ dữ liệu
+        # Thử 2: Tính thủ công từ df (nếu được truyền vào)
+        if df is not None and len(df) >= lookback:
+            stock_return = ((df['close'].iloc[-1] - df['close'].iloc[-lookback]) / df['close'].iloc[-lookback]) * 100
+            
+            # Lấy VNIndex từ df đã truyền
+            try:
+                from .models import StockData
+                # Lấy VNIndex từ cache hoặc gọi mới
+                from django.core.cache import cache
+                vn_cached = cache.get('vnindex_history')
+                
+                if vn_cached is None:
+                    quote_vn = Quote(symbol='VNINDEX')
+                    vn_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
+                    if vn_df is not None and len(vn_df) >= lookback:
+                        cache.set('vnindex_history', vn_df, 300)  # Cache 5 phút
+                        vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
+                        return round(stock_return - vn_return, 2)
+                else:
+                    vn_return = ((vn_cached['close'].iloc[-1] - vn_cached['close'].iloc[-lookback]) / vn_cached['close'].iloc[-lookback]) * 100
+                    return round(stock_return - vn_return, 2)
+            except:
+                pass
+        
+        # Thử 3: Tính trực tiếp từ API (Quote riêng cho từng symbol)
+        try:
+            # Quote riêng cho VNIndex
+            quote_vn = Quote(symbol='VNINDEX')
+            vn_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
+            
+            # Quote riêng cho stock
+            quote_stk = Quote(symbol=symbol)
+            stock_df = quote_stk.history(symbol=symbol, length='30D', interval='1D')
+            
+            if (vn_df is not None and stock_df is not None and 
+                len(vn_df) >= lookback and len(stock_df) >= lookback):
+                stock_return = ((stock_df['close'].iloc[-1] - stock_df['close'].iloc[-lookback]) / stock_df['close'].iloc[-lookback]) * 100
+                vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
+                return round(stock_return - vn_return, 2)
+        except:
+            pass
+        
+        return 0
     except Exception as e:
         return 0
 
@@ -1122,11 +1155,36 @@ def get_f_score_grade(score: int) -> str:
 
 # ============== SECTOR-SPECIFIC SCORING FUNCTIONS (V3) ==============
 
-def get_sector_category(industry: str) -> str:
+def get_sector_category(industry: str, icb_code: str = "") -> str:
     """
     Classify industry into sector category for scoring purposes.
     Returns: 'banking', 'real_estate', 'manufacturing', 'retail', 'general'
+    
+    FIX v3: Extended keywords for SAB, beverages, consumer goods.
+    Also supports ICB code for accurate classification.
+    
+    ICB Industry Codes Reference:
+    - 3500: Thực phẩm và đồ uống
+    - 3530: Bia và đồ uống
+    - 3533: Sản xuất bia
+    - 3537: Đồ uống & giải khát
+    - 8000: Ngân hàng
+    - 8500: Bất động sản
     """
+    # ICB Code-based classification (highest priority)
+    if icb_code:
+        icb_prefix = str(icb_code)[:2] if len(str(icb_code)) >= 2 else str(icb_code)
+        if icb_code in ['3530', '3533', '3537'] or icb_prefix == '35':
+            return 'manufacturing'
+        if icb_prefix == '80':  # Banks
+            return 'banking'
+        if icb_prefix == '85':  # Real Estate
+            return 'real_estate'
+        if icb_prefix == '40':  # Technology
+            return 'retail'
+        if icb_prefix == '50' or icb_prefix == '60':  # Retail/FMCG
+            return 'retail'
+    
     if not industry:
         return 'general'
     
@@ -1140,13 +1198,29 @@ def get_sector_category(industry: str) -> str:
     if any(k in industry_lower for k in ['bất động sản', 'real estate', 'xây dựng', 'construction']):
         return 'real_estate'
     
-    # Manufacturing (Capital Intensive)
-    if any(k in industry_lower for k in ['thép', 'steel', 'điện', 'power', 'năng lượng', 'dầu', 'oil', 'gas', 'hóa', 'chem', 'xi măng', 'cement', 'phân bón', 'fertilizer']):
+    # Manufacturing (Capital Intensive) - Extended keywords for SAB, beverages
+    manufacturing_keywords = [
+        'thép', 'steel', 'điện', 'power', 'năng lượng', 'dầu', 'oil', 'gas',
+        'hóa', 'chem', 'xi măng', 'cement', 'phân bón', 'fertilizer',
+        'bia', 'rượu', 'bia/nước', 'đồ uống', 'beverage', 'giải khát',
+        'thực phẩm', 'food', 'chế biến', 'processing', 'sản xuất', 'manufacturing'
+    ]
+    if any(k in industry_lower for k in manufacturing_keywords):
         return 'manufacturing'
     
-    # Retail & Consumer
-    if any(k in industry_lower for k in ['bán lẻ', 'retail', 'fmcg', 'tiêu dùng', 'consumer', 'thực phẩm', 'food', 'đồ uống', 'beverage', 'dược', 'pharma']):
+    # Retail & Consumer - Extended keywords
+    retail_keywords = [
+        'bán lẻ', 'retail', 'fmcg', 'tiêu dùng', 'consumer',
+        'dược', 'pharma', 'mỹ phẩm', 'cosmetic', 'bán buôn', 'wholesale',
+        'thương mại', 'trading', 'phân phối', 'distribution'
+    ]
+    if any(k in industry_lower for k in retail_keywords):
         return 'retail'
+    
+    # FIX: Map SAB's specific industry names if they exist
+    sab_keywords = ['sabmiller', 'sabre', 'brewery', 'harworth']
+    if any(k in industry_lower for k in sab_keywords):
+        return 'manufacturing'
     
     return 'general'
 
@@ -1565,10 +1639,145 @@ def score_general_sector(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+# ============== INDUSTRY MEDIAN FALLBACK ==============
+
+# Static median values for common sectors (Vietnam market)
+SECTOR_MEDIAN_DEFAULTS = {
+    'banking': {
+        'nim': 3.5,        # Net Interest Margin %
+        'npl': 2.0,        # Non-Performing Loans %
+        'casa': 20.0,      # CASA ratio %
+        'car': 12.0,       # Capital Adequacy Ratio %
+        'roe': 18.0,       # Return on Equity %
+        'pb': 1.5,         # Price/Book
+    },
+    'real_estate': {
+        'debt_equity': 1.0,  # D/E ratio
+        'roe': 12.0,
+        'pb': 1.0,
+        'inventory_days': 730,
+    },
+    'manufacturing': {
+        'gross_margin': 20.0,   # Gross margin %
+        'inventory_turnover': 5.0,
+        'roe': 15.0,
+        'pb': 1.5,
+        'pe': 12.0,
+    },
+    'retail': {
+        'profit_growth': 10.0,  # Profit growth %
+        'roe': 18.0,
+        'pb': 2.5,
+        'pe': 15.0,
+    },
+    'general': {
+        'roe': 15.0,
+        'pb': 2.0,
+        'pe': 12.0,
+    }
+}
+
+
+def get_industry_median_values(sector: str) -> Dict[str, float]:
+    """
+    Lấy median values cho sector cụ thể từ database hoặc fallback to static values.
+    
+    Returns:
+        Dict với các default values cho sector
+    """
+    # Ưu tiên 1: Try lấy từ database IndustryValuation
+    try:
+        from dashboard.models import IndustryValuation
+        iv = IndustryValuation.objects.filter(
+            name__icontains=sector,
+            is_active=True
+        ).first()
+        
+        if iv:
+            db_values = {}
+            if iv.median_pe and iv.median_pe > 0:
+                db_values['pe'] = iv.median_pe
+            if iv.median_pb and iv.median_pb > 0:
+                db_values['pb'] = iv.median_pb
+            if hasattr(iv, 'median_de') and iv.median_de and iv.median_de > 0:
+                db_values['debt_equity'] = iv.median_de
+            if db_values:
+                # Merge with static defaults (DB values take priority)
+                return {**SECTOR_MEDIAN_DEFAULTS.get(sector, SECTOR_MEDIAN_DEFAULTS['general']), **db_values}
+    except Exception:
+        pass
+    
+    # Ưu tiên 2: Return static defaults
+    return SECTOR_MEDIAN_DEFAULTS.get(sector, SECTOR_MEDIAN_DEFAULTS['general'])
+
+
+def apply_median_fallback(raw_data: Dict[str, Any], sector: str, symbol: str = "") -> Dict[str, Any]:
+    """
+    Áp dụng median fallback cho các trường thiếu dữ liệu.
+    
+    Thay vì chấm điểm 0 hoặc fallback sang general sector,
+    ta lấy giá trị median ngành làm substitute.
+    
+    Args:
+        raw_data: Dict financial metrics (sẽ được clone và modified)
+        sector: Sector category
+        symbol: Stock symbol for logging
+    
+    Returns:
+        Modified raw_data với fallback values applied
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Clone để không modify original
+    data = dict(raw_data)
+    medians = get_industry_median_values(sector)
+    fallback_applied = []
+    
+    # Banking specific fallbacks
+    if sector == 'banking':
+        if not data.get('nim') and not data.get('net_interest_margin'):
+            data['nim'] = medians.get('nim')
+            fallback_applied.append('nim')
+        if not data.get('npl') and not data.get('npl_ratio'):
+            data['npl'] = medians.get('npl')
+            fallback_applied.append('npl')
+        if not data.get('casa') and not data.get('casa_ratio'):
+            data['casa'] = medians.get('casa')
+            fallback_applied.append('casa')
+        if not data.get('car') and not data.get('capital_adequacy_ratio'):
+            data['car'] = medians.get('car')
+            fallback_applied.append('car')
+    
+    # Real Estate specific fallbacks
+    elif sector == 'real_estate':
+        if not data.get('debt_equity') and not data.get('de'):
+            data['debt_equity'] = medians.get('debt_equity')
+            fallback_applied.append('debt_equity')
+    
+    # Manufacturing specific fallbacks
+    elif sector == 'manufacturing':
+        if not data.get('gross_margin'):
+            data['gross_margin'] = medians.get('gross_margin')
+            fallback_applied.append('gross_margin')
+    
+    # Log warning if fallbacks applied
+    if fallback_applied and symbol:
+        logger.warning(f"[Data Fallback] {symbol} ({sector}): Applied median for {fallback_applied}")
+    
+    # Attach fallback info
+    data['_fallback_applied'] = fallback_applied
+    
+    return data
+
+
 def score_by_sector(raw_data: Dict[str, Any], industry: str = "", symbol: str = "") -> Dict[str, Any]:
     """
     Main entry point for sector-specific scoring.
     Routes to appropriate scoring function based on industry.
+    
+    MEDIAN FALLBACK v2: Nếu dữ liệu ngành thiếu, áp dụng median fallback
+    thay vì fallback sang general sector scoring.
     
     Args:
         raw_data: Dict containing financial metrics
@@ -1576,17 +1785,21 @@ def score_by_sector(raw_data: Dict[str, Any], industry: str = "", symbol: str = 
         symbol: Stock symbol for logging purposes
     """
     sector = get_sector_category(industry)
-
+    
+    # FIX v2: Apply median fallback BEFORE scoring
+    # Đảm bảo các chỉ số ngành có giá trị (median) thay vì None/0
+    enriched_data = apply_median_fallback(raw_data, sector, symbol)
+    
     if sector == 'banking':
-        return score_banking_sector(raw_data, symbol)
+        return score_banking_sector(enriched_data, symbol)
     elif sector == 'real_estate':
-        return score_real_estate_sector(raw_data, symbol)
+        return score_real_estate_sector(enriched_data, symbol)
     elif sector == 'manufacturing':
-        return score_manufacturing_sector(raw_data, symbol)
+        return score_manufacturing_sector(enriched_data, symbol)
     elif sector == 'retail':
-        return score_retail_sector(raw_data, symbol)
+        return score_retail_sector(enriched_data, symbol)
     else:
-        return score_general_sector(raw_data)
+        return score_general_sector(enriched_data)
 
 
 def get_sector_median_de(industry: str = "") -> float:
@@ -3184,6 +3397,9 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "sector_median_pe": data.get("sector_median_pe", 0),
                     "valuation_source": data.get("valuation_source", "static"),
                     "valuation_cap_applied": data.get("valuation_cap_applied", False),
+                    # Relative Strength (RS) - FIX v2
+                    "rs_label": data.get("rs_label", "NEUTRAL"),
+                    "rs_bonus": data.get("rs_bonus", 0),
                     "trend": data.get("trend", "SIDEWAYS"),
                     "breakout_status": data.get("breakout_status", ""),
                     "market_rsi": data["market_rsi"],
