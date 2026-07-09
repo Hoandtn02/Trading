@@ -2308,6 +2308,7 @@ def compute_core_logic(
     sma_20_val = tech.get("sma_20", 0)
     sma_50_val = tech.get("sma_50", 0)
     sma_200_val = tech.get("sma_200", 0)
+    sma20_val_t = tech.get("sma_20", price_val)
     macd_val = tech.get("macd", 0)
     macd_signal_val = tech.get("macd_signal", 0)
     ichimoku_status_val = tech.get("ichimoku_status", "neutral")
@@ -2317,6 +2318,7 @@ def compute_core_logic(
     bb_middle_val = tech.get("bb_middle", 0)
     bb_lower_val = tech.get("bb_lower", 0)
     entry = tech.get("price", 0)
+    target_yield_pct = 0.0
 
     # Industry config
     industry = fund_data.get('industry', 'Default')
