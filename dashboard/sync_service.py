@@ -549,10 +549,11 @@ def get_industry(symbol: str) -> str:
     return "Other"
 
 
-def get_fundamental_data(symbol: str, fast_mode: bool = False) -> Dict[str, Any]:
+def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None) -> Dict[str, Any]:
     """
     Lấy dữ liệu cơ bản từ vnstock_data (Unified API) hoặc vnstock fallback
     fast_mode: True = chỉ lấy ratio (nhanh), False = lấy đầy đủ (chậm hơn)
+    vnindex_df: DataFrame VNINDEX đã prefetch sẵn (tránh cache congestion)
     Returns: {roe, pe, pb, f_score, f_score_grade, profit_growth, profit_growth_note, is_new_listing}
     """
     result = {
@@ -659,7 +660,7 @@ def get_fundamental_data(symbol: str, fast_mode: bool = False) -> Dict[str, Any]
                 result['is_new_listing'] = profit_growth_result.get('is_new_listing', False)
                 result['pe_industry_avg'] = get_industry_pe_average(symbol)
                 result['foreign_buy_streak'] = get_foreign_buy_streak(symbol)
-                result['industry_performance'] = get_industry_performance(symbol, None)
+                result['industry_performance'] = get_industry_performance(symbol, None, vnindex_df=vnindex_df)
                 result['is_industry_leader'] = result['industry_performance'] >= 0
                 result['f_score'] = calculate_f_score(symbol, result)
                 result['f_score_grade'] = get_f_score_grade(result['f_score'])
@@ -1047,86 +1048,96 @@ def get_foreign_buy_streak(symbol: str, lookback: int = 5) -> int:
         return 0
 
 
-def get_industry_performance(symbol: str, df: pd.DataFrame = None, lookback: int = 5) -> float:
+def get_industry_performance(symbol: str, df: pd.DataFrame = None, lookback: int = 5, vnindex_df=None) -> float:
     """
     Lấy RS (Relative Strength) của mã so với VNIndex
+    vnindex_df: DataFrame VNINDEX đã prefetch sẵn (tránh cache congestion giữa 8 threads)
     Returns: % chênh lệch so với VNIndex (dương = mạnh hơn thị trường)
-    
-    FIX v6: Khởi tạo Quote riêng cho từng symbol để tránh cache
     """
     try:
-        from vnstock_data import Quote
+        from vnstock_data import Quote, Insights
         import warnings
         warnings.filterwarnings('ignore')
-        
-        lookback = min(lookback, 20)  # Giới hạn max 20 ngày
-        
-        # Thử 1: Lấy từ Insights.screener() cho các mã có sẵn
+
+        lookback = min(lookback, 20)
+
+        # Thử 1: Insights screener
         try:
-            from vnstock_data import Insights
             ins = Insights()
             screener_df = ins.screener().filter(2000)
-            
+
             if screener_df is not None and len(screener_df) > 0:
                 ticker_col = 'symbol' if 'symbol' in screener_df.columns else 'ticker'
                 stock_row = screener_df[screener_df[ticker_col] == symbol.upper()]
-                
+
                 if len(stock_row) > 0:
-                    if 'outperforms_index_3m' in stock_row.columns:
-                        rs_value = stock_row['outperforms_index_3m'].iloc[0]
-                        if rs_value is not None and pd.notna(rs_value):
-                            return round(float(rs_value), 2)
-                    if 'rs_3m' in stock_row.columns:
-                        rs_value = stock_row['rs_3m'].iloc[0]
-                        if rs_value is not None and pd.notna(rs_value):
-                            return round(float(rs_value), 2)
-        except:
-            pass
-        
-        # Thử 2: Tính thủ công từ df (nếu được truyền vào)
+                    for col in ['outperforms_index_3m', 'rs_3m']:
+                        if col in stock_row.columns:
+                            rs_value = stock_row[col].iloc[0]
+                            if rs_value is not None and pd.notna(rs_value):
+                                value = round(float(rs_value), 2)
+                                print(f"[RS][{symbol}] source=screener col={col} value={value}")
+                                return value
+        except Exception as e:
+            print(f"[RS][{symbol}] screener_error={e}")
+
+        # Thử 2: df + VNINDEX (ưu tiên dùng vnindex_df đã prefetch)
         if df is not None and len(df) >= lookback:
-            stock_return = ((df['close'].iloc[-1] - df['close'].iloc[-lookback]) / df['close'].iloc[-lookback]) * 100
-            
-            # Lấy VNIndex từ df đã truyền
             try:
-                from .models import StockData
-                # Lấy VNIndex từ cache hoặc gọi mới
+                stock_return = ((df['close'].iloc[-1] - df['close'].iloc[-lookback]) / df['close'].iloc[-lookback]) * 100
+
+                vn_df = vnindex_df  # Dùng đã prefetch, không gọi API trong thread
+                if vn_df is not None and len(vn_df) >= lookback:
+                    vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
+                    value = round(stock_return - vn_return, 2)
+                    print(f"[RS][{symbol}] source=prefetched_vnindex value={value}")
+                    return value
+
+                # Fallback: thử cache nếu prefetch không có
                 from django.core.cache import cache
                 vn_cached = cache.get('vnindex_history')
-                
-                if vn_cached is None:
-                    quote_vn = Quote(symbol='VNINDEX')
-                    vn_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
-                    if vn_df is not None and len(vn_df) >= lookback:
-                        cache.set('vnindex_history', vn_df, 300)  # Cache 5 phút
-                        vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
-                        return round(stock_return - vn_return, 2)
-                else:
+                if vn_cached is not None and len(vn_cached) >= lookback:
                     vn_return = ((vn_cached['close'].iloc[-1] - vn_cached['close'].iloc[-lookback]) / vn_cached['close'].iloc[-lookback]) * 100
-                    return round(stock_return - vn_return, 2)
-            except:
-                pass
-        
-        # Thử 3: Tính trực tiếp từ API (Quote riêng cho từng symbol)
+                    value = round(stock_return - vn_return, 2)
+                    print(f"[RS][{symbol}] source=cached_vnindex value={value}")
+                    return value
+
+                # Cache miss: gọi API (đây là fallback cuối cùng, không phải hot path)
+                quote_vn = Quote(symbol='VNINDEX')
+                vn_from_api = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
+                if vn_from_api is not None and len(vn_from_api) >= lookback:
+                    cache.set('vnindex_history', vn_from_api, 300)
+                    vn_return = ((vn_from_api['close'].iloc[-1] - vn_from_api['close'].iloc[-lookback]) / vn_from_api['close'].iloc[-lookback]) * 100
+                    value = round(stock_return - vn_return, 2)
+                    print(f"[RS][{symbol}] source=manual_vnindex value={value}")
+                    return value
+            except Exception as e:
+                print(f"[RS][{symbol}] manual_vnindex_error={e}")
+
+        # Thử 3: Quote trực tiếp
         try:
-            # Quote riêng cho VNIndex
             quote_vn = Quote(symbol='VNINDEX')
             vn_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
-            
-            # Quote riêng cho stock
+
             quote_stk = Quote(symbol=symbol)
             stock_df = quote_stk.history(symbol=symbol, length='30D', interval='1D')
-            
-            if (vn_df is not None and stock_df is not None and 
+
+            if (vn_df is not None and stock_df is not None and
                 len(vn_df) >= lookback and len(stock_df) >= lookback):
                 stock_return = ((stock_df['close'].iloc[-1] - stock_df['close'].iloc[-lookback]) / stock_df['close'].iloc[-lookback]) * 100
                 vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
-                return round(stock_return - vn_return, 2)
-        except:
-            pass
-        
+                value = round(stock_return - vn_return, 2)
+                print(f"[RS][{symbol}] source=direct_quote value={value}")
+                return value
+            else:
+                print(f"[RS][{symbol}] direct_quote_insufficient_data vn={None if vn_df is None else len(vn_df)} stock={None if stock_df is None else len(stock_df)}")
+        except Exception as e:
+            print(f"[RS][{symbol}] direct_quote_error={e}")
+
+        print(f"[RS][{symbol}] fallback=0")
         return 0
     except Exception as e:
+        print(f"[RS][{symbol}] fatal_error={e}")
         return 0
 
 
@@ -2110,7 +2121,8 @@ def check_health_veto(
     market_rsi: float = 50.0,
     df: pd.DataFrame = None,
     avg_volume_value: float = 0.0,
-    industry: str = ""
+    industry: str = "",
+    scan_mode: str = "EARLY_TREND"
 ) -> Dict[str, Any]:
     """Kiểm tra VETO dựa trên bộ lọc 4 nhóm (KHÔNG bao gồm R:R hay Định giá)
 
@@ -2155,11 +2167,12 @@ def check_health_veto(
     # VETO_3: Volume_Ratio < 0.5
     elif volume_ratio_val < 0.5:
         veto_reasons.append(f"VETO_3: VolRatio < 0.5 ({volume_ratio_val:.2f})")
-    # VETO_4: Anti-FOMO - RSI quá cao
-    elif rsi_val > 70:
+    # VETO_4: Anti-FOMO - RSI quá cao (chỉ BOTTOM_FISHING)
+    # EARLY_TREND: breakout hợp lệ sẽ tự nhiên có RSI cao -> không VETO cứng ở Layer 1
+    elif scan_mode == "BOTTOM_FISHING" and rsi_val > 70:
         veto_reasons.append(f"VETO_4: Anti-FOMO RSI > 70 ({rsi_val:.1f})")
-    # VETO_5: Anti-FOMO - BB% quá cao
-    elif bb_percent_val > 95:
+    # VETO_5: Anti-FOMO - BB% quá cao (chỉ BOTTOM_FISHING)
+    elif scan_mode == "BOTTOM_FISHING" and bb_percent_val > 95:
         veto_reasons.append(f"VETO_5: Anti-FOMO BB% > 95 ({bb_percent_val:.1f})")
 
     # ===== NHÓM 2: NEO DÀI HẠN & LỌC VOLUME DƯỚI SMA50 =====
@@ -2319,6 +2332,7 @@ def compute_core_logic(
     bb_lower_val = tech.get("bb_lower", 0)
     entry = tech.get("price", 0)
     target_yield_pct = 0.0
+    scan_mode = (scan_mode or "EARLY_TREND").upper()
 
     # Industry config
     industry = fund_data.get('industry', 'Default')
@@ -2347,7 +2361,8 @@ def compute_core_logic(
         market_rsi=market_rsi,
         df=df,
         avg_volume_value=avg_volume_value,
-        industry=industry
+        industry=industry,
+        scan_mode=scan_mode
     )
 
     if health_result["is_vetoed"]:
@@ -2408,28 +2423,10 @@ def compute_core_logic(
     # ============================================================
     # SCAN MODE SCORING (Layer 2/3 extension)
     # ============================================================
-    scan_mode = (scan_mode or "EARLY_TREND").upper()
     price_to_vwap_pct = ((price_val - vwap_val) / vwap_val * 100) if vwap_val > 0 else 0
     price_to_sma20_pct = ((price_val - sma20_val_t) / sma20_val_t * 100) if sma20_val_t > 0 else 0
     breakout_signal = price_val > sma_10_val and price_val > sma_20_val and volume_ratio_val > 1.5
     is_bottom_setup = 35 <= rsi_val <= 45 and volume_ratio_val < 0.8 and abs(price_to_vwap_pct) <= 1.5
-
-    if scan_mode == "BOTTOM_FISHING":
-        if volume_ratio_val < 0.7:
-            tech_score += 12
-        if 35 <= rsi_val <= 45:
-            tech_score += 10
-        if abs(price_to_vwap_pct) <= 1.5 or abs(price_to_sma20_pct) <= 1.5:
-            tech_score += 10
-        if rsi_val > tech.get("rsi_previous", rsi_val):
-            tech_score += 8
-        if is_bottom_setup:
-            tech_score += 5
-    elif scan_mode == "EARLY_TREND":
-        if breakout_signal:
-            tech_score += 18
-        if target_yield_pct < 10:
-            tech_score -= 25
 
     # ============================================================
     # SECTOR-AWARE TECH SCORING (Layer 2 extension)
@@ -2450,9 +2447,6 @@ def compute_core_logic(
         elif price_val < sma_10_val and sma_10_val > 0:
             tech_score -= 5
 
-    # Clamp tech_score to [0, 100]
-    tech_score = max(0, min(100, tech_score))
-
     # ============================================================
     # LAYER 3: THE TIMERS (ENTRY QUALITY)
     # entry_quality: "GOOD" / "BAD" / "ACCUMULATE"
@@ -2469,15 +2463,16 @@ def compute_core_logic(
             entry_quality = "GOOD"
             entry_quality_reason = "Vùng giá tích lũy có xác nhận"
     elif scan_mode == "EARLY_TREND":
+        # Ưu tiên breakout trước RSI>70 (breakout hợp lệ không bị chặn bởi RSI cao)
         if breakout_signal:
             entry_quality = "GOOD"
             entry_quality_reason = "Chân sóng: Breakout SMA10/20 + volume xác nhận"
-        elif rsi_val > 70 or bb_percent_val > 95:
-            entry_quality = "BAD"
-            entry_quality_reason = "Anti-FOMO: RSI/BB% quá cao"
         elif rsi_val < 35 or bb_percent_val < -5:
             entry_quality = "ACCUMULATE"
             entry_quality_reason = "Giá quá bán - chờ xác nhận hồi phục"
+        elif rsi_val > 70 or bb_percent_val > 95:
+            entry_quality = "BAD"
+            entry_quality_reason = "Anti-FOMO: RSI/BB% quá cao"
         else:
             entry_quality = "GOOD"
             entry_quality_reason = "Vùng giá hợp lý"
@@ -2660,6 +2655,30 @@ def compute_core_logic(
 
     # ---- 4c. Target Yield & Est. Days (recalculated with final TP) ----
     target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
+
+    # ============================================================
+    # SCAN MODE SCORING (Layer 2/3 extension)
+    # Moved here so yield-based rules use the real target_yield_pct.
+    # ============================================================
+    if scan_mode == "BOTTOM_FISHING":
+        if volume_ratio_val < 0.7:
+            tech_score += 12
+        if 35 <= rsi_val <= 45:
+            tech_score += 10
+        if abs(price_to_vwap_pct) <= 1.5 or abs(price_to_sma20_pct) <= 1.5:
+            tech_score += 10
+        if rsi_val > tech.get("rsi_previous", rsi_val):
+            tech_score += 8
+        if is_bottom_setup:
+            tech_score += 5
+    elif scan_mode == "EARLY_TREND":
+        if breakout_signal:
+            tech_score += 18
+        if target_yield_pct < 10:
+            tech_score -= 25
+
+    # Clamp tech_score to [0, 100]
+    tech_score = max(0, min(100, tech_score))
 
     # Trend Factor dựa trên ADX
     if adx_val > 25:
@@ -3471,10 +3490,11 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
     return result
 
 
-def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False) -> Optional[Dict[str, Any]]:
+def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False, vnindex_df=None) -> Optional[Dict[str, Any]]:
     """Phân tích một mã cổ phiếu - trả về dict kết quả
     fast_mode: True = bỏ qua các API calls tốn thời gian (profit_growth, industry, foreign)
-    
+    vnindex_df: DataFrame VNINDEX đã prefetch sẵn (tránh cache congestion giữa 8 threads)
+
     REFACTORED: Sử dụng compute_core_logic() để đảm bảo đồng bộ với Backtest
     """
     try:
@@ -3485,7 +3505,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False
         company_name = get_company_name(symbol) if not fast_mode else symbol
 
         # Get Fundamental Data (ROE, P/E, P/B, F-Score)
-        fund_data = get_fundamental_data(symbol, fast_mode=fast_mode)
+        fund_data = get_fundamental_data(symbol, fast_mode=fast_mode, vnindex_df=vnindex_df)
 
         # Get Price Data - try vnstock_data first (sponsored users)
         df = None
@@ -3598,7 +3618,7 @@ def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bo
         still_failed = []
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(analyze_stock, symbol, market_rsi, fast_mode): symbol for symbol in failed_symbols}
+            futures = {executor.submit(analyze_stock, symbol, market_rsi, fast_mode, vnindex_df): symbol for symbol in failed_symbols}
             
             # Tính timeout tổng = timeout per symbol + buffer
             total_timeout = (SYMBOL_TIMEOUT + 10) * (MAX_RETRIES - attempt + 1)  # Tăng timeout cho retry
@@ -3668,6 +3688,19 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
     # Lấy Market RSI
     market_rsi = get_market_rsi()
     print(f"[Sync] Market RSI: {market_rsi:.2f}")
+
+    # Prefetch VNINDEX history TRƯỚC khi chia thread (tránh cache congestion giữa 8 workers)
+    vnindex_df = None
+    try:
+        from vnstock import Quote
+        quote_vn = Quote(symbol='VNINDEX')
+        vnindex_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
+        if vnindex_df is not None and len(vnindex_df) > 0:
+            print(f"[Sync] VNINDEX prefetched: {len(vnindex_df)} rows, cache warm")
+        else:
+            vnindex_df = None
+    except Exception as e:
+        print(f"[Sync] VNINDEX prefetch failed: {e}, will fallback to per-thread fetch")
 
     # Process in batches
     batch_size = 20
@@ -3872,6 +3905,10 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "trend": data.get("trend", "SIDEWAYS"),
                     "breakout_status": data.get("breakout_status", ""),
                     "market_rsi": data["market_rsi"],
+                    # Entry Quality & Scan Mode
+                    "scan_mode": data.get("scan_mode", "EARLY_TREND"),
+                    "entry_quality": data.get("entry_quality", "GOOD"),
+                    "entry_quality_reason": data.get("entry_quality_reason", ""),
                 }
             )
             saved += 1

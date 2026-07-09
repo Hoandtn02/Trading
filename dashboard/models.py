@@ -260,6 +260,10 @@ class StockAnalysis(models.Model):
     rs_label = models.CharField(max_length=20, default="NEUTRAL")  # "LEADER", "NEUTRAL", "LAGGARD"
     rs_bonus = models.IntegerField(default=0)  # Bonus points from RS (e.g., +15, -10)
 
+    # Entry Quality
+    entry_quality = models.CharField(max_length=20, default="GOOD")  # "GOOD" / "BAD" / "ACCUMULATE"
+    entry_quality_reason = models.CharField(max_length=200, blank=True, default="")
+
     # Trend
     trend = models.CharField(max_length=20, default="SIDEWAYS")
     breakout_status = models.CharField(max_length=50, default="")

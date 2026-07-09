@@ -2318,38 +2318,24 @@
             
             html += '</ul></div>';
 
-            // FINAL VERDICT
+            // === TỔNG KẾT & KHUYẾN NGHỊ MỚI: TINH GỌN, HÀNH ĐỘNG NGAY ===
             html += '<div style="padding: 16px; background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); border-radius: 8px; border: 2px solid #3b82f6;">';
-            html += '<div style="color: #60a5fa; font-weight: bold; margin-bottom: 12px;">🎯 TỔNG KẾT & KHUYẾN NGHỊ</div>';
-            
-            if (isGold) {
-                html += '<p style="color: #22c55e; margin: 0;"><strong>💎 WEALTH GUARD GOLD</strong> - Đây là cổ phiếu đạt điểm xếp hạng cao của hệ thống. Đánh giá trạng thái thực tế:</p>';
-                html += '<ul style="color: #86efac; margin: 8px 0 0 20px;">';
-                html += `<li>Sức mạnh xu hướng: ADX đang ở mức <strong>${data.adx.toFixed(0)}</strong> (Trạng thái: ${data.trend})</li>`;
-                html += `<li>Dòng tiền tương đối (RS): Vùng <strong>${data.rs_label}</strong> (${data.rs_bonus} điểm)</li>`;
-                html += `<li>Điểm an toàn tài chính: F-Score đạt <strong>${data.f_score}/9</strong></li>`;
-                html += `<li>Định giá thị trường hiện tại: P/E = <strong>${data.pe || 'N/A'}</strong>, P/B = <strong>${data.pb || 'N/A'}</strong></li>`;
-                html += '</ul>';
-                html += '<p style="color: #fbbf24; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> Điểm số tổng hợp tốt nhưng bắt buộc phải đối chiếu với công cụ Quản trị vốn R:R trước khi bấm lệnh.</p>';
-            } else if (isGuerrilla) {
-                html += '<p style="color: #22c55e; margin: 0;"><strong>🚀 GUERRILLA PICK</strong> - Cổ phiếu cho chiến lược lướt sóng ngắn hạn:</p>';
-                html += '<ul style="color: #86efac; margin: 8px 0 0 20px;">';
-                html += '<li>Có tín hiệu breakout hoặc pullback rõ ràng</li>';
-                html += '<li>RS đang tích cực</li>';
-                html += '<li>Khối lượng xác nhận</li>';
-                html += '</ul>';
-                html += '<p style="color: #fbbf24; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> Mua khi retest hỗ trợ, chốt lời nhanh khi đạt FV Daily. Tỷ trọng <strong>5-10%</strong>.</p>';
-            } else if (isRisk) {
-                html += '<p style="color: #fbbf24; margin: 0;"><strong>⚠️ CHỜ NGÓNG (RISK)</strong> - Cổ phiếu chưa đủ điều kiện:</p>';
-                html += '<ul style="color: #94a3b8; margin: 8px 0 0 20px;">';
-                html += '<li>Còn thiếu một số điều kiện kỹ thuật quan trọng</li>';
-                html += '<li>Xu hướng chưa rõ ràng hoặc đang giảm</li>';
-                html += '<li>Chưa có sự xác nhận của dòng tiền</li>';
-                html += '</ul>';
-                html += '<p style="color: #94a3b8; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> <strong>Theo dõi</strong>, chờ đợi tín hiệu xác nhận trước khi vào.</p>';
+            html += '<div style="color: #60a5fa; font-weight: bold; margin-bottom: 12px; font-size: 14px;">🎯 KẾ HOẠCH ĐI LỆNH THỰC CHIẾN (QUANT PLAN)</div>';
+
+            if (isVeto) {
+                html += '<p style="color: #ef4444; font-weight: bold; margin: 0;">🚫 HỆ THỐNG PHỦ QUYẾT: ĐỨNG NGOÀI TUYỆT ĐỐI</p>';
+                html += `<p style="color: #fca5a5; margin-top: 6px; font-size: 13px;">Lý do chặn: ${data.veto_reason}</p>`;
+            } else {
+                html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; line-height: 1.6;">';
+                html += `  <div>• CHIẾN THUẬT: <span style="color:#60a5fa; font-weight:bold;">${data.scan_mode || 'EARLY_TREND'}</span></div>`;
+                html += `  <div>• VÙNG MUA    : <span style="color:#22c55e; font-weight:bold;">${data.entry_quality}</span></div>`;
+                html += `  <div style="grid-column: span 2;">• VỐN GIẢI NGÂN : <span style="color:#fbbf24; font-weight:bold;">${formatNumber(data.optimal_position_size, 0)} VND</span> (Tài khoản cơ sở: 100M)</div>`;
+                html += `  <div style="grid-column: span 2;">• BIÊN LỢI NHUẬN: <span style="color:#22c55e; font-weight:bold;">+${data.target_yield_pct}%</span> (Mục tiêu: ${formatNumber(data.take_profit, 0)})</div>`;
+                html += '</div>';
+                
+                html += `<p style="color: #e2e8f0; margin: 0; font-size: 13px;">📌 <strong>Kỷ luật:</strong> Đi tiền đúng khối lượng máy tính phân bổ. Đặt sẵn lệnh dừng lỗ tự động (Stop Loss) cố định tại mức giá: <strong style="color:#ef4444;">${formatNumber(data.stop_loss, 0)}</strong> để chống nhiễu giá.</p>`;
             }
-            
-            html += '</div>';
+
             html += '</div>';
 
             elExplanation.innerHTML = html;
