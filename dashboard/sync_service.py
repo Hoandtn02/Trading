@@ -3777,7 +3777,7 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "fv_weekly": data.get("fv_weekly", 0),
                     "valuation_status": data.get("valuation_status", "N/A"),
                     "intrinsic_value": data.get("intrinsic_value", 0),
-                    "sector_median_pe": data.get("sector_median_pe", 0),
+                    "sector_median_pe": data.get("sector_median_pe") or 0,
                     "valuation_source": data.get("valuation_source", "static"),
                     "valuation_cap_applied": data.get("valuation_cap_applied", False),
                     # Relative Strength (RS) - FIX v2
