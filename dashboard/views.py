@@ -892,6 +892,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         }
         
         val_result = valuation_service.compute_fair_value(
+            industry=industry,
             price=price_val,
             tech=tech_data,
             fund_data=fund_data,
@@ -997,6 +998,7 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     }
     
     val_result = valuation_service.compute_fair_value(
+        industry=industry,
         price=price_val,
         tech=tech_data,
         fund_data=fund_data,

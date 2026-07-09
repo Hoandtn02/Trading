@@ -2112,16 +2112,17 @@ def check_health_veto(
     avg_volume_value: float = 0.0,
     industry: str = ""
 ) -> Dict[str, Any]:
-    """Kiểm tra VETO dựa trên 15 quy tắc sức khỏe (KHÔNG bao gồm R:R hay Định giá)
+    """Kiểm tra VETO dựa trên bộ lọc 4 nhóm (KHÔNG bao gồm R:R hay Định giá)
 
-    SECTOR-ADAPTIVE RULES (V3):
-    - VETO_Nợ: D/E > 1.5 cho Non-Financial sectors
-    - VETO_ROE: Lower threshold (10%) for capital-intensive sectors (Steel, Power, Chemicals)
-    - VETO_NPL: NPL > 3% for Banking sector
+    BỘ LỌC "SĂN ĐÁY & CHÂN SÓNG":
+    - Nhóm 1: Dòng tiền & chặn đỉnh ngắn hạn
+    - Nhóm 2: Neo dài hạn + lọc volume dưới SMA50
+    - Nhóm 3: Sức khỏe tài chính
+    - Nhóm 4: Thị trường
 
     Args:
-        tech: Dict chỉ số kỹ thuật (price, cmf, rsi, adx, sma_50, bb_percent, ichimoku_status, ichimoku_tenkan, ichimoku_kijun, atr, volume_ratio)
-        fund_data: Dict dữ liệu cơ bản (roe, f_score, profit_growth, pe, pb, is_new_listing)
+        tech: Dict chỉ số kỹ thuật (price, cmf, rsi, adx, sma_50, sma_200, bb_percent, volume_ratio, v.v.)
+        fund_data: Dict dữ liệu cơ bản (roe, pe, pb, f_score, profit_growth, v.v.)
         market_rsi: RSI thị trường chung
         df: DataFrame giá để tính volume TB 20 phiên
         avg_volume_value: Giá trị volume TB quy đổi sang tỷ đồng
@@ -2132,64 +2133,61 @@ def check_health_veto(
     """
     veto_reasons = []
     sector = get_sector_category(industry)
-    
+
     # Determine capital-intensive flag for ROE threshold
     is_capital_intensive = sector in ['manufacturing', 'real_estate']
     roe_threshold = 10 if is_capital_intensive else 15
 
-    # ===== NHÓM 1: DÒNG TIỀN (3 rules) =====
+    price_val = tech.get('price', 0)
+    sma_50_val = tech.get('sma_50', 0)
+    sma_200_val = tech.get('sma_200', 0)
+    rsi_val = tech.get('rsi', 50)
+    bb_percent_val = tech.get('bb_percent', 50)
+    volume_ratio_val = tech.get('volume_ratio', 1.0)
 
+    # ===== NHÓM 1: DÒNG TIỀN & PHỦ QUYẾT ĐỈNH NGẮN HẠN =====
     # VETO_1: CMF < 0
-    cmf_val = tech.get('cmf', 0)
-    if cmf_val < 0:
-        veto_reasons.append(f"VETO_1: CMF < 0 ({cmf_val:.2f})")
-
+    if tech.get('cmf', 0) < 0:
+        veto_reasons.append(f"VETO_1: CMF < 0 ({tech.get('cmf', 0):.2f})")
     # VETO_2: Volume TB 20 phiên < 15 tỷ
     elif avg_volume_value < 15:
         veto_reasons.append(f"VETO_2: VolTB20 < 15B ({avg_volume_value:.1f}B)")
-
     # VETO_3: Volume_Ratio < 0.5
-    elif tech.get('volume_ratio', 1) < 0.5:
-        veto_reasons.append(f"VETO_3: VolRatio < 0.5 ({tech.get('volume_ratio', 0):.2f})")
+    elif volume_ratio_val < 0.5:
+        veto_reasons.append(f"VETO_3: VolRatio < 0.5 ({volume_ratio_val:.2f})")
+    # VETO_4: Anti-FOMO - RSI quá cao
+    elif rsi_val > 70:
+        veto_reasons.append(f"VETO_4: Anti-FOMO RSI > 70 ({rsi_val:.1f})")
+    # VETO_5: Anti-FOMO - BB% quá cao
+    elif bb_percent_val > 95:
+        veto_reasons.append(f"VETO_5: Anti-FOMO BB% > 95 ({bb_percent_val:.1f})")
 
-    # ===== NHÓM 2: XU HƯỚNG & ĐỘNG LƯỢNG (5 rules) =====
+    # ===== NHÓM 2: NEO DÀI HẠN & LỌC VOLUME DƯỚI SMA50 =====
+    # VETO_6: Giá dưới SMA200 -> xu hướng dài hạn gãy
+    elif price_val > 0 and sma_200_val > 0 and price_val < sma_200_val:
+        veto_reasons.append("VETO_6: Giá < SMA200 (Xu hướng dài hạn gãy)")
 
-    # VETO_4: Giá < SMA50
-    elif tech.get('price', 0) > 0 and tech.get('sma_50', 0) > 0:
-        if tech['price'] < tech['sma_50']:
-            veto_reasons.append("VETO_4: Giá < SMA50")
+    # VETO_7: Dưới SMA50 nhưng volume còn lớn -> rơi tự do chưa kết thúc
+    elif price_val > 0 and sma_50_val > 0 and price_val < sma_50_val:
+        if volume_ratio_val > 1.2:
+            veto_reasons.append(f"VETO_7: Giá < SMA50 + VolRatio {volume_ratio_val:.2f} (Rơi tự do)")
+        # Nếu volume_ratio < 0.8: xác nhận cạn cung -> cho phép tiếp
+        # Còn lại 0.8-1.2: trung tính -> không VETO
 
-    # VETO_5: Giá dưới mây Ichimoku hoặc mây đỏ
-    elif tech.get('ichimoku_status') == 'bearish':
-        veto_reasons.append("VETO_5: Ichimoku Bearish")
-
-    # VETO_6: ADX < 20
+    # VETO_8: ADX quá thấp
     elif tech.get('adx', 25) < 20:
-        veto_reasons.append(f"VETO_6: ADX < 20 ({tech.get('adx', 0):.1f})")
+        veto_reasons.append(f"VETO_8: ADX < 20 ({tech.get('adx', 0):.1f})")
 
-    # VETO_7: RSI > 80
-    elif tech.get('rsi', 50) > 80:
-        veto_reasons.append(f"VETO_7: RSI > 80 ({tech.get('rsi', 0):.1f})")
-
-    # VETO_8: bbPos > 105
-    elif tech.get('bb_percent', 50) > 105:
-        veto_reasons.append(f"VETO_8: BB% > 105 ({tech.get('bb_percent', 0):.1f})")
-
-    # ===== NHÓM 3: SỨC KHỎE TÀI CHÍNH (5 rules) =====
-
+    # ===== NHÓM 3: SỨC KHỎE TÀI CHÍNH =====
     # VETO_14: RELATIVE VETO for Real Estate (D/E vs Sector Median)
-    # A RE stock is only VETOED if D/E > 20% higher than Sector Median
-    # This accounts for the high-leverage nature of Vietnam RE market
     if sector == 'real_estate':
         de = fund_data.get('debt_equity') or fund_data.get('de') or 0
         if de > 0:
-            # Get sector median DE from IndustryValuation model
             sector_median_de = get_sector_median_de(industry)
-            # VETO if stock DE > sector_median * 1.2 (20% higher than median)
             relative_threshold = sector_median_de * 1.2
             if de > relative_threshold:
                 veto_reasons.append(f"VETO_14: RE D/E > {relative_threshold:.2f} (sector median: {sector_median_de:.2f})")
-    
+
     # VETO_15: D/E > 1.5 (Non-Banking, Non-RE sectors)
     elif sector != 'banking':
         de = fund_data.get('debt_equity') or fund_data.get('de') or 0
@@ -2202,7 +2200,7 @@ def check_health_veto(
         if npl > 3:
             veto_reasons.append(f"VETO_15: NPL > 3% ({npl:.2f}%)")
 
-    # VETO_9: ROE < threshold (10% for capital-intensive, 15% for others)
+    # VETO_9: ROE < threshold
     elif fund_data.get('roe') is not None:
         roe_val = fund_data['roe']
         if roe_val < roe_threshold:
@@ -2223,8 +2221,7 @@ def check_health_veto(
     elif fund_data.get('roe') is None or fund_data.get('pe') is None or fund_data.get('pb') is None:
         veto_reasons.append("VETO_12: Thiếu dữ liệu tài chính")
 
-    # ===== NHÓM 4: THỊ TRƯỜNG (1 rule) =====
-
+    # ===== NHÓM 4: THỊ TRƯỜNG =====
     # VETO_13: VNIndex RSI > 80
     elif market_rsi > 80:
         veto_reasons.append(f"VETO_13: Market RSI > 80 ({market_rsi:.1f})")
@@ -2257,6 +2254,7 @@ def compute_core_logic(
     date_str: Optional[str] = None,
     account_balance: float = 100_000_000,
     risk_tolerance_pct: float = 2.0,
+    scan_mode: str = "EARLY_TREND",
 ) -> Dict[str, Any]:
     """
     PURE FUNCTION - Engine tính toán trung tâm
@@ -2279,6 +2277,7 @@ def compute_core_logic(
         date_str: Ngày tính (format YYYY-MM-DD) để lookup quarterly data
         account_balance: Số dư tài khoản (VND) để tính position sizing
         risk_tolerance_pct: % rủi ro chấp nhận cho mỗi lệnh
+        scan_mode: Chế độ quét ("BOTTOM_FISHING" | "EARLY_TREND")
     """
     # ========== GET QUARTERLY DATA IF AVAILABLE (FOR BACKTEST) ==========
     roe_val = fund_data.get('roe')
@@ -2405,6 +2404,32 @@ def compute_core_logic(
     is_fast_pick = adx_val > 18 and volume_ratio_val > 0.8
 
     # ============================================================
+    # SCAN MODE SCORING (Layer 2/3 extension)
+    # ============================================================
+    scan_mode = (scan_mode or "EARLY_TREND").upper()
+    price_to_vwap_pct = ((price_val - vwap_val) / vwap_val * 100) if vwap_val > 0 else 0
+    price_to_sma20_pct = ((price_val - sma20_val_t) / sma20_val_t * 100) if sma20_val_t > 0 else 0
+    breakout_signal = price_val > sma_10_val and price_val > sma_20_val and volume_ratio_val > 1.5
+    is_bottom_setup = 35 <= rsi_val <= 45 and volume_ratio_val < 0.8 and abs(price_to_vwap_pct) <= 1.5
+
+    if scan_mode == "BOTTOM_FISHING":
+        if volume_ratio_val < 0.7:
+            tech_score += 12
+        if 35 <= rsi_val <= 45:
+            tech_score += 10
+        if abs(price_to_vwap_pct) <= 1.5 or abs(price_to_sma20_pct) <= 1.5:
+            tech_score += 10
+        if rsi_val > tech.get("rsi_previous", rsi_val):
+            tech_score += 8
+        if is_bottom_setup:
+            tech_score += 5
+    elif scan_mode == "EARLY_TREND":
+        if breakout_signal:
+            tech_score += 18
+        if target_yield_pct < 10:
+            tech_score -= 25
+
+    # ============================================================
     # SECTOR-AWARE TECH SCORING (Layer 2 extension)
     # ============================================================
     if sector_group == 'cyclical':
@@ -2431,15 +2456,39 @@ def compute_core_logic(
     # entry_quality: "GOOD" / "BAD" / "ACCUMULATE"
     # is_safe_entry: distance to SMA20 <= 2%
     # ============================================================
-    if rsi_val > 75 or bb_percent_val > 105:
-        entry_quality = "BAD"
-        entry_quality_reason = "FOMO zone (RSI > 75 hoặc BB% > 105)"
-    elif rsi_val < 35 or bb_percent_val < -5:
-        entry_quality = "ACCUMULATE"
-        entry_quality_reason = "Panic selling (RSI < 35 hoặc BB% < -5)"
+    if scan_mode == "BOTTOM_FISHING":
+        if is_bottom_setup or (35 <= rsi_val <= 45 and volume_ratio_val < 1.0):
+            entry_quality = "ACCUMULATE"
+            entry_quality_reason = "ZONE ĐÁY: Volume cạn + thắt nút cổ chai"
+        elif rsi_val > 70 or bb_percent_val > 95:
+            entry_quality = "BAD"
+            entry_quality_reason = "Anti-FOMO: RSI/BB% quá cao"
+        else:
+            entry_quality = "GOOD"
+            entry_quality_reason = "Vùng giá tích lũy có xác nhận"
+    elif scan_mode == "EARLY_TREND":
+        if breakout_signal:
+            entry_quality = "GOOD"
+            entry_quality_reason = "Chân sóng: Breakout SMA10/20 + volume xác nhận"
+        elif rsi_val > 70 or bb_percent_val > 95:
+            entry_quality = "BAD"
+            entry_quality_reason = "Anti-FOMO: RSI/BB% quá cao"
+        elif rsi_val < 35 or bb_percent_val < -5:
+            entry_quality = "ACCUMULATE"
+            entry_quality_reason = "Giá quá bán - chờ xác nhận hồi phục"
+        else:
+            entry_quality = "GOOD"
+            entry_quality_reason = "Vùng giá hợp lý"
     else:
-        entry_quality = "GOOD"
-        entry_quality_reason = "Vùng giá hợp lý"
+        if rsi_val > 75 or bb_percent_val > 105:
+            entry_quality = "BAD"
+            entry_quality_reason = "FOMO zone (RSI > 75 hoặc BB% > 105)"
+        elif rsi_val < 35 or bb_percent_val < -5:
+            entry_quality = "ACCUMULATE"
+            entry_quality_reason = "Panic selling (RSI < 35 hoặc BB% < -5)"
+        else:
+            entry_quality = "GOOD"
+            entry_quality_reason = "Vùng giá hợp lý"
 
     # is_safe_entry: distance to SMA20 <= 2%
     safe_entry_distance = 0
@@ -2505,8 +2554,50 @@ def compute_core_logic(
     hard_risk = entry - support_price
     hard_risk_pct = (hard_risk / entry) * 100 if entry > 0 else 3
 
-    # Stop Loss = Support * 0.985 (max 1.5% below support)
-    stop_loss = round(support_price * 0.985, 2)
+    # ATR baseline (used for new SL formula)
+    atr_value = tech.get("atr", 0) if tech.get("atr", 0) > 0 else entry * 0.02
+
+    # Scan-mode-aware Stop Loss (Layer 4 refined)
+    low_10_val = 0
+    breakout_candle_low = support_price
+    has_volume_breakout = False
+
+    if df is not None and 'low' in df.columns and len(df) >= 20:
+        low_10_val = df['low'].tail(10).min()
+
+        # Breakout detector: price above SMA10 + SMA20 with volume spike
+        sma_10_series = df['close'].rolling(10).mean()
+        sma_20_series = df['close'].rolling(20).mean()
+        avg_vol_20 = df['volume'].rolling(20).mean()
+
+        price_above_sma10 = float(sma_10_series.iloc[-1] or 0) > 0 and price_val > sma_10_series.iloc[-1]
+        price_above_sma20 = float(sma_20_series.iloc[-1] or 0) > 0 and price_val > sma_20_series.iloc[-1]
+        latest_vol = float(df['volume'].iloc[-1] or 0)
+        avg_vol = float(avg_vol_20.iloc[-1] or 0)
+        vol_breakout = avg_vol > 0 and latest_vol > avg_vol * 1.5
+
+        if price_above_sma10 and price_above_sma20 and vol_breakout:
+            has_volume_breakout = True
+
+            breakout_start = max(0, len(df) - 10)
+            breakout_idx = None
+            for i in range(breakout_start, len(df)):
+                close_i = float(df['close'].iloc[i])
+                sma10_i = float(sma_10_series.iloc[i] or 0)
+                vol_i = float(df['volume'].iloc[i] or 0)
+                avg_i = float(avg_vol_20.iloc[i] or 0)
+                if close_i > sma10_i and avg_i > 0 and vol_i > avg_i * 1.5:
+                    breakout_idx = i
+
+            if breakout_idx is not None:
+                breakout_candle_low = float(df['low'].iloc[breakout_idx])
+
+    if scan_mode == "BOTTOM_FISHING" or not has_volume_breakout:
+        accumulation_sl = round((low_10_val - 1.5 * atr_value), 2) if low_10_val > 0 else round(entry * 0.97, 2)
+        stop_loss = accumulation_sl
+    else:
+        breakout_sl = round(min(breakout_candle_low, price_val * 0.95), 2)
+        stop_loss = breakout_sl
 
     # ===== MINIMUM RISK BUFFER (3%) =====
     risk_percent = (entry - stop_loss) / entry if entry > 0 else 0
@@ -2516,18 +2607,11 @@ def compute_core_logic(
     # Inverted SL check
     has_inverted_sl = stop_loss >= entry
 
-    # ATR (used for est_days)
-    atr_value = tech.get("atr", 0) if tech.get("atr", 0) > 0 else entry * 0.02
-
     # Take profit = FV Weekly (Layer 4 anchors the TP)
     take_profit = round(fv_weekly, 2)
 
     # Trailing SL = 5% below current price
     trailing_sl = round(price_val * 0.95, 2)
-
-    # Final SL = max(support_SL, trailing_SL)
-    final_stop_loss = max(stop_loss, trailing_sl)
-    stop_loss = final_stop_loss
 
     # ============================================================
     # SECTOR-AWARE EXIT RULES (Layer 4 extension)

@@ -159,12 +159,12 @@ class ValuationService:
     
     def compute_fair_value(
         self,
+        industry: str,
         price: float,
         tech: Dict[str, Any],
         fund_data: Dict[str, Any],
         market_rsi: float = 50.0,
         is_vetoed: bool = False,
-        industry: str = ""
     ) -> ValuationResult:
         """
         Tính Fair Value Daily và Weekly (SECTOR-AWARE V3)
@@ -173,12 +173,12 @@ class ValuationService:
         Financial Sectors (Banking, Securities): P/B Forward vs Historical Median
         
         Args:
+            industry: Ngành của cổ phiếu (để xác định valuation method)
             price: Giá hiện tại
             tech: Dict chứa indicators (vwap, sma_20, high_52w, v.v.)
             fund_data: Dict chứa PE, PB, industry, profit_growth
             market_rsi: RSI thị trường
             is_vetoed: Cổ phiếu có bị VETO không
-            industry: Ngành của cổ phiếu (để xác định valuation method)
         
         Returns:
             ValuationResult với đầy đủ thông tin định giá
@@ -221,26 +221,14 @@ class ValuationService:
                 intrinsic_value = price
                 
         elif sector in ['retail', 'manufacturing']:
-            # Growth Sectors: PEG = 1.0 Logic
-            # PEG = P/E / Earnings Growth Rate
-            # FV = Price where PEG = 1.0 => FV = Price * (ExpectedGrowth / ActualGrowth)
-            # Simplified: FV = Price * (IndustryPEG / SectorPEG)
+            # Trường phái tăng trưởng ngắn hạn: định giá hợp lý khi P/E = Tốc độ tăng trưởng (PEG = 1.0)
             if actual_pe > 0 and profit_growth > 0:
-                # Target PEG = 1.0 for fair value
-                # Expected growth rate = industry median growth
-                industry_growth = val_result.sector_median_pe or 15  # Default 15% growth
-                peg = actual_pe / profit_growth
-                if peg > 1:
-                    # Stock is expensive relative to growth -> FV should be lower
-                    intrinsic_value = price / peg
-                else:
-                    # Stock is cheap relative to growth -> FV should be higher
-                    target_pe = min(actual_pe, profit_growth)  # PEG = 1
-                    intrinsic_value = price * (target_pe / actual_pe) if actual_pe > 0 else price
+                capped_growth = min(profit_growth, 35.0)
+                intrinsic_value = price * (capped_growth / actual_pe)
                 val_result.valuation_type = 'PEG'
             elif actual_pe > 0:
-                # No growth data, use P/E
-                intrinsic_value = price * (val_result.target_pe / actual_pe) if actual_pe > 0 else price
+                # Fallback khi thiếu dữ liệu tăng trưởng: dùng P/E Median ngành làm chuẩn
+                intrinsic_value = price * (val_result.target_pe / actual_pe)
                 val_result.valuation_type = 'PE'
             else:
                 intrinsic_value = price
@@ -308,8 +296,10 @@ class ValuationService:
             Dict với đầy đủ thông tin để lưu vào database
         """
         price = tech.get('price', 0)
+        industry = fund_data.get('industry', '') or ''
         
         val = self.compute_fair_value(
+            industry=industry,
             price=price,
             tech=tech,
             fund_data=fund_data,
@@ -344,6 +334,7 @@ def get_valuation_service() -> ValuationService:
 
 
 def compute_fair_value(
+    industry: str,
     price: float,
     tech: Dict[str, Any],
     fund_data: Dict[str, Any],
@@ -351,4 +342,11 @@ def compute_fair_value(
     is_vetoed: bool = False
 ) -> ValuationResult:
     """Convenience function"""
-    return get_valuation_service().compute_fair_value(price, tech, fund_data, market_rsi, is_vetoed)
+    return get_valuation_service().compute_fair_value(
+        industry=industry,
+        price=price,
+        tech=tech,
+        fund_data=fund_data,
+        market_rsi=market_rsi,
+        is_vetoed=is_vetoed,
+    )

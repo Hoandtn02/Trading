@@ -263,6 +263,7 @@ class StockAnalysis(models.Model):
     # Trend
     trend = models.CharField(max_length=20, default="SIDEWAYS")
     breakout_status = models.CharField(max_length=50, default="")
+    scan_mode = models.CharField(max_length=20, default="EARLY_TREND")  # BOTTOM_FISHING | EARLY_TREND
 
     # Meta
     market_rsi = models.FloatField(default=50)
