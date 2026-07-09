@@ -236,8 +236,11 @@ def top_picks(request: HttpRequest) -> HttpResponse:
 
     if is_data_available:
         # Đọc từ Database - CỰC NHANH
-        top_picks, top_picks_health = get_top_picks_from_db(limit=8)
-        all_stocks, all_stocks_health = get_top_picks_from_db(limit=15)
+        raw_picks, top_picks_health = get_top_picks_from_db(limit=15)
+        all_stocks, all_stocks_health = get_top_picks_from_db(limit=30)
+
+        fast_picks = [p for p in raw_picks if (p.get('estimated_days_to_target') or 0) <= 10]
+        slow_picks = [p for p in raw_picks if (p.get('estimated_days_to_target') or 0) > 10]
 
         # Thống kê
         from .models import StockAnalysis
@@ -246,10 +249,11 @@ def top_picks(request: HttpRequest) -> HttpResponse:
         fast = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
 
         # Market RSI từ record đầu tiên
-        market_rsi = top_picks[0]["market_rsi"] if top_picks else 50
+        market_rsi = (fast_picks or raw_picks)[0]["market_rsi"] if (fast_picks or raw_picks) else 50
 
         context = {
-            "top_picks": top_picks,
+            "fast_picks": fast_picks,
+            "slow_picks": slow_picks,
             "top_picks_health": top_picks_health,
             "all_stocks": all_stocks,
             "all_stocks_health": all_stocks_health,
@@ -265,7 +269,9 @@ def top_picks(request: HttpRequest) -> HttpResponse:
             "sync_progress": sync_status.get("progress_percent", 0),  # pyright: ignore[reportOptionalMemberAccess]
             "has_market_warning": market_rsi > 70,
             "market_warning_message": f"⚠️ SELL ZONE - VNIndex RSI: {market_rsi:.0f}" if market_rsi > 70 else "",
-            "has_hot_pick": any(p["master_score"] >= 80 for p in top_picks),
+            "has_hot_pick": any(p["master_score"] >= 80 for p in raw_picks),
+            "has_conflict": False,
+            "conflict_message": "",
         }
     else:
         # Không có dữ liệu
@@ -689,7 +695,7 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         stocks.append({
             "symbol": s.symbol,
             "company_name": s.company_name or s.symbol,
-            "industry": s.industry or s.get_industry(),
+            "industry": s.industry or s.get_industry() if s.industry not in {None, '', 'Default'} else (s.get_industry() or 'Other'),
             "market_group": s.market_group or s.get_market_group(),
             "price": s.price,
             "change_percent": s.change_percent,
@@ -759,6 +765,14 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "foreign_bonus": getattr(a, 'foreign_bonus', 0),
             "industry_performance": getattr(a, 'industry_performance', 0),
             "is_industry_leader": getattr(a, 'is_industry_leader', True),
+            # Dynamic GOLD explanation fields
+            "rs_label": getattr(a, 'rs_label', 'NEUTRAL') or 'NEUTRAL',
+            "rs_bonus": getattr(a, 'rs_bonus', 0) or 0,
+            "trend": a.trend,
+            "adx": s.adx,
+            "pe": s.pe,
+            "pb": s.pb,
+            "f_score": s.f_score,
             # Real R:R
             "hard_risk_pct": getattr(a, 'hard_risk_pct', 0),
             "support_price": getattr(a, 'support_price', 0),
@@ -787,6 +801,19 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     fast_count = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
     qualified_count = StockAnalysis.objects.filter(criteria_met__gte=7).count()
 
+    # Get market RSI (same for all stocks)
+    first_analysis = StockAnalysis.objects.first()
+    market_rsi = first_analysis.market_rsi if first_analysis else 50
+    is_market_high_risk = first_analysis.is_market_high_risk if first_analysis else False
+    
+    # Determine market RSI status for styling
+    if market_rsi > 70:
+        market_rsi_status = 'overbought'
+    elif market_rsi < 30:
+        market_rsi_status = 'oversold'
+    else:
+        market_rsi_status = 'neutral'
+
     # Get last sync time
     from .models import SyncStatus
     last_sync_obj = SyncStatus.objects.order_by('-started_at').first()
@@ -799,6 +826,9 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         "veto_count": veto_count,
         "fast_count": fast_count,
         "qualified_count": qualified_count,
+        "market_rsi": market_rsi,
+        "market_rsi_status": market_rsi_status,
+        "is_market_high_risk": is_market_high_risk,
         "current_filter": filter_type,
         "current_sort": sort_by,
         "current_market": market_filter,

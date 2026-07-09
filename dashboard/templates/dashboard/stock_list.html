@@ -75,6 +75,7 @@
         .summary-value.veto { color: #ef4444; }
         .summary-value.fast { color: #f59e0b; }
         .summary-value.qualified { color: #8b5cf6; }
+        .summary-value.neutral { color: #94a3b8; }
         .summary-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
 
         /* Filters */
@@ -716,6 +717,16 @@
             <div class="summary-value qualified">{{ qualified_count }}</div>
             <div class="summary-label">Qualified</div>
         </div>
+        <div class="summary-card">
+            <div class="summary-value {% if market_rsi_status == 'overbought' %}veto{% elif market_rsi_status == 'oversold' %}buy{% else %}neutral{% endif %}">{{ market_rsi|floatformat:0 }}</div>
+            <div class="summary-label">VNIndex RSI</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value {% if is_market_high_risk %}veto{% else %}buy{% endif %}">
+                {% if is_market_high_risk %}⚠️ Cao{% else %}✅ Thấp{% endif %}
+            </div>
+            <div class="summary-label">Rủi Ro TT</div>
+        </div>
     </div>
 
     <!-- Filter Toolbar -->
@@ -816,7 +827,7 @@
                 <tr class="{% if stock.is_vetoed %}vetoed{% elif stock.is_fast_pick %}fast-pick{% elif stock.criteria_met >= 7 %}qualified{% endif %}"
                     data-symbol="{{ stock.symbol }}"
                     data-company="{{ stock.company_name }}"
-                    data-industry="{{ stock.industry }}"
+                    data-industry="{{ stock.industry|default:'Other' }}"
                     data-market-group="{{ stock.market_group }}"
                     data-price="{{ stock.price }}"
                     data-change="{{ stock.change_percent }}"
@@ -900,7 +911,7 @@
                     {% endif %}
                     data-final-score="{{ stock.master_score }}"
                     data-recommendation-label="{{ stock.recommendation_label|default:'' }}"
-                    data-sector="{{ stock.get_sector_category|default:'general' }}"
+                    data-sector="{% if stock.industry and stock.industry != 'Default' %}{% with s=stock %}{% include 'dashboard/_sector_badge.html' with industry=s.industry %}{% endwith %}{% else %}general{% endif %}"
                     data-rs-label="{{ stock.rs_label|default:'NEUTRAL' }}"
                     data-rs-bonus="{{ stock.rs_bonus|default:'0' }}"
                     onclick="openStockModalFromRow(this)">
@@ -1398,6 +1409,9 @@
         }
 
         function showModal(stockData) {
+            // Store current stock data for explanation
+            currentStockData = stockData;
+            
             // Populate modal header
             const elSymbol = getEl('modalSymbol');
             const elCompany = getEl('modalCompany');
@@ -1463,7 +1477,7 @@
             const elEarlyExitDetail = getEl('modalEarlyExitDetail');
 
             if (elSymbol) elSymbol.textContent = stockData.symbol || '';
-            if (elCompany) elCompany.textContent = (stockData.company_name || '') + ' | ' + (stockData.industry || 'Other') + ' | ' + (stockData.market_group || 'MIDCAP');
+            if (elCompany) elCompany.textContent = (stockData.company_name || '') + ' | ' + (stockData.industry || stockData.sector || 'Other') + ' | ' + (stockData.market_group || 'MIDCAP');
             if (elPrice) elPrice.textContent = formatNumber(stockData.price, 1);
             if (elFVDaily) elFVDaily.textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
             if (elFVWeekly) elFVWeekly.textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
@@ -1833,6 +1847,680 @@
             return verdict;
         }
 
+        // Toggle Explanation Panel
+        function toggleExplanation() {
+            const panel = document.getElementById('explanationPanel');
+            const btn = document.getElementById('btnExplain');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                btn.innerHTML = '📖 Ẩn giải thích';
+                generateExplanation(currentStockData);
+            } else {
+                panel.style.display = 'none';
+                btn.innerHTML = '🧠 Giải thích chi tiết';
+            }
+        }
+
+        // Store current stock data for explanation
+        let currentStockData = null;
+
+        // Generate Deterministic Explanation - FULL VERSION
+        function generateExplanation(data) {
+            if (!data) return;
+            
+            const elExplanation = document.getElementById('modalExplanation');
+            if (!elExplanation) return;
+
+            let html = '';
+            const group = data.final_group || data.finalGroup || 'RISK';
+            const isVeto = group === 'VETO' || data.is_vetoed;
+            const isGold = group === 'GOLD';
+            const isGuerrilla = group === 'GUERRILLA';
+            const isRisk = group === 'RISK';
+
+            // === VETO EXPLANATION ===
+            if (isVeto) {
+                html += '<div style="margin-bottom: 16px;">';
+                html += '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">🚫 QUYẾT ĐỊNH: LOẠI BỎ</div>';
+                html += '<p style="margin-bottom: 12px;">Hệ thống <strong>Wealth Guard</strong> đưa ra quyết định <strong>CHẶN MUA</strong> với mã này vì:</p>';
+                
+                const vetoReasons = data.veto_reason || data.veto_reason_text || '';
+                const reasons = vetoReasons.split(',').map(r => r.trim()).filter(r => r);
+                
+                if (reasons.length > 0) {
+                    html += '<ul style="margin-left: 20px; margin-bottom: 12px;">';
+                    reasons.forEach(reason => {
+                        const explanation = getVetoExplanation(reason, data);
+                        html += `<li style="margin-bottom: 8px;"><strong>${reason}:</strong> ${explanation}</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                html += '<p style="color: #94a3b8; font-size: 12px; background: rgba(239,68,68,0.1); padding: 10px; border-radius: 6px;">';
+                html += '💡 <strong>Lời khuyên:</strong> Tốt nhất nên <strong>ĐỨNG NGOÀI</strong>. Rủi ro vượt xa cơ hội trong bối cảnh hiện tại.';
+                html += '</p></div>';
+            }
+            
+            // === FULL INDICATOR ANALYSIS (For all groups) ===
+            html += '<div style="margin-bottom: 16px;">';
+            
+            // 1. RELATIVE STRENGTH ANALYSIS
+            const rsLabel = data.rs_label || 'NEUTRAL';
+            const rsBonus = data.rs_bonus || 0;
+            const indPerf = data.rs_industry_performance || data.industry_performance || 0;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #3b82f6;">';
+            html += '<div style="color: #60a5fa; font-weight: bold; margin-bottom: 8px;">📈 1. SỨC MẠNH TƯƠNG ĐỐI (RS)</div>';
+            
+            if (rsLabel === 'LEADER') {
+                html += `<p style="color: #22c55e; margin: 0;"><strong>${rsLabel} (+${rsBonus} điểm)</strong> - Cổ phiếu vượt trội hơn ${Math.abs(indPerf).toFixed(1)}% so với VN-Index. Đây là dấu hiệu <strong>Smart Money đang mua gom mạnh</strong>. Top 15% thị trường.</p>`;
+            } else if (rsLabel === 'OUTPERFORM') {
+                html += `<p style="color: #86efac; margin: 0;"><strong>${rsLabel} (+${rsBonus} điểm)</strong> - Cổ phiếu đang thể hiện tốt hơn thị trường ${Math.abs(indPerf).toFixed(1)}%. Dòng tiền có xu hướng chọn cổ phiếu này.</p>`;
+            } else if (rsLabel === 'NEUTRAL') {
+                html += `<p style="color: #94a3b8; margin: 0;"><strong>${rsLabel} (${rsBonus} điểm)</strong> - Cổ phiếu đi theo thị trường, không nổi bật. Cần thêm tín hiệu xác nhận từ các chỉ báo khác.</p>`;
+            } else if (rsLabel === 'UNDERPERFORM') {
+                html += `<p style="color: #fbbf24; margin: 0;"><strong>${rsLabel} (${rsBonus} điểm)</strong> - Cổ phiếu đang thua thị trường ${Math.abs(indPerf).toFixed(1)}%. Đang có dòng tiền rút khỏi. CẨN TRỌNG!</p>`;
+            } else {
+                html += `<p style="color: #ef4444; margin: 0;"><strong>${rsLabel} (${rsBonus} điểm)</strong> - Cổ phiếu thuộc nhóm yếu nhất thị trường, thua VN-Index ${Math.abs(indPerf).toFixed(1)}%. <strong>KHÔNG NÊN MUA</strong>!</p>`;
+            }
+            html += '</div>';
+
+            // 2. MOMENTUM INDICATORS (RSI, MFI)
+            const rsi = data.rsi || 50;
+            const mfi = data.mfi || 50;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #8b5cf6;">';
+            html += '<div style="color: #a78bfa; font-weight: bold; margin-bottom: 8px;">⚡ 2. CHỈ BÁO MOMENTUM (RSI & MFI)</div>';
+            html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">';
+            
+            // RSI Analysis
+            let rsiAnalysis = '';
+            let rsiColor = '#94a3b8';
+            if (rsi >= 70) {
+                rsiAnalysis = `RSI ${rsi.toFixed(0)} - <strong style="color:#ef4444">QUÁ MUA</strong>. Thị trường đang hưng phấn quá mức. Khả năng cao sẽ có nhịp điều chỉnh. Thường xuất hiện trước các đợt pullback 5-10%.`;
+                rsiColor = '#ef4444';
+            } else if (rsi >= 60) {
+                rsiAnalysis = `RSI ${rsi.toFixed(0)} - <strong style="color:#22c55e">TÍCH CỰC</strong>. Xu hướng tăng đang chiếm ưu thế. Có thể tiếp tục tăng.`;
+                rsiColor = '#22c55e';
+            } else if (rsi >= 40 && rsi < 50) {
+                rsiAnalysis = `RSI ${rsi.toFixed(0)} - <strong style="color:#fbbf24">TRUNG LẬP</strong>. Thị trường đang cân bằng. Chờ tín hiệu xác nhận.`;
+                rsiColor = '#fbbf24';
+            } else if (rsi >= 30) {
+                rsiAnalysis = `RSI ${rsi.toFixed(0)} - <strong style="color:#f59e0b">QUÁ BÁN NHẸ</strong>. Có thể có nhịp hồi phục kỹ thuật ngắn hạn.`;
+                rsiColor = '#f59e0b';
+            } else {
+                rsiAnalysis = `RSI ${rsi.toFixed(0)} - <strong style="color:#ef4444">QUÁ BÁN NẶNG</strong>. Bán tháo đang diễn ra. Có thể là đáy nhưng rất nguy hiểm để bắt!`;
+                rsiColor = '#ef4444';
+            }
+            html += `<div style="color: ${rsiColor};">RSI: ${rsiAnalysis}</div>`;
+            
+            // MFI Analysis
+            let mfiAnalysis = '';
+            let mfiColor = '#94a3b8';
+            if (mfi >= 80) {
+                mfiAnalysis = `MFI ${mfi.toFixed(0)} - Quá mua cực độ. Dòng tiền đã vào mạnh, có thể cạn kiệt sớm.`;
+                mfiColor = '#ef4444';
+            } else if (mfi >= 60) {
+                mfiAnalysis = `MFI ${mfi.toFixed(0)} - Dòng tiền vào tốt. Xác nhận xu hướng tăng.`;
+                mfiColor = '#22c55e';
+            } else if (mfi >= 40 && mfi < 50) {
+                mfiAnalysis = `MFI ${mfi.toFixed(0)} - Dòng tiền trung lập. Thị trường chờ đợi.`;
+                mfiColor = '#fbbf24';
+            } else if (mfi >= 20) {
+                mfiAnalysis = `MFI ${mfi.toFixed(0)} - Dòng tiền yếu. Áp lực bán đang chiếm ưu thế.`;
+                mfiColor = '#f59e0b';
+            } else {
+                mfiAnalysis = `MFI ${mfi.toFixed(0)} - Dòng tiền cạn kiệt. Bán tháo khốc liệt!`;
+                mfiColor = '#ef4444';
+            }
+            html += `<div style="color: ${mfiColor};">MFI: ${mfiAnalysis}</div>`;
+            html += '</div></div>';
+
+            // 3. TREND INDICATORS (ADX, Supertrend, Trend)
+            const adx = data.adx || 0;
+            const supertrend = data.supertrend || 0;
+            const supertrendSignal = data.supertrend_signal || 'neutral';
+            const trend = data.trend || 'SIDEWAYS';
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #06b6d4;">';
+            html += '<div style="color: #22d3ee; font-weight: bold; margin-bottom: 8px;">📉 3. CHỈ BÁO XU HƯỚNG</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            // ADX
+            if (adx >= 25) {
+                html += `<li><strong>ADX ${adx.toFixed(0)}</strong> - <span style="color:#22c55e">Xu hướng mạnh</span>. Thị trường đang có đà. ADX > 25 confirm xu hướng có sức mạnh.</li>`;
+            } else if (adx >= 15) {
+                html += `<li><strong>ADX ${adx.toFixed(0)}</strong> - <span style="color:#fbbf24">Xu hướng yếu</span>. Thị trường đang sideways, chưa rõ xu hướng.</li>`;
+            } else {
+                html += `<li><strong>ADX ${adx.toFixed(0)}</strong> - <span style="color:#94a3b8">Không có xu hướng</span>. Sideways hoặc tích lũy. Giao dịch trong giai đoạn này rủi ro cao.</li>`;
+            }
+            
+            // Trend
+            if (trend === 'UPTREND' || trend === 'STRONG_UP') {
+                html += `<li><strong>Xu hướng: UPTREND</strong> - <span style="color:#22c55e">Giá đang tạo đỉnh cao hơn, đáy cao hơn</span>. Các đợt dip là cơ hội mua.</li>`;
+            } else if (trend === 'DOWNTREND') {
+                html += `<li><strong>Xu hướng: DOWNTREND</strong> - <span style="color:#ef4444">Giá đang tạo đỉnh thấp hơn, đáy thấp hơn</span>. Không nên bắt dao rơi!</li>`;
+            } else {
+                html += `<li><strong>Xu hướng: SIDEWAYS</strong> - <span style="color:#fbbf24">Giá dao động trong range</span>. Chờ breakout để xác nhận.</li>`;
+            }
+            
+            // Supertrend
+            if (supertrend > 0) {
+                const distance = ((data.price - supertrend) / supertrend * 100).toFixed(1);
+                if (supertrendSignal === 'bullish') {
+                    html += `<li><strong>Supertrend BULLISH @ ${supertrend.toFixed(1)}</strong> - <span style="color:#22c55e">Tín hiệu MUA. Giá đang trên Supertrend +${distance}%. Đây là hỗ trợ động.</span></li>`;
+                } else {
+                    html += `<li><strong>Supertrend BEARISH @ ${supertrend.toFixed(1)}</strong> - <span style="color:#ef4444">Tín hiệu BÁN. Giá đang dưới Supertrend ${distance}%. Xu hướng giảm.</span></li>`;
+                }
+            }
+            
+            html += '</ul></div>';
+
+            // 4. VOLUME INDICATORS (CMF)
+            const cmf = data.cmf || 0;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #f59e0b;">';
+            html += '<div style="color: #fbbf24; font-weight: bold; margin-bottom: 8px;">📊 4. CHỈ BÁO KHỐI LƯỢNG (CMF)</div>';
+            
+            if (cmf > 0.2) {
+                html += `<p style="color: #22c55e; margin: 0;"><strong>CMF +${cmf.toFixed(3)} - DÒNG TIỀN VÀO RẤT MẠNH</strong>. Khối lượng giao dịch xác nhận xu hướng tăng. "Smart Money" đang mua gom. Đây là tín hiệu <strong>rất tích cực</strong>.</p>`;
+            } else if (cmf > 0.05) {
+                html += `<p style="color: #86efac; margin: 0;"><strong>CMF +${cmf.toFixed(3)} - DÒNG TIỀN VÀO</strong>. Volume hỗ trợ xu hướng. Có thể tiếp tục tăng.</p>`;
+            } else if (cmf >= -0.05) {
+                html += `<p style="color: #94a3b8; margin: 0;"><strong>CMF ${cmf.toFixed(3)} - TRUNG LẬP</strong>. Khối lượng không xác nhận rõ ràng xu hướng. Thận trọng.</p>`;
+            } else if (cmf >= -0.2) {
+                html += `<p style="color: #fbbf24; margin: 0;"><strong>CMF ${cmf.toFixed(3)} - DÒNG TIỀN RA</strong>. Có áp lực bán. Volume đi ngược xu hướng giá - <strong>cảnh báo!</strong></p>`;
+            } else {
+                html += `<p style="color: #ef4444; margin: 0;"><strong>CMF ${cmf.toFixed(3)} - BÁN THÁO!</strong> Dòng tiền chảy ra cực mạnh. Khối lượng giao dịch cao bất thường trong khi giá giảm. <strong>NGUY HIỂM!</strong></p>`;
+            }
+            html += '</div>';
+
+            // 5. MOVING AVERAGES
+            const sma10 = data.sma_10 || 0;
+            const sma20 = data.sma_20 || 0;
+            const sma50 = data.sma_50 || 0;
+            const price = data.price || 0;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #ec4899;">';
+            html += '<div style="color: #f472b6; font-weight: bold; margin-bottom: 8px;">📐 5. ĐƯỜNG TRUNG BÌNH ĐỘNG (MA)</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            if (sma10 > 0 && sma20 > 0 && sma50 > 0) {
+                // Golden Cross / Death Cross check
+                if (sma10 > sma20 && sma20 > sma50) {
+                    html += `<li><span style="color:#22c55e">Golden Cross Pattern!</span> SMA10 > SMA20 > SMA50 - Xu hướng tăng dài hạn được xác nhận.</li>`;
+                } else if (sma10 < sma20 && sma20 < sma50) {
+                    html += `<li><span style="color:#ef4444">Death Cross Pattern!</span> SMA10 < SMA20 < SMA50 - Xu hướng giảm dài hạn. KHÔNG MUA!</li>`;
+                } else if (sma10 > sma20) {
+                    html += `<li><span style="color:#fbbf24">N混杂</span> - SMA10 vượt SMA20 nhưng chưa xác nhận với SMA50.</li>`;
+                } else {
+                    html += `<li><span style="color:#f59e0b">N混杂</span> - SMA10 dưới SMA20, có thể có nhịp hồi phục kỹ thuật.</li>`;
+                }
+                
+                // Price vs MA
+                const distSMA10 = ((price - sma10) / sma10 * 100).toFixed(1);
+                const distSMA20 = ((price - sma20) / sma20 * 100).toFixed(1);
+                const distSMA50 = ((price - sma50) / sma50 * 100).toFixed(1);
+                
+                html += `<li>Giá hiện tại (${price.toFixed(1)}):</li>`;
+                html += `<ul style="margin-left: 20px;">`;
+                html += `<li>SMA10 (${sma10.toFixed(1)}): <strong>${distSMA10 > 0 ? '+' : ''}${distSMA10}%</strong> ${distSMA10 > 0 ? '📈' : '📉'}</li>`;
+                html += `<li>SMA20 (${sma20.toFixed(1)}): <strong>${distSMA20 > 0 ? '+' : ''}${distSMA20}%</strong> ${distSMA20 > 0 ? '📈' : '📉'}</li>`;
+                html += `<li>SMA50 (${sma50.toFixed(1)}): <strong>${distSMA50 > 0 ? '+' : ''}${distSMA50}%</strong> ${distSMA50 > 0 ? '📈' : '📉'}</li>`;
+                html += `</ul>`;
+            } else {
+                html += `<li>Dữ liệu MA chưa đầy đủ. Cần thêm thời gian để xác nhận xu hướng.</li>`;
+            }
+            html += '</ul></div>';
+
+            // 6. BOLLINGER BANDS
+            const bbUpper = data.bb_upper || 0;
+            const bbLower = data.bb_lower || 0;
+            const bbPercent = data.bb_percent || 50;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #14b8a6;">';
+            html += '<div style="color: #2dd4bf; font-weight: bold; margin-bottom: 8px;">🎯 6. BOLLINGER BANDS</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            if (bbUpper > 0 && bbLower > 0) {
+                const bbWidth = bbUpper - bbLower;
+                const bandPosition = price;
+                
+                html += `<li>Dải trên: <strong>${bbUpper.toFixed(1)}</strong> | Dải dưới: <strong>${bbLower.toFixed(1)}</strong></li>`;
+                
+                if (bbPercent >= 80) {
+                    html += `<li><span style="color:#ef4444">Giá đang ở dải trên (>80%)</span> - Quá mua, có thể điều chỉnh về SMA20 hoặc dải giữa.</li>`;
+                } else if (bbPercent <= 20) {
+                    html += `<li><span style="color:#22c55e">Giá đang ở dải dưới (<20%)</span> - Quá bán, có thể có nhịp hồi phục về dải giữa.</li>`;
+                } else {
+                    html += `<li><span style="color:#fbbf24">Giá ở giữa dải (${bbPercent.toFixed(0)}%)</span> - Dao động bình thường, chưa có tín hiệu rõ ràng.</li>`;
+                }
+                
+                html += `<li>Độ rộng dải: ${bbWidth.toFixed(1)} điểm - ${bbWidth < 5 ? 'Dải hẹp (biến động thấp, chuẩn bị bùng nổ)' : bbWidth > 15 ? 'Dải rộng (biến động cao)' : 'Dải trung bình'}</li>`;
+            } else {
+                html += `<li>Dữ liệu Bollinger Bands chưa đầy đủ.</li>`;
+            }
+            html += '</ul></div>';
+
+            // 7. MACD
+            const macd = data.macd || 0;
+            const macdSignal = data.macd_signal || 0;
+            const histogram = data.histogram || 0;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #a855f7;">';
+            html += '<div style="color: #c084fc; font-weight: bold; margin-bottom: 8px;">📊 7. MACD</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            html += `<li>MACD Line: <strong>${macd >= 0 ? '+' : ''}${macd.toFixed(2)}</strong></li>`;
+            html += `<li>Signal Line: <strong>${macdSignal >= 0 ? '+' : ''}${macdSignal.toFixed(2)}</strong></li>`;
+            
+            if (macd > macdSignal && histogram > 0) {
+                html += `<li><span style="color:#22c55e">MACD Golden Cross!</span> MACD vượt Signal và Histogram dương tăng dần. <strong>Xu hướng tăng được xác nhận.</strong></li>`;
+            } else if (macd > macdSignal) {
+                html += `<li><span style="color:#86efac">MACD > Signal</span> - Momentum đang tích cực, có thể hình thành Golden Cross.</li>`;
+            } else if (macd < macdSignal && histogram < 0) {
+                html += `<li><span style="color:#ef4444">MACD Death Cross!</span> MACD dưới Signal và Histogram âm giảm dần. <strong>Xu hướng giảm!</strong></li>`;
+            } else {
+                html += `<li><span style="color:#fbbf24">MACD < Signal</span> - Momentum tiêu cực, chưa có tín hiệu mua.</li>`;
+            }
+            
+            html += '</ul></div>';
+
+            // 8. ICHIMOKU
+            const tenkan = data.ichimoku_tenkan || 0;
+            const kijun = data.ichimoku_kijun || 0;
+            const ichimokuStatus = data.ichimoku_status || 'neutral';
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #84cc16;">';
+            html += '<div style="color: #a3e635; font-weight: bold; margin-bottom: 8px;">☁️ 8. ICHIMOKU CLOUD</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            html += `<li>Tenkan-sen: <strong>${tenkan > 0 ? tenkan.toFixed(1) : 'N/A'}</strong> (Đường tín hiệu ngắn)</li>`;
+            html += `<li>Kijun-sen: <strong>${kijun > 0 ? kijun.toFixed(1) : 'N/A'}</strong> (Đường tín hiệu trung hạn)</li>`;
+            
+            if (ichimokuStatus === 'bullish') {
+                html += `<li><span style="color:#22c55e">CLOUD XANH (Bullish)</span> - Giá trên cloud, Tenkan > Kijun. Xu hướng tăng. Cloud đóng vai trò hỗ trợ.</li>`;
+            } else if (ichimokuStatus === 'bearish') {
+                html += `<li><span style="color:#ef4444">CLOUD ĐỎ (Bearish)</span> - Giá dưới cloud, Tenkan < Kijun. Xu hướng giảm. Cloud đóng vai trò kháng cự.</li>`;
+            } else {
+                html += `<li><span style="color:#fbbf24">TRONG CLOUD</span> - Giá đang sideways trong vùng không rõ ràng. Chờ breakout.</li>`;
+            }
+            html += '</ul></div>';
+
+            // 9. FUNDAMENTAL METRICS
+            const fScore = data.f_score || 0;
+            const roe = data.roe || 0;
+            const pe = data.pe || 0;
+            const pb = data.pb || 0;
+            const profitGrowth = data.profit_growth || 0;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #64748b;">';
+            html += '<div style="color: #94a3b8; font-weight: bold; margin-bottom: 8px;">💼 9. CHỈ SỐ TÀI CHÍNH</div>';
+            html += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">';
+            
+            // F-Score
+            let fscoreColor = '#94a3b8';
+            let fscoreNote = '';
+            if (fScore >= 7) {
+                fscoreColor = '#22c55e';
+                fscoreNote = 'Tuyệt vời!';
+            } else if (fScore >= 5) {
+                fscoreColor = '#86efac';
+                fscoreNote = 'Tốt';
+            } else if (fScore >= 3) {
+                fscoreColor = '#fbbf24';
+                fscoreNote = 'Trung bình';
+            } else {
+                fscoreColor = '#ef4444';
+                fscoreNote = 'Yếu';
+            }
+            html += `<div style="color: ${fscoreColor};">F-Score: <strong>${fScore}/9</strong> - ${fscoreNote}</div>`;
+            
+            // ROE
+            let roeColor = '#94a3b8';
+            let roeNote = '';
+            if (roe >= 15) {
+                roeColor = '#22c55e';
+                roeNote = 'Tốt';
+            } else if (roe >= 10) {
+                roeColor = '#86efac';
+                roeNote = 'Chấp nhận được';
+            } else if (roe >= 5) {
+                roeColor = '#fbbf24';
+                roeNote = 'Yếu';
+            } else {
+                roeColor = '#ef4444';
+                roeNote = 'Rất yếu';
+            }
+            html += `<div style="color: ${roeColor};">ROE: <strong>${roe > 0 ? roe.toFixed(1) + '%' : 'N/A'}</strong> - ${roeNote}</div>`;
+            
+            // P/E
+            let peColor = '#94a3b8';
+            let peNote = '';
+            if (pe > 0 && pe <= 10) {
+                peColor = '#22c55e';
+                peNote = 'Rẻ';
+            } else if (pe > 0 && pe <= 20) {
+                peColor = '#86efac';
+                peNote = 'Hợp lý';
+            } else if (pe > 0 && pe <= 30) {
+                peColor = '#fbbf24';
+                peNote = 'Cao';
+            } else if (pe > 30) {
+                peColor = '#ef4444';
+                peNote = 'Đắt';
+            } else {
+                peNote = 'N/A';
+            }
+            html += `<div style="color: ${peColor};">P/E: <strong>${pe > 0 ? pe.toFixed(1) : 'N/A'}</strong> - ${peNote}</div>`;
+            
+            // P/B
+            let pbColor = '#94a3b8';
+            let pbNote = '';
+            if (pb > 0 && pb <= 1) {
+                pbColor = '#22c55e';
+                pbNote = 'Rẻ';
+            } else if (pb > 0 && pb <= 2) {
+                pbColor = '#86efac';
+                pbNote = 'Hợp lý';
+            } else if (pb > 0 && pb <= 3) {
+                pbColor = '#fbbf24';
+                pbNote = 'Cao';
+            } else if (pb > 3) {
+                pbColor = '#ef4444';
+                pbNote = 'Đắt';
+            } else {
+                pbNote = 'N/A';
+            }
+            html += `<div style="color: ${pbColor};">P/B: <strong>${pb > 0 ? pb.toFixed(2) : 'N/A'}</strong> - ${pbNote}</div>`;
+            
+            // Profit Growth
+            let pgColor = profitGrowth >= 0 ? '#22c55e' : '#ef4444';
+            html += `<div style="color: ${pgColor}; grid-column: span 2;">Tăng trưởng LN: <strong>${profitGrowth !== null ? (profitGrowth >= 0 ? '+' : '') + profitGrowth.toFixed(1) + '%' : 'N/A'}</strong></div>`;
+            
+            html += '</div></div>';
+
+            // 10. SECTOR-SPECIFIC METRICS
+            const sector = data.sector || getSectorCategory(data.industry);
+            
+            if (sector === 'banking') {
+                const npl = data.npl || 0;
+                const nim = data.nim || 0;
+                const casa = data.casa || 0;
+                
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #0ea5e9;">';
+                html += '<div style="color: #38bdf8; font-weight: bold; margin-bottom: 8px;">🏦 10. CHỈ SỐ NGÂN HÀNG</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                
+                let nplColor = npl <= 2 ? '#22c55e' : npl <= 3 ? '#fbbf24' : '#ef4444';
+                html += `<li>NPL: <strong style="color:${nplColor}">${npl > 0 ? npl.toFixed(2) + '%' : 'N/A'}</strong> - ${npl <= 2 ? 'Chất lượng tài sản TỐT' : npl <= 3 ? 'Cần theo dõi' : 'Nợ xấu CAO - RỦI RO!'}</li>`;
+                
+                html += `<li>NIM: <strong>${nim > 0 ? nim.toFixed(2) + '%' : 'N/A'}</strong> - Biên lãi ròng. ${nim >= 3 ? 'Tốt' : nim >= 2 ? 'Trung bình' : 'Yếu'}</li>`;
+                
+                html += `<li>CASA: <strong>${casa > 0 ? casa.toFixed(1) + '%' : 'N/A'}</strong> - Tiền gửi không kỳ hạn. ${casa >= 20 ? 'Chi phí vốn thấp - TỐT' : 'Chi phí vốn cao'}</li>`;
+                
+                html += '</ul></div>';
+            } else if (sector === 'real_estate') {
+                const de = data.debt_equity || 0;
+                const invDays = data.inventory_days || 0;
+                
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #f97316;">';
+                html += '<div style="color: #fb923c; font-weight: bold; margin-bottom: 8px;">🏗️ 10. CHỈ SỐ BẤT ĐỘNG SẢN</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                
+                let deColor = de <= 1 ? '#22c55e' : de <= 1.5 ? '#fbbf24' : '#ef4444';
+                html += `<li>D/E: <strong style="color:${deColor}">${de > 0 ? de.toFixed(2) : 'N/A'}</strong> - ${de <= 1 ? 'Đòn bẩy AN TOÀN' : de <= 1.5 ? 'Đòn bẩy TRUNG BÌNH' : 'Đòn bẩy CAO - RỦI RO!'}</li>`;
+                
+                html += `<li>Inventory Days: <strong>${invDays > 0 ? invDays.toFixed(0) + ' ngày' : 'N/A'}</strong> - ${invDays <= 365 ? 'Bình thường' : invDays <= 730 ? 'Tồn kho CAO' : 'Tồn kho RẤT CAO'}</li>`;
+                
+                html += '</ul></div>';
+            } else if (sector === 'manufacturing') {
+                const gm = data.gross_margin || 0;
+                const invTurn = data.inventory_turnover || 0;
+                
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #eab308;">';
+                html += '<div style="color: #facc15; font-weight: bold; margin-bottom: 8px;">🏭 10. CHỈ SỐ SẢN XUẤT</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                
+                let gmColor = gm >= 30 ? '#22c55e' : gm >= 20 ? '#fbbf24' : '#ef4444';
+                html += `<li>Gross Margin: <strong style="color:${gmColor}">${gm > 0 ? gm.toFixed(1) + '%' : 'N/A'}</strong> - ${gm >= 30 ? 'Biên lợi nhuận TỐT' : gm >= 20 ? 'Biên lợi nhuận TRUNG BÌNH' : 'Biên lợi nhuận THẤP'}</li>`;
+                
+                html += `<li>Inventory Turnover: <strong>${invTurn > 0 ? invTurn.toFixed(1) + ' lần/năm' : 'N/A'}</strong> - ${invTurn >= 5 ? 'Tốt' : invTurn >= 3 ? 'Trung bình' : 'Chậm'}</li>`;
+                
+                html += '</ul></div>';
+            }
+
+            // 11. MARKET CONTEXT
+            const marketRSI = data.market_rsi || 50;
+            const isMarketHighRisk = data.is_market_high_risk;
+            
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #6366f1;">';
+            html += '<div style="color: #818cf8; font-weight: bold; margin-bottom: 8px;">🌐 11. BỐI CẢNH THỊ TRƯỜNG</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            
+            if (marketRSI >= 70) {
+                html += `<li>Market RSI: <strong style="color:#ef4444">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>QUÁ MUA</strong>. Khuyến nghị giảm tỷ trọng, chốt lời dần.</li>`;
+            } else if (marketRSI >= 55) {
+                html += `<li>Market RSI: <strong style="color:#86efac">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>TÍCH CỰC</strong>. Thuận lợi cho việc mua mới.</li>`;
+            } else if (marketRSI >= 45) {
+                html += `<li>Market RSI: <strong style="color:#fbbf24">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>TRUNG LẬP</strong>. Chọn lọc cổ phiếu tốt.</li>`;
+            } else if (marketRSI >= 30) {
+                html += `<li>Market RSI: <strong style="color:#f97316">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>QUÁ BÁN NHẸ</strong>. Cơ hội gom hàng dần.</li>`;
+            } else {
+                html += `<li>Market RSI: <strong style="color:#ef4444">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>QUÁ BÁN NẶNG</strong>. Rất nguy hiểm, chờ tín hiệu xác nhận.</li>`;
+            }
+            
+            if (isMarketHighRisk) {
+                html += `<li><span style="color:#ef4444">⚠️ Cảnh báo: Thị trường đang ở vùng RỦI RO CAO</span> - Không nên mua mới, giảm tỷ trọng.</li>`;
+            } else {
+                html += `<li><span style="color:#22c55e">✅ Thị trường đang AN TOÀN</span> - Có thể tham gia với tỷ trọng hợp lý.</li>`;
+            }
+            
+            html += '</ul></div>';
+
+            // FINAL VERDICT
+            html += '<div style="padding: 16px; background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); border-radius: 8px; border: 2px solid #3b82f6;">';
+            html += '<div style="color: #60a5fa; font-weight: bold; margin-bottom: 12px;">🎯 TỔNG KẾT & KHUYẾN NGHỊ</div>';
+            
+            if (isGold) {
+                html += '<p style="color: #22c55e; margin: 0;"><strong>💎 WEALTH GUARD GOLD</strong> - Đây là cổ phiếu đạt điểm xếp hạng cao của hệ thống. Đánh giá trạng thái thực tế:</p>';
+                html += '<ul style="color: #86efac; margin: 8px 0 0 20px;">';
+                html += `<li>Sức mạnh xu hướng: ADX đang ở mức <strong>${data.adx.toFixed(0)}</strong> (Trạng thái: ${data.trend})</li>`;
+                html += `<li>Dòng tiền tương đối (RS): Vùng <strong>${data.rs_label}</strong> (${data.rs_bonus} điểm)</li>`;
+                html += `<li>Điểm an toàn tài chính: F-Score đạt <strong>${data.f_score}/9</strong></li>`;
+                html += `<li>Định giá thị trường hiện tại: P/E = <strong>${data.pe || 'N/A'}</strong>, P/B = <strong>${data.pb || 'N/A'}</strong></li>`;
+                html += '</ul>';
+                html += '<p style="color: #fbbf24; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> Điểm số tổng hợp tốt nhưng bắt buộc phải đối chiếu với công cụ Quản trị vốn R:R trước khi bấm lệnh.</p>';
+            } else if (isGuerrilla) {
+                html += '<p style="color: #22c55e; margin: 0;"><strong>🚀 GUERRILLA PICK</strong> - Cổ phiếu cho chiến lược lướt sóng ngắn hạn:</p>';
+                html += '<ul style="color: #86efac; margin: 8px 0 0 20px;">';
+                html += '<li>Có tín hiệu breakout hoặc pullback rõ ràng</li>';
+                html += '<li>RS đang tích cực</li>';
+                html += '<li>Khối lượng xác nhận</li>';
+                html += '</ul>';
+                html += '<p style="color: #fbbf24; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> Mua khi retest hỗ trợ, chốt lời nhanh khi đạt FV Daily. Tỷ trọng <strong>5-10%</strong>.</p>';
+            } else if (isRisk) {
+                html += '<p style="color: #fbbf24; margin: 0;"><strong>⚠️ CHỜ NGÓNG (RISK)</strong> - Cổ phiếu chưa đủ điều kiện:</p>';
+                html += '<ul style="color: #94a3b8; margin: 8px 0 0 20px;">';
+                html += '<li>Còn thiếu một số điều kiện kỹ thuật quan trọng</li>';
+                html += '<li>Xu hướng chưa rõ ràng hoặc đang giảm</li>';
+                html += '<li>Chưa có sự xác nhận của dòng tiền</li>';
+                html += '</ul>';
+                html += '<p style="color: #94a3b8; margin-top: 12px;">📌 <strong>Khuyến nghị:</strong> <strong>Theo dõi</strong>, chờ đợi tín hiệu xác nhận trước khi vào.</p>';
+            }
+            
+            html += '</div>';
+            html += '</div>';
+
+            elExplanation.innerHTML = html;
+        }
+
+        // Helper function for sector detection
+        function getSectorCategory(industry) {
+            if (!industry) return 'general';
+            const ind = industry.toLowerCase();
+            if (ind.includes('bank') || ind.includes('ngân hàng') || ind.includes('chứng khoán')) return 'banking';
+            if (ind.includes('bất động sản') || ind.includes('real estate') || ind.includes('xây dựng')) return 'real_estate';
+            if (ind.includes('thép') || ind.includes('steel') || ind.includes('điện') || ind.includes('power')) return 'manufacturing';
+            return 'general';
+        }
+
+        // VETO Reason Explanations - FULL VERSION
+        function getVetoExplanation(reason, data) {
+            const reasonLower = reason.toLowerCase();
+            
+            // === FINANCIAL VETO ===
+            if (reasonLower.includes('npl') || reasonLower.includes('nợ xấu')) {
+                const npl = data.npl || 0;
+                if (npl > 5) {
+                    return `Nợ xấu chiếm ${npl.toFixed(2)}% tổng dư nợ - vượt xa ngưỡng cảnh báo 5%. Đây là dấu hiệu nghiêm trọng về chất lượng tài sản. Ngân hàng có thể phải trích lập dự phòng lớn, ảnh hưởng nghiêm trọng đến lợi nhuận. Trong chu kỳ suy thoái kinh tế, nợ xấu có xu hướng tăng trưởng nhanh hơn.`;
+                } else if (npl > 3) {
+                    return `Nợ xấu chiếm ${npl.toFixed(2)}% tổng dư nợ - vượt ngưỡng an toàn 3%. Chất lượng tài sản đang suy giảm. Cần theo dõi sát sao và trích lập dự phòng thêm.`;
+                }
+                return `Tỷ lệ nợ xấu ${npl.toFixed(2)}% tuy nằm trong ngưỡng nhưng xu hướng đang tăng là tín hiệu cảnh báo.`;
+            }
+            
+            if (reasonLower.includes('de') || reasonLower.includes('d/e') || reasonLower.includes('nợ/vốn')) {
+                const de = data.debt_equity || 0;
+                if (de > 2) {
+                    return `Đòn bẩy tài chính cực kỳ cao (D/E = ${de.toFixed(2)}). Doanh nghiệp đang vay nợ gấp ${de.toFixed(1)} lần vốn chủ! Trong bối cảnh lãi suất tăng, chi phí lãi vay sẽ bào mòn toàn bộ lợi nhuận. Nếu doanh thu sụt giảm, doanh nghiệp có nguy cơ mất khả năng thanh toán. Đứng ngoài ngay!`;
+                } else if (de > 1.5) {
+                    return `Đòn bẩy tài chính quá cao (D/E = ${de.toFixed(2)}). Doanh nghiệp đang vay nợ gấp ${de.toFixed(1)} lần vốn chủ. Trong bối cảnh lãi suất tăng, chi phí lãi vay sẽ bào mòn lợi nhuận đáng kể. Nếu thị trường biến động, rủi ro thanh khoản và sụt giá cực kỳ khốc liệt.`;
+                }
+                return `Tỷ lệ nợ trên vốn chủ (D/E = ${de.toFixed(2)}) cao hơn mức khuyến nghị. Cần đánh giá lại cấu trúc vốn.`;
+            }
+            
+            if (reasonLower.includes('gross margin') || reasonLower.includes('biên lợi nhuận gộp') || reasonLower.includes('gm')) {
+                const gm = data.gross_margin || 0;
+                if (gm < 15) {
+                    return `Biên lợi nhuận gộp chỉ ${gm.toFixed(1)}% - rất thấp! Điều này cho thấy: (1) Doanh nghiệp có sức mạnh định giá yếu, phải cạnh tranh bằng giá; (2) Chi phí sản xuất/hoạt động rất cao; (3) Lợi nhuận dễ bị bào mòn bởi biến động giá nguyên liệu. Rủi ro kinh doanh cao.`;
+                }
+                return `Biên lợi nhuận gộp ${gm.toFixed(1)}% - dưới mức tối thiểu của ngành. Sức mạnh định giá yếu hoặc chi phí cao bất thường.`;
+            }
+            
+            if (reasonLower.includes('roe')) {
+                const roe = data.roe || 0;
+                if (roe < 5) {
+                    return `ROE chỉ ${roe.toFixed(1)}% - rất thấp! Cổ đông chỉ nhận được ${roe.toFixed(1)}% lợi nhuận trên mỗi đồng vốn đầu tư, thấp hơn nhiều so với альтернативные đầu tư an toàn như trái phiếu chính phủ (7-8%/năm). Vốn đang bị "chôn" trong doanh nghiệp không hiệu quả.`;
+                } else if (roe < 10) {
+                    return `ROE ${roe.toFixed(1)}% - dưới mức tối thiểu 10%. Hiệu quả sử dụng vốn của ban lãnh đạo chưa tốt. Cổ phiếu khó tăng trưởng bền vững.`;
+                }
+                return `Lợi nhuận trên vốn chủ (ROE = ${roe.toFixed(1)}%) thấp, cần cải thiện để thu hút nhà đầu tư.`;
+            }
+            
+            if (reasonLower.includes('pe') || reasonLower.includes('p/e')) {
+                const pe = data.pe || 0;
+                if (pe > 50) {
+                    return `P/E ở mức ${pe.toFixed(1)} - cực kỳ đắt! Nhà đầu tư phải trả ${pe.toFixed(0)} đồng để có 1 đồng lợi nhuận. Định giá này phản ánh kỳ vọng tăng trưởng phi lý hoặc thị trường đang bị đẩy giá quá cao. Rủi ro điều chỉnh mạnh >30% nếu kỳ vọng không được đáp ứng.`;
+                } else if (pe > 30) {
+                    return `P/E ở mức ${pe.toFixed(1)} - định giá quá cao so với tăng trưởng lợi nhuận. Nhà đầu tư phải trả giá rất cao để có 1 đồng lợi nhuận. Cổ phiếu có nguy cơ điều chỉnh mạnh nếu kỳ vọng không được đáp ứng.`;
+                }
+                return `Chỉ số P/E ${pe.toFixed(1)} chưa hấp dẫn, định giá cao hơn trung bình ngành.`;
+            }
+            
+            if (reasonLower.includes('pb') || reasonLower.includes('p/b')) {
+                const pb = data.pb || 0;
+                if (pb > 5) {
+                    return `P/B ở mức ${pb.toFixed(2)} - rất đắt! Giá cổ phiếu gấp ${pb.toFixed(1)} lần giá trị sổ sách. Thường chỉ hợp lý với doanh nghiệp tăng trưởng cao hoặc có lợi thế cạnh tranh đặc biệt.`;
+                }
+                return `Chỉ số P/B ${pb.toFixed(2)} cao, cần đánh giá lại giá trị tài sản ròng.`;
+            }
+            
+            if (reasonLower.includes('profit') || reasonLower.includes('lợi nhuận') || reasonLower.includes('tăng trưởng')) {
+                const pg = data.profit_growth || 0;
+                if (pg < -20) {
+                    return `Tăng trưởng lợi nhuận âm ${pg.toFixed(1)}% - sụt giảm nghiêm trọng! Doanh nghiệp đang mất khả năng sinh lời. Có thể do: (1) Doanh thu sụt giảm; (2) Chi phí tăng nhanh hơn doanh thu; (3) Cạnh tranh khốc liệt. Không nên mua vào lúc này.`;
+                } else if (pg < 0) {
+                    return `Tăng trưởng lợi nhuận âm ${pg.toFixed(1)}% - lợi nhuận sụt giảm. Cần tìm hiểu nguyên nhân: tạm thời hay cấu trúc?`;
+                }
+                return `Tăng trưởng lợi nhuận ${pg.toFixed(1)}% thấp, không đủ hấp dẫn để đầu tư.`;
+            }
+            
+            // === TECHNICAL VETO ===
+            if (reasonLower.includes('rsi overbought') || reasonLower.includes('rsi >') || (reasonLower.includes('rsi') && (data.rsi || 0) > 75)) {
+                const rsi = data.rsi || 0;
+                return `RSI ở mức ${rsi.toFixed(0)} - cổ phiếu đang <strong>QUÁ MUA CỰC ĐỘ</strong>. Thị trường đang hưng phấn và định giá quá cao. Theo thống kê, RSI > 75 thường đi kèm nhịp điều chỉnh 5-15% trong 2-4 tuần tới. Mua vào lúc này là "bắt dao đang rơi".`;
+            }
+            
+            if (reasonLower.includes('rsi oversold') || reasonLower.includes('rsi <') || (reasonLower.includes('rsi') && (data.rsi || 0) < 25)) {
+                const rsi = data.rsi || 0;
+                return `RSI ở mức ${rsi.toFixed(0)} - <strong>QUÁ BÁN NẶNG</strong>. Tuy nhiên, quá bán không có nghĩa là sẽ tăng ngay. Có thể là bắt đầu của downtrend dài hạn. "Don't catch a falling knife" - Đừng bắt dao đang rơi!`;
+            }
+            
+            if (reasonLower.includes('cmf') || reasonLower.includes('volume')) {
+                const cmf = data.cmf || 0;
+                if (cmf < -0.15) {
+                    return `CMF ở mức ${cmf.toFixed(3)} - dòng tiền <strong>CHẢY RA KHỐC LIỆT</strong>. Khối lượng giao dịch cao bất thường trong khi giá giảm = "Smart Money" đang bán tháo. Đây là tín hiệu cực kỳ tiêu cực. Không nên mua!`;
+                } else if (cmf < -0.1) {
+                    return `CMF ở mức ${cmf.toFixed(3)} - dòng tiền <strong>đang chảy ra mạnh</strong>. Khối lượng giao dịch không xác nhận xu hướng tăng, đây là dấu hiệu cảnh báo nghiêm trọng.`;
+                }
+                return `Dòng tiền yếu (CMF = ${cmf.toFixed(3)}), volume không xác nhận xu hướng.`;
+            }
+            
+            if (reasonLower.includes('downtrend') || reasonLower.includes('xu hướng giảm')) {
+                return `Cổ phiếu đang trong <strong>XU HƯỚNG GIẢM RÕ RÀNG</strong> - đang tạo đỉnh thấp hơn và đáy thấp hơn. Không nên bắt dao rơi. Hãy đợi tín hiệu đảo chiều xác nhận (breakout khỏi trendline giảm, RSI > 50, MACD cross up) trước khi cân nhắc mua.`;
+            }
+            
+            if (reasonLower.includes('adx')) {
+                const adx = data.adx || 0;
+                if (adx < 15) {
+                    return `ADX ở mức ${adx.toFixed(0)} - <strong>KHÔNG CÓ XU HƯỚNG</strong>. Thị trường đang sideways tích lũy hoặc đang chuyển đổi xu hướng. Giao dịch trong giai đoạn này rất rủi ro vì giá có thể đảo chiều bất cứ lúc nào.`;
+                }
+                return `ADX thấp cho thấy xu hướng yếu hoặc không rõ ràng. Thị trường đang sideways.`;
+            }
+            
+            if (reasonLower.includes('macd')) {
+                const macd = data.macd || 0;
+                const signal = data.macd_signal || 0;
+                if (macd < signal) {
+                    return `MACD đang dưới Signal Line - <strong>Death Cross đang hình thành</strong>. Momentum tiêu cực đang chiếm ưu thế. Xu hướng giảm có thể tiếp tục.`;
+                }
+                return `MACD histogram âm cho thấy đà giảm đang mạnh dần.`;
+            }
+            
+            if (reasonLower.includes('price') && (reasonLower.includes('below') || reasonLower.includes('dưới'))) {
+                return `Giá đang giao dịch <strong>DƯỚI các đường MA quan trọng</strong> (SMA20, SMA50). Đây là tín hiệu tiêu cực cho thấy xu hướng trung/lâu hạn đang giảm. Cần breakout lên trên các MA để xác nhận đảo chiều.`;
+            }
+            
+            if (reasonLower.includes('breakdown') || reasonLower.includes('breakout down')) {
+                return `Cổ phiếu vừa <strong>BREAKDOWN</strong> khỏi vùng hỗ trợ quan trọng. Đây là tín hiệu bán mạnh. Giá có thể tiếp tục giảm về vùng hỗ trợ tiếp theo. Đứng ngoài!`;
+            }
+            
+            // === MARKET VETO ===
+            if (reasonLower.includes('market') || reasonLower.includes('thị trường')) {
+                const mktRSI = data.market_rsi || 50;
+                if (mktRSI > 70) {
+                    return `Thị trường chung đang ở vùng <strong>QUÁ MUA NGHIÊM TRỌNG</strong> (Market RSI = ${mktRSI.toFixed(0)}). Lịch sử cho thấy đây thường là đỉnh ngắn hạn. Không nên mua mới trong giai đoạn này.`;
+                }
+                return `Thị trường chung đang trong vùng <strong>RỦI RO CAO</strong>. Không nên mua mới, giảm tỷ trọng để bảo toàn vốn.`;
+            }
+            
+            if (reasonLower.includes('market high risk') || reasonLower.includes('rủi ro thị trường')) {
+                return `Hệ thống cảnh báo <strong>THỊ TRƯỜNG ĐANG Ở VÙNG NGUY HIỂM</strong>. Kết hợp nhiều yếu tố: (1) Thị trường quá mua; (2) Rủi ro vĩ mô tăng; (3) Dòng tiền yếu. Trong giai đoạn này, ngay cả cổ phiếu tốt cũng có thể giảm theo.`;
+            }
+            
+            // === LIQUIDITY VETO ===
+            if (reasonLower.includes('liquidity') || reasonLower.includes('thanh khoản') || reasonLower.includes('volume thấp')) {
+                return `Khối lượng giao dịch quá thấp - cổ phiếu có thanh khoản kém. Điều này có nghĩa: (1) Khó mua/bán với giá mong muốn; (2) Spread (chênh lệch giá mua/bán) cao; (3) Dễ bị "thao túng" bởi cá mập. Rủi ro không thể thoát lệnh khi cần.`;
+            }
+            
+            if (reasonLower.includes('avg volume') || reasonLower.includes('khối lượng bình quân')) {
+                return `Khối lượng giao dịch thấp hơn bình quân 20 ngày - thiếu sự quan tâm của thị trường. Cổ phiếu đang bị "bỏ rơi". Không có catalyst cho sự tăng giá.`;
+            }
+            
+            // === SECTOR VETO ===
+            if (reasonLower.includes('sector') || reasonLower.includes('ngành')) {
+                return `Ngành mà cổ phiếu thuộc về đang trong xu hướng giảm hoặc bị định giá thấp. Đầu tư theo ngành (sector rotation) là chiến lược quan trọng. Không nên fight the trend.`;
+            }
+            
+            if (reasonLower.includes('foreign') || reasonLower.includes('nước ngoài')) {
+                return `Khối lượng mua của nhà đầu tư nước ngoài đang giảm hoặc đang bán ròng. "Smart Money" (tổ chức) đang rút khỏi cổ phiếu này. Theo sau họ thường là lựa chọn an toàn hơn.`;
+            }
+            
+            // === DEFAULT ===
+            return `Chỉ số này vi phạm ngưỡng an toàn của hệ thống Wealth Guard. Đứng ngoài để bảo toàn vốn. Chờ cổ phiếu cải thiện chỉ số này trước khi cân nhắc mua.`;
+        }
+
         function closeModal() {
             document.getElementById('stockModal').classList.remove('active');
         }
@@ -1902,10 +2590,21 @@
 
             <!-- AI Verdict -->
             <div class="modal-section" style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <div class="label" style="color: #60a5fa; margin-bottom: 8px;">📊 AI Verdict</div>
+                <div class="label" style="color: #60a5fa; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <span>📊 AI Verdict</span>
+                    <button id="btnExplain" onclick="toggleExplanation()" style="background: #3b82f6; border: none; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        🧠 Giải thích chi tiết
+                    </button>
+                </div>
                 <div id="modalVerdict" style="color: #e2e8f0; font-size: 14px; line-height: 1.6;">
                     Kỹ thuật: Mạnh (85/100) | Tài chính: Tốt (80/100). Có thể đánh T+ nhanh.
                 </div>
+            </div>
+
+            <!-- Explanation Panel (Hidden by default) -->
+            <div id="explanationPanel" style="display: none; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <div class="label" style="color: #60a5fa; margin-bottom: 12px;">🧠 Phân Tích Chuyên Sâu</div>
+                <div id="modalExplanation" style="color: #e2e8f0; font-size: 13px; line-height: 1.8;"></div>
             </div>
 
             <!-- LÝ DO VETO - Hiện khi bị loại -->

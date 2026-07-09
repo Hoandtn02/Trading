@@ -83,6 +83,7 @@ class StockData(models.Model):
     symbol = models.CharField(max_length=10, unique=True, db_index=True)
     company_name = models.CharField(max_length=200, blank=True, default="")
     industry = models.CharField(max_length=50, blank=True, default="")
+    sector_group = models.CharField(max_length=50, blank=True, default="", help_text="Nhóm ngành rộng: cyclical/banking/growth_defensive/general")
     market_group = models.CharField(max_length=20, blank=True, default="")  # VN30, MIDCAP, SMALL
 
     # Price

@@ -1,0 +1,17 @@
+{% if industry %}
+    {% with lower=industry|lower %}
+        {% if 'bank' in lower or 'ngân hàng' in lower or 'chứng khoán' in lower %}
+            banking
+        {% elif 'bất động sản' in lower or 'real estate' in lower or 'xây dựng' in lower %}
+            real_estate
+        {% elif 'thép' in lower or 'steel' in lower or 'điện' in lower or 'power' in lower %}
+            manufacturing
+        {% elif 'retail' in lower or 'bán lẻ' in lower %}
+            retail
+        {% else %}
+            general
+        {% endif %}
+    {% endwith %}
+{% else %}
+    general
+{% endif %}
