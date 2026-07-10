@@ -585,6 +585,98 @@
         }
         .modal-btn.secondary:hover { background: #475569; }
 
+        /* Score Breakdown Panel */
+        .score-breakdown {
+            display: none;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            margin-top: 14px;
+            padding: 14px;
+        }
+        .score-breakdown.active { display: block; }
+        .score-breakdown h4 {
+            font-size: 12px;
+            color: #94a3b8;
+            margin: 0 0 12px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 8px;
+        }
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #1e293b;
+            font-size: 12px;
+        }
+        .breakdown-row:last-child { border-bottom: none; }
+        .breakdown-row .b-label {
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .breakdown-row .b-label .hint-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0;
+            color: #64748b;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+        .breakdown-row .b-label .hint-btn:hover { color: #38bdf8; }
+        .breakdown-row .b-value {
+            font-weight: 600;
+            color: #fff;
+        }
+        .breakdown-row .b-value.pos { color: #22c55e; }
+        .breakdown-row .b-value.neg { color: #ef4444; }
+        .breakdown-row .b-value.neu { color: #94a3b8; }
+        .breakdown-row.subtotal {
+            background: #1e293b;
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-top: 4px;
+            border-bottom: none;
+        }
+        .breakdown-row.total {
+            background: #1e3a5f;
+            border-radius: 6px;
+            padding: 10px 10px;
+            margin-top: 6px;
+            border-bottom: none;
+            font-size: 13px;
+        }
+        .breakdown-row.total .b-label { color: #e2e8f0; font-weight: 600; }
+        .breakdown-row.total .b-value { color: #38bdf8; font-size: 16px; }
+        .breakdown-row.modifier .b-label { color: #f59e0b; }
+        .breakdown-row.modifier .b-value { font-size: 13px; }
+
+        /* Tooltip */
+        .metric-tooltip {
+            position: fixed;
+            z-index: 10002;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px 14px;
+            max-width: 280px;
+            font-size: 12px;
+            color: #e2e8f0;
+            line-height: 1.5;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        .metric-tooltip strong { color: #38bdf8; display: block; margin-bottom: 4px; font-size: 13px; }
+        .metric-tooltip .tt-good { color: #22c55e; font-weight: 600; }
+        .metric-tooltip .tt-bad { color: #ef4444; font-weight: 600; }
+        .metric-tooltip .tt-note { color: #f59e0b; font-size: 11px; margin-top: 4px; }
+
         /* Industry badges */
         .industry-badge {
             display: inline-block;
@@ -835,6 +927,7 @@
                     data-score="{{ stock.master_score }}"
                     data-base-score="{{ stock.base_master_score|default:stock.master_score }}"
                     data-market-weight="{{ stock.market_weight|default:0 }}"
+                    data-scan-mode="{{ stock.scan_mode|default:'EARLY_TREND' }}"
                     data-tech-score="{{ stock.technical_score }}"
                     data-fund-score="{{ stock.fundamental_score }}"
                     data-signal="{{ stock.signal }}"
@@ -862,7 +955,6 @@
                     data-plan-completion="{{ stock.profit_plan_completion|default:'' }}"
                     data-plan-status="{{ stock.profit_plan_status|default:'' }}"
                     data-fv-daily="{{ stock.fv_daily|floatformat:0 }}"
-                    data-fv-weekly="{{ stock.fv_weekly|floatformat:0 }}"
                     data-trend="{{ stock.trend }}"
                     data-sma10="{{ stock.sma_10 }}"
                     data-sma20="{{ stock.sma_20 }}"
@@ -892,9 +984,19 @@
                     data-has-high-resistance="{{ stock.has_high_resistance|yesno:'true,false' }}"
                     data-trend-factor="{{ stock.trend_factor }}"
                     data-avg-volume="{{ stock.avg_volume_value|floatformat:0 }}"
-                    data-foreign-streak="{{ stock.foreign_buy_streak|default:'0' }}"
-                    data-foreign-bonus="{{ stock.foreign_bonus|default:'0' }}"
+                    data-foreign-streak="{{ stock.foreign_buy_streak|default:'0'|to_int }}"
+                    data-foreign-bonus="{{ stock.foreign_bonus|default:'0'|to_int }}"
+                    data-foreign-master-modifier="{{ stock.foreign_master_modifier|default:'0'|to_int }}"
+                    data-latest-net-val="{{ stock.latest_net_val|default:'0'|to_int }}"
+                    data-foreign-absorption="{{ stock.foreign_absorption_ratio|default:'0' }}"
+                    data-latest-net-val-2="{{ stock.latest_net_val_2|default:'0'|to_int }}"
+                    data-foreign-buy-val="{{ stock.foreign_buy_val|default:'0'|to_int }}"
+                    data-foreign-sell-val="{{ stock.foreign_sell_val|default:'0'|to_int }}"
+                    data-foreign-trading-share="{{ stock.foreign_trading_share|default:'0' }}"
+                    data-foreign-accum-trend="{{ stock.foreign_accumulated_trend|default:'NEUTRAL' }}"
+                    data-foreign-accum-slope="{{ stock.foreign_accumulated_slope|default:'0'|to_int }}"
                     data-industry-perf="{{ stock.industry_performance|default:'0' }}"
+                    data-sector-group="{{ stock.sector_group|default:'general' }}"
                     data-is-industry-leader="{{ stock.is_industry_leader|yesno:'true,false' }}"
                     data-hard-risk-pct="{{ stock.hard_risk_pct|default:'0' }}"
                     data-support-price="{{ stock.support_price|default:'0' }}"
@@ -933,7 +1035,6 @@
                     <!-- Cột Định Giá Mới -->
                     <td class="valuation-cell" id="val-{{ stock.symbol }}">
                         <div class="fv-daily" style="font-size: 11px; color: #f59e0b; font-weight: 600;">Day: --</div>
-                        <div class="fv-weekly" style="font-size: 12px; color: #3b82f6; font-weight: 700;">Week: --</div>
                     </td>
 
                     <td>
@@ -1272,6 +1373,11 @@
         if (typeof runOnReady === "function") runOnReady(); 
         });
         
+        // Expose functions to window so inline onclick works
+        window.showModal = showModal;
+        window.closeModal = closeModal;
+        window.openStockModalFromRow = openStockModalFromRow;
+
         // Quick search on enter
         document.querySelector('input[name="search"]').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -1289,7 +1395,6 @@
                 industry: row.dataset.industry || 'Other',
                 market_group: row.dataset.marketGroup || 'MIDCAP',
                 fv_daily: parseFloat(row.dataset.fvDaily) || 0,
-                fv_weekly: parseFloat(row.dataset.fvWeekly) || 0,
                 price: parseFloat(row.dataset.price) || 0,
                 change_percent: parseFloat(row.dataset.change) || 0,
                 target_yield_pct: parseFloat(row.dataset.targetYield) || 0,
@@ -1354,7 +1459,17 @@
                 // Smart Money & Industry
                 foreign_buy_streak: parseInt(row.dataset.foreignStreak) || 0,
                 foreign_bonus: parseInt(row.dataset.foreignBonus) || 0,
+                foreign_master_modifier: parseInt(row.dataset.foreignMasterModifier) || 0,
+                latest_net_val: parseFloat(row.dataset.latestNetVal) || 0,
+                foreign_absorption_ratio: parseFloat(row.dataset.foreignAbsorption) || 0,
+                latest_net_val_2: parseFloat(row.dataset.latestNetVal2) || 0,
+                foreign_buy_val: parseFloat(row.dataset.foreignBuyVal) || 0,
+                foreign_sell_val: parseFloat(row.dataset.foreignSellVal) || 0,
+                foreign_trading_share: parseFloat(row.dataset.foreignTradingShare) || 0,
+                foreign_accumulated_trend: row.dataset.foreignAccumTrend || 'NEUTRAL',
+                foreign_accumulated_slope: parseFloat(row.dataset.foreignAccumSlope) || 0,
                 industry_performance: parseFloat(row.dataset.industryPerf) || 0,
+                sector_group: row.dataset.sectorGroup || 'general',
                 is_industry_leader: row.dataset.isIndustryLeader === 'true',
                 // Real R:R
                 hard_risk_pct: parseFloat(row.dataset.hardRiskPct) || 0,
@@ -1368,10 +1483,900 @@
                 recommendation_label: row.dataset.recommendationLabel || '',
                 // Relative Strength & Sector
                 sector: row.dataset.sector || 'general',
+                scan_mode: row.dataset.scanMode || 'EARLY_TREND',
                 rs_label: row.dataset.rsLabel || 'NEUTRAL',
                 rs_bonus: parseInt(row.dataset.rsBonus) || 0,
             };
             showModal(stockData);
+        }
+
+        // ================================================================
+        // INDICATOR INFO PANEL — Phân Tích Chuyên Sâu từng chỉ số
+        // ================================================================
+        function showIndicatorInfo(key) {
+            const panel = document.getElementById('explanationPanel');
+            const content = document.getElementById('modalExplanation');
+            if (!panel || !content) return;
+
+            // Map label hiển thị
+            const labels = {
+                rsi: 'RSI (14)', adx: 'ADX', cmf: 'CMF', mfi: 'MFI',
+                vwap: 'VWAP', ichimoku: 'Ichimoku Cloud', tenkan: 'Tenkan-Sen',
+                kijun: 'Kijun-Sen', supertrend: 'SuperTrend',
+                sma10: 'SMA 10', sma20: 'SMA 20', sma50: 'SMA 50',
+                macd: 'MACD', bb: 'Bollinger Bands', bbpercent: 'BB Percent',
+                fscore: 'Piotroski F-Score', roe: 'ROE', pe: 'P/E', pb: 'P/B',
+                pg: 'Tăng Trưởng Lợi Nhuận',
+                entry: 'Entry Price', sl: 'Stop Loss', tp: 'Take Profit', rr: 'Risk:Reward',
+                fvdaily: 'Fair Value Daily', fvweekly: 'Fair Value Weekly',
+                foreignstreak: 'Foreign Buy Streak', netval: 'Net Value Khối Ngoại',
+                absorption: 'Absorption Ratio', foreigntrend: '30-Session Trend',
+                rslabel: 'Relative Strength',
+                // --- NEW ---
+                masterscore: 'Master Score', techscore: 'Tech Score', fundscore: 'Fund Score',
+                signal: 'Signal', trend: 'Xu Hướng', criteria: 'Criteria Đạt',
+                marketrisk: 'Market Risk', stockrisk: 'Stock Risk',
+                timeframe: 'Khung Thời Gian', estdays: 'Est. Days',
+                profitperday: 'Lợi Nhuận Dự Kiến', upsideperday: '% Upside / Ngày',
+                stvalue: 'ST Value', macdsignal: 'MACD Signal', bblower: 'BB Lower',
+                annualplan: 'Kế Hoạch Năm', ytdprofit: 'LN YTD',
+                plancompletion: 'Hoàn Thành KH', planstatus: 'Trạng Thái KH',
+                nim: 'NIM', npl: 'NPL', casa: 'CASA',
+                de: 'D/E', invdays: 'Inventory Days',
+                grossmargin: 'Gross Margin', invturnover: 'Inv. Turnover',
+                industryperf: 'Industry Perf', rsbonus: 'RS Bonus',
+                foreign5daytrend: '5-7 Session Trend', foreignmodifier: 'Foreign Modifier',
+            };
+
+            const info = {
+                rsi: {
+                    title: 'RSI (Relative Strength Index) — Chỉ Số Sức Mạnh Tương Đối',
+                    body: `<strong>RSI là gì?</strong> RSI đo lường tốc độ và sự thay đổi của giá để đánh giá cổ phiếu đang <span class="tt-bad">quá mua</span> hay <span class="tt-good">quá bán</span>. Dao động từ 0 đến 100.<br><br>
+<strong>Cách đọc:</strong><br>
+• <span class="tt-bad">RSI > 70</span>: Quá mua — giá có thể sắp điều chỉnh<br>
+• <span class="tt-good">RSI < 30</span>: Quá bán — giá có thể sắp bật lên<br>
+• <span class="tt-good">RSI 50–65</span>: Vùng Sweet Spot — xu hướng tăng lành mạnh<br><br>
+<strong>Trong hệ thống:</strong> RSI > 80 sẽ <span class="tt-bad">trừ −15 điểm Tech Score</span> (phanh hạ nhiệt kỹ thuật). RSI > 70 trong chế độ BOTTOM_FISHING có thể trigger VETO (Anti-FOMO).`
+                },
+                adx: {
+                    title: 'ADX (Average Directional Index) — Chỉ Số Xác Nhận Xu Hướng',
+                    body: `<strong>ADX là gì?</strong> ADX đo <span class="tt-good">cường độ của xu hướng</span> (không phải hướng). ADX càng cao → xu hướng càng mạnh.<br><br>
+<strong>Cách đọc:</strong><br>
+• <span class="tt-bad">ADX < 20</span>: Thị trường đi ngang, thiếu xung lực<br>
+• <span class="tt-good">ADX 20–25</span>: Xu hướng bắt đầu hình thành (+8 điểm)<br>
+• <span class="tt-good">ADX > 25</span>: Xu hướng mạnh (+15 điểm)<br>
+• <span class="tt-bad">ADX > 40</span>: Xu hướng cực mạnh — có thể sắp suy yếu<br><br>
+<strong>Trong hệ thống:</strong> ADX > 25 → cộng +15 Tech Score. EARLY_TREND với ADX < 20 → <span class="tt-bad">trừ −10</span> (loại mã đi ngang). BOTTOM_FISHING với ADX < 20 nhưng Volume Ratio < 0.7 và CMF > 0 → <span class="tt-good">cộng +10</span> (vùng tích lũy kiệt cung).`
+                },
+                cmf: {
+                    title: 'CMF (Chaikin Money Flow) — Dòng Tiền Chaikin',
+                    body: `<strong>CMF là gì?</strong> CMF đo <span class="tt-good">lực mua gom</span> của khối tổ chức (Smart Money). Dựa trên khối lượng giao dịch kết hợp với vị trí giá trong range của ngày.<br><br>
+<strong>Cách đọc:</strong><br>
+• <span class="tt-bad">CMF < 0</span>: Dòng tiền rút ra — lực bán chiếm ưu thế<br>
+• <span class="tt-good">CMF 0 – 0.1</span>: Lực mua nhẹ nhàng, tích lũy<br>
+• <span class="tt-good">CMF > 0.1</span>: Lực mua gom chủ động mạnh<br><br>
+<strong>Trong hệ thống:</strong> CMF > 0.1 → cộng <span class="tt-good">+15 Tech Score</span>. CMF < 0 → <span class="tt-bad">trừ −15 Tech Score</span> (án phạt dòng tiền rút ra). CMF còn là VETO cứng: CMF < 0 → <span class="tt-bad">VETO_1</span> (không mua khi Smart Money đang bán).`
+                },
+                mfi: {
+                    title: 'MFI (Money Flow Index) — Chỉ Số Dòng Tiền',
+                    body: `<strong>MFI là gì?</strong> MFI giống RSI nhưng có tính <span class="tt-good">khối lượng giao dịch</span>. Đo tốc độ dòng tiền "nóng" chảy vào/ra cổ phiếu.<br><br>
+<strong>Cách đọc:</strong><br>
+• <span class="tt-bad">MFI > 80</span>: Dòng tiền quá nóng, cảnh báo đỉnh<br>
+• <span class="tt-good">MFI > 50</span>: Dòng tiền nóng đang cuộn vào — lực mua mạnh<br>
+• <span class="tt-good">MFI 40–60</span>: Trung tính<br>
+• <span class="tt-bad">MFI < 40</span>: Dòng tiền đang rút ra<br><br>
+<strong>Trong hệ thống:</strong> MFI > 50 → cộng <span class="tt-good">+15 Tech Score</span> (xung lực dòng tiền nội tại). MFI là chỉ báo xác nhận bổ sung cho CMF — cả hai cùng dương → xác nhận mạnh về dòng tiền.`
+                },
+                vwap: {
+                    title: 'VWAP (Volume Weighted Average Price) — Giá Trung Bình Theo Khối Lượng',
+                    body: `<strong>VWAP là gì?</strong> VWAP là mức giá <span class="tt-good">trung bình theo khối lượng</span> trong ngày — cho biết giá "công bằng" mà các nhà đầu tư tổ chức đã giao dịch.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá > VWAP: Nhà tổ chức đang <span class="tt-good">mua gom</span> (giá trên mức "công bằng")<br>
+• Giá < VWAP: Nhà tổ chức đang <span class="tt-bad">phân phối</span><br>
+• Khoảng cách giá/VWAP ≤ 1.5%: Giá sát vùng cân bằng<br><br>
+<strong>Trong hệ thống:</strong> VWAP là thành phần của Fair Value Daily: <span class="tt-good">FV Daily = VWAP×40% + SMA20×60%</span>. Khoảng cách giá/VWAP ≤ 1.5% trong BOTTOM_FISHING → cộng +10 Tech Score (vùng tích lũy sát với giá trung bình).`
+                },
+                ichimoku: {
+                    title: 'Ichimoku Cloud — Hệ Thống Đám Mây Ichimoku',
+                    body: `<strong>Ichimoku là gì?</strong> Hệ thống phân tích kỹ thuật Nhật Bản gồm 5 đường: Tenkan-Sen, Kijun-Sen, Senkou Span A/B và Chikou Span. Đám mây (Kumo) là vùng hỗ trợ/kháng cự động.<br><br>
+<strong>Tín hiệu:</strong><br>
+• Giá trên đám mây + Tenkan > Kijun → <span class="tt-good">Bullish mạnh</span><br>
+• Giá trong đám mây → Trung tính<br>
+• Giá dưới đám mây → <span class="tt-bad">Bearish</span><br><br>
+<strong>Trong hệ thống:</strong> Ichimoku trạng thái <span class="tt-good">"bullish"</span> → cộng <span class="tt-good">+10 Tech Score</span> (tín hiệu kích hoạt xu hướng). Ichimoku bullish kết hợp VWAP trên → xác nhận xu hướng tăng rõ ràng. Ichimoku còn dùng để xác nhận VETO: giá dưới đám mây kèm khối lượng lớn → có thể trigger VETO.`
+                },
+                tenkan: {
+                    title: 'Tenkan-Sen — Đường Chuyển Đổi (Conversion Line)',
+                    body: `<strong>Tenkan-Sen là gì?</strong> Đường trung bình cộng của <span class="tt-good">cao nhất + thấp nhất trong 9 phiên gần nhất</span>. Đại diện cho xu hướng ngắn hạn.<br><br>
+<strong>Cách đọc:</strong><br>
+• Tenkan > Kijun: <span class="tt-good">Bullish ngắn hạn</span><br>
+• Tenkan < Kijun: <span class="tt-bad">Bearish ngắn hạn</span><br>
+• Tenkan đang tăng mạnh: Đà tăng đang加速<br><br>
+<strong>Trong hệ thống:</strong> Tenkan là chỉ báo phụ trợ cho Ichimoku. Khi Tenkan cắt lên trên Kijun → xác nhận bullish cho Ichimoku status. Hiện tại Tenkan chưa có điểm riêng trong hệ thống, nhưng kết hợp với Ichimoku bullish → +10 Tech Score.`
+                },
+                kijun: {
+                    title: 'Kijun-Sen — Đường Chuẩn (Base Line)',
+                    body: `<strong>Kijun-Sen là gì?</strong> Đường trung bình cộng của <span class="tt-good">cao nhất + thấp nhất trong 26 phiên gần nhất</span>. Đại diện cho xu hướng trung hạn.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá trên Kijun: <span class="tt-good">Xu hướng tăng trung hạn</span><br>
+• Giá dưới Kijun: <span class="tt-bad">Xu hướng giảm trung hạn</span><br>
+• Tenkan cắt lên Kijun (Golden Cross): Tín hiệu <span class="tt-good">mua</span><br>
+• Tenkan cắt xuống Kijun (Dead Cross): Tín hiệu <span class="tt-bad">bán</span><br><br>
+<strong>Trong hệ thống:</strong> Kijun là ngưỡng tham chiếu cho xu hướng trung hạn. Khi giá trên cả Tenkan > Kijun > đám mây → uptrend mạnh nhất. Kết hợp với Ichimoku bullish → +10 Tech Score.`
+                },
+                supertrend: {
+                    title: 'SuperTrend — Chỉ Báo Theo Xu Hướng',
+                    body: `<strong>SuperTrend là gì?</strong> SuperTrend vẽ đường trên/below giá, đổi màu khi có sự đảo chiều. Dựa trên ATR (Average True Range) — cho biết <span class="tt-good">độ biến động thực tế</span>.<br><br>
+<strong>Cách đọc:</strong><br>
+• SuperTrend màu xanh (BUY): Giá đang trong xu hướng <span class="tt-good">tăng</span><br>
+• SuperTrend màu đỏ (SELL): Giá đang trong xu hướng <span class="tt-bad">giảm</span><br>
+• Giá cắt trên SuperTrend → tín hiệu <span class="tt-good">mua</span><br>
+• Giá cắt dưới SuperTrend → tín hiệu <span class="tt-bad">bán</span><br><br>
+<strong>Trong hệ thống:</strong> SuperTrend signal = "bullish" → cộng <span class="tt-good">+10 Tech Score</span> (kích hoạt xu hướng). Cả Ichimoku bullish VÀ SuperTrend bullish → xác nhận kép mạnh.`
+                },
+                sma10: {
+                    title: 'SMA 10 — Trung Bình Động Đơn Giản 10 Phiên',
+                    body: `<strong>SMA 10 là gì?</strong> Trung bình cộng giá đóng cửa của <span class="tt-good">10 phiên gần nhất</span>. Đại diện cho xu hướng rất ngắn hạn (1–2 tuần).<br><br>
+<strong>Cách đọc:</strong><br>
+• SMA10 đang dốc lên → đà tăng ngắn hạn đang mạnh<br>
+• Giá > SMA10 > SMA20 → <span class="tt-good">Cấu trúc tăng</span> (tín hiệu rất tích cực)<br>
+• Giá < SMA10 → đà tăng ngắn hạn yếu<br><br>
+<strong>Trong hệ thống:</strong> Điều kiện Giá > SMA10 > SMA20 → cộng <span class="tt-good">+15 Tech Score</span> (cấu trúc SMAs hướng lên). Đây là điều kiện của Breakout Signal: giá trên cả SMA10 + SMA20 + Volume Ratio > 1.5 → entry quality = "GOOD" và cộng +18 Tech Score (EARLY_TREND).`
+                },
+                sma20: {
+                    title: 'SMA 20 — Trung Bình Động Đơn Giản 20 Phiên',
+                    body: `<strong>SMA 20 là gì?</strong> Trung bình cộng giá đóng cửa của <span class="tt-good">20 phiên gần nhất</span> (~1 tháng). Đại diện cho xu hướng ngắn-trung hạn.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá > SMA20: Xu hướng tăng ngắn hạn<br>
+• SMA20 đang dốc lên trên SMA50: <span class="tt-good">Golden SMA setup</span><br>
+• Giá < SMA20: Xu hướng giảm ngắn hạn<br><br>
+<strong>Trong hệ thống:</strong> SMA20 là thành phần của cấu trúc SMAs: Giá > SMA10 > SMA20 → <span class="tt-good">+15 Tech Score</span>. SMA20 còn dùng làm ngưỡng an toàn: khoảng cách giá/SMA20 ≤ 2% → is_safe_entry = true (Entry Quality tốt). Breakout Signal yêu cầu giá > SMA10 và giá > SMA20 đồng thời.`
+                },
+                sma50: {
+                    title: 'SMA 50 — Trung Bình Động Đơn Giản 50 Phiên',
+                    body: `<strong>SMA 50 là gì?</strong> Trung bình cộng giá đóng cửa của <span class="tt-good">50 phiên gần nhất</span> (~2.5 tháng). Đại diện cho xu hướng trung hạn.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá > SMA50: Xu hướng tăng trung hạn — tích cực<br>
+• SMA50 > SMA200: <span class="tt-good">Golden Cross dài hạn</span> — tín hiệu mua mạnh<br>
+• Giá < SMA50 + Volume lớn: <span class="tt-bad">Rơi tự do</span> — VETO<br>
+• Giá < SMA200: <span class="tt-bad">Xu hướng dài hạn gãy</span> — VETO<br><br>
+<strong>Trong hệ thống:</strong> SMA50 là ngưỡng VETO quan trọng: Giá < SMA50 + Volume Ratio > 1.2 → <span class="tt-bad">VETO_7</span> (rơi tự do). SMA50 là Support price trong tính toán Stop Loss.`
+                },
+                macd: {
+                    title: 'MACD (Moving Average Convergence Divergence)',
+                    body: `<strong>MACD là gì?</strong> MACD gồm 3 thành phần: đường MACD (hiệu 2 EMA), đường Signal (EMA của MACD), và Histogram (chênh lệch giữa 2 đường). Đo <span class="tt-good">động lượng/xung lực</span> của xu hướng.<br><br>
+<strong>Cách đọc:</strong><br>
+• MACD > Signal → <span class="tt-good">Bullish momentum</span> (xung lực tăng)<br>
+• MACD < Signal → <span class="tt-bad">Bearish momentum</span> (xung lực giảm)<br>
+• Histogram đang mở rộng → đà tăng đang mạnh lên<br>
+• Histogram thu hẹp → đà tăng đang yếu đi<br><br>
+<strong>Trong hệ thống:</strong> MACD > Signal → cộng <span class="tt-good">+10 Tech Score</span>. MACD < Signal → <span class="tt-bad">trừ −10 Tech Score</span>. Đây là điều kiện BREAKOUT trong Entry Quality: MACD > Signal để xác nhận xung lực tăng.`
+                },
+                bb: {
+                    title: 'Bollinger Bands — Dải Bollinger',
+                    body: `<strong>Bollinger Bands là gì?</strong> Gồm 3 đường: SMA 20 (middle band) và 2 dải trên/dưới cách SMA20 một khoảng bằng <span class="tt-good">2 lần độ lệch chuẩn</span>. Cho biết biên độ dao động "bình thường" của giá.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá chạm dải trên: <span class="tt-bad">Quá mua</span> — có thể điều chỉnh<br>
+• Giá chạm dải dưới: <span class="tt-good">Quá bán</span> — có thể bật lên<br>
+• Dải băng co hẹp (Squeeze): chuẩn bị <span class="tt-good">bùng nổ giá</span><br>
+• Dải băng mở rộng: biến động cao<br><br>
+<strong>Trong hệ thống:</strong> BB% > 100% (giá bay ra khỏi dải trên) → <span class="tt-bad">trừ −10 Tech Score</span> (phanh hạ nhiệt). BB% > 95% trong BOTTOM_FISHING → VETO (Anti-FOMO).`
+                },
+                bbpercent: {
+                    title: 'BB Percent — Vị Trí Giá Trong Dải Bollinger',
+                    body: `<strong>BB Percent là gì?</strong> Cho biết giá đang ở <span class="tt-good">vị trí % nào</span> trong dải Bollinger (0% = dải dưới, 100% = dải trên, 50% = middle band).<br><br>
+<strong>Cách đọc:</strong><br>
+• BB% > 100%: Giá <span class="tt-bad">bay ra ngoài dải trên</span> — quá mua cực đại<br>
+• BB% 70–90%: Giá gần dải trên — vùng kháng cự<br>
+• BB% 40–60%: Giá ở giữa — cân bằng<br>
+• BB% 10–30%: Giá gần dải dưới — vùng hỗ trợ<br>
+• BB% < 0%: Giá <span class="tt-bad">rơi ra ngoài dải dưới</span> — quá bán cực đại<br><br>
+<strong>Trong hệ thống:</strong> BB% > 100% → <span class="tt-bad">trừ −10 Tech Score</span>. BB% > 95% trong BOTTOM_FISHING → VETO (Anti-FOMO). BB% < −5% trong EARLY_TREND → entry_quality = "ACCUMULATE" (quá bán, chờ xác nhận).`
+                },
+                fscore: {
+                    title: 'Piotroski F-Score — Điểm Sức Khỏe Tài Chính',
+                    body: `<strong>F-Score là gì?</strong> Chỉ số Piotroski đánh giá <span class="tt-good">sức khỏe tài chính doanh nghiệp</span> dựa trên 9 tiêu chí trong 4 nhóm: (1) Profitability, (2) Leverage, (3) Liquidity, (4) Operating Efficiency.<br><br>
+<strong>Thang điểm:</strong><br>
+• <span class="tt-good">F-Score 8–9</span>: Doanh nghiệp tài chính xuất sắc → +40 Fund Score<br>
+• <span class="tt-good">F-Score 6–7</span>: Tài chính khá tốt → +30 Fund Score<br>
+• F-Score 5: Trung bình → +20 Fund Score<br>
+• <span class="tt-bad">F-Score < 5</span>: Yếu kém → <span class="tt-bad">VETO_10 chặn ngay</span><br><br>
+<strong>9 tiêu chí Piotroski:</strong> ROA dương, ROA tăng, CFO > ROA, Giảm đòn bẩy, Cải thiện thanh khoản, Không pha loãng cổ phiếu, Cải thiện biên lợi nhuận, Cải thiện vòng quay tài sản, Giảm chi phí hoạt động.`
+                },
+                roe: {
+                    title: 'ROE (Return on Equity) — Lợi Nhuận Trên Vốn Chủ Sở Hữu',
+                    body: `<strong>ROE là gì?</strong> ROE đo <span class="tt-good">hiệu quả sử dụng vốn chủ</span> — mỗi đồng vốn tạo ra bao nhiêu đồng lợi nhuận. Chỉ số quan trọng nhất để đánh giá "đồng tiền sinh lời".<br><br>
+<strong>Thang điểm trong hệ thống:</strong><br>
+• <span class="tt-good">ROE > 25%</span>: Xuất sắc → +30 Fund Score<br>
+• <span class="tt-good">ROE 15–25%</span>: Khá tốt → +20 Fund Score<br>
+• ROE 10–15%: Trung bình → +10 Fund Score<br>
+• <span class="tt-bad">ROE < ngưỡng ngành</span>: Yếu → trừ −15 Fund Score và có thể VETO<br><br>
+<strong>Ngưỡng theo ngành:</strong><br>
+• Ngành <span class="tt-bad">thâm dụng vốn</span> (BĐS, Sản xuất, Dầu khí): ROE < 10% → trừ −15<br>
+• Ngành <span class="tt-bad">thương mại dịch vụ</span> (Chứng khoán, Retail): ROE < 15% → trừ −15<br><br>
+<strong>Ngưỡng VETO:</strong> ROE < ngưỡng ngành → <span class="tt-bad">VETO_9</span> (chặn cổ phiếu rủi ro tài chính).`
+                },
+                pe: {
+                    title: 'P/E (Price to Earnings Ratio) — Hệ Số Giá Trên Lợi Nhuận',
+                    body: `<strong>P/E là gì?</strong> P/E cho biết nhà đầu tư sẵn sàng trả <span class="tt-good">bao nhiêu đồng cho 1 đồng lợi nhuận</span>. Thể hiện kỳ vọng của thị trường về tăng trưởng tương lai.<br><br>
+<strong>Cách đọc:</strong><br>
+• P/E thấp (< ngành): Cổ phiếu có thể <span class="tt-good">bị định giá thấp</span> hoặc rủi ro<br>
+• P/E cao (> ngành): Cổ phiếu <span class="tt-bad">đắt</span> hoặc kỳ vọng tăng trưởng cao<br>
+• P/E âm: Doanh nghiệp đang lỗ<br><br>
+<strong>Trong hệ thống:</strong> P/E dùng để tính Fair Value: FV = Giá × (Target_PE / Actual_PE). Target_PE theo ngành (ví dụ: Banking 1.65, Real Estate 1.8, Technology 18.0). P/E còn được Wealth Guard Cap kiểm soát: không cho phép P/E vượt quá 25% so với ngưỡng tĩnh.`
+                },
+                pb: {
+                    title: 'P/B (Price to Book Ratio) — Hệ Số Giá Trên Giá Trị Sổ Sách',
+                    body: `<strong>P/B là gì?</strong> P/B so sánh giá thị trường với <span class="tt-good">giá trị sổ sách thực tế</span> của doanh nghiệp (vốn chủ - nợ). Cho biết cổ phiếu đắt hay rẻ theo tài sản ròng.<br><br>
+<strong>Cách đọc:</strong><br>
+• P/B < 1: Giá thị trường <span class="tt-good">thấp hơn giá trị sổ sách</span> — có thể rẻ<br>
+• P/B = 1: Giá = giá trị sổ sách<br>
+• P/B > 3: Cổ phiếu <span class="tt-bad">đắt</span> theo tài sản<br><br>
+<strong>Trong hệ thống:</strong> P/B là chỉ báo phụ trợ trong Fair Value, dùng khi P/E âm (doanh nghiệp lỗ). P/B ngành Banking target = 1.65, Real Estate = 1.8. High P/B có thể làm giảm overall valuation score nhưng không trigger VETO đơn lẻ.`
+                },
+                pg: {
+                    title: 'Tăng Trưởng Lợi Nhuận (Profit Growth)',
+                    body: `<strong>Tăng trưởng lợi nhuận là gì?</strong> So sánh lợi nhuận kỳ này với cùng kỳ năm trước: <span class="tt-good">Growth% = ((LN kỳ này - LN cùng kỳ năm trước) / |LN cùng kỳ năm trước|) × 100</span>.<br><br>
+<strong>Xử lý ngoại lệ:</strong><br>
+• Cùng kỳ năm ngoái = 0 và LN kỳ này > 0 → mặc định Growth = 100%<br>
+• Cùng kỳ năm ngoái = 0 và LN kỳ này = 0 → Growth = 0%<br><br>
+<strong>Thang điểm:</strong><br>
+• <span class="tt-good">Growth > 25%</span>: Tăng trưởng mạnh → +30 Fund Score<br>
+• Growth 15–25%: Khá → +20 Fund Score<br>
+• Growth 5–15%: Cơ bản → +10 Fund Score<br>
+• <span class="tt-bad">Growth < 0%</span>: Lợi nhuận giảm → <span class="tt-bad">VETO_11</span> chặn<br><br>
+<strong>Quan trọng:</strong> Profit Growth chỉ áp dụng cho cổ phiếu không phải listing mới (is_new_listing = false).`
+                },
+                entry: {
+                    title: 'Entry Price — Giá Mua Vào',
+                    body: `<strong>Entry Price là gì?</strong> Giá khuyến nghị để mở vị thế mua. Trong hệ thống này, Entry = <span class="tt-good">Giá hiện tại</span> (Price) tại thời điểm phân tích.<br><br>
+<strong>Cách sử dụng:</strong><br>
+• Mua khi giá ≤ Entry Price (hoặc buy limit ngay Entry)<br>
+• Entry nên kết hợp với Entry Quality: "GOOD" hoặc "ACCUMULATE" mới vào<br>
+• Entry Quality "BAD" → chờ hoặc bỏ qua<br><br>
+<strong>Trong hệ thống:</strong> Entry Price dùng để tính Stop Loss (% khoảng cách từ Entry đến SL). Risk/Reward Ratio = (Take Profit - Entry) / (Entry - Stop Loss). Entry Price phải ≤ FV Daily × 1.15 (nếu > → SIGNAL OVERRIDE BRAKE chặn tín hiệu mua).`
+                },
+                sl: {
+                    title: 'Stop Loss — Điểm Cắt Lỗ',
+                    body: `<strong>Stop Loss là gì?</strong> Mức giá mà tại đó bạn <span class="tt-bad">chấp nhận cắt lỗ</span> để bảo toàn vốn, tránh thua lỗ lớn hơn.<br><br>
+<strong>Công thức tính trong hệ thống:</strong><br>
+• <span class="tt-good">BOTTOM_FISHING</span>: SL = Low 10 ngày − 1.5 × ATR<br>
+• <span class="tt-good">EARLY_TREND (breakout)</span>: SL = Low của candle breakout (hoặc Entry × 0.95 nếu không có breakout rõ ràng)<br>
+• SL phải ≥ Entry × 0.95 (tối thiểu 5% cách biệt)<br><br>
+<strong>Trong hệ thống:</strong> Khoảng cách Entry/SL quá xa (>7%) → stock_risk_level = "High". Khoảng cách Entry/SL gần (<3%) → stock_risk_level = "Very Low" nhưng có nguy cơ bị noise chạm SL.`
+                },
+                tp: {
+                    title: 'Take Profit — Điểm Chốt Lời',
+                    body: `<strong>Take Profit là gì?</strong> Mức giá mục tiêu để <span class="tt-good">chốt lời</span> và đóng vị thế. Dựa trên biên độ dao động thực tế của cổ phiếu.<br><br>
+<strong>Công thức:</strong><br>
+• TP = Entry + 2 × ATR (Average True Range)<br>
+• ATR là biên độ dao động trung bình thực tế trong 14 phiên<br><br>
+<strong>Điều chỉnh theo Market Regime:</strong><br>
+• FREEZE (RSI > 85): TP scale = 0.85 (thu hẹp mục tiêu)<br>
+• DEFENSE (RSI > 80): TP scale = 0.90<br>
+• NORMAL: TP scale = 1.00<br><br>
+<strong>Early Exit Sensor:</strong> Khi lãi ≥ early_exit_trigger_pct% (2%) mà giá sụt ≥ early_exit_drop_pct% (0.7%) → Bán ngay để bảo toàn lợi nhuận.`
+                },
+                rr: {
+                    title: 'Risk:Reward Ratio (R:R) — Tỷ Lệ Lợi Nhuận / Rủi Ro',
+                    body: `<strong>R:R là gì?</strong> So sánh <span class="tt-good">lợi nhuận kỳ vọng với rủi ro</span>: R:R = (TP − Entry) / (Entry − SL). Ví dụ: R:R = 3.0 nghĩa là lợi nhuận gấp 3 lần rủi ro.<br><br>
+<strong>Thang đánh giá:</strong><br>
+• <span class="tt-bad">R:R < 1.0</span>: Không đáng vào — signal = "WAIT"<br>
+• R:R 1.0–1.5: Khả thi nhưng không lý tưởng<br>
+• <span class="tt-good">R:R 1.5–2.5</span>: Good — điểm vào hợp lý<br>
+• <span class="tt-good">R:R 2.5–5.0</span>: ⭐ Golden — vùng lý tưởng<br>
+• <span class="tt-good">R:R 5.0–10.0</span>: 💎 Diamond — kèo cực phẩm<br>
+• <span class="tt-bad">R:R > 10</span>: ⚠️ Cảnh báo — SL quá sát, rủi ro nhiễu cao<br><br>
+<strong>Trong hệ thống:</strong> R:R < 1.0 hoặc Target Yield < 3% → signal = "WAIT". R:R ≥ 2.0 → criteria "R:R >= 2.0" được thêm vào điểm criteria_met.`
+                },
+                fvdaily: {
+                    title: 'Fair Value Daily — Giá Trị Hợp Lý Trong Ngày',
+                    body: `<strong>FV Daily là gì?</strong> Giá trị hợp lý ngắn hạn, dựa trên <span class="tt-good">hành vi giá gần đây</span> của chính cổ phiếu đó.<br><br>
+<strong>Công thức:</strong><br>
+• <span class="tt-good">FV Daily = VWAP × 40% + SMA20 × 60%</span><br><br>
+<strong>Cách đọc:</strong><br>
+• Giá < FV Daily: Cổ phiếu đang <span class="tt-good">rẻ hơn giá trị hợp lý</span> — cơ hội mua<br>
+• Giá > FV Daily × 1.15: <span class="tt-bad">Quá đắt</span> — chặn tín hiệu mua (OVERVALUED)<br>
+• Gauge trên modal: vị trí chấm tròn cho biết giá đắt/rẻ tương đối<br><br>
+<strong>Signal Override Brake:</strong> Giá > FV Daily × 1.15 HOẶC RSI cá nhân > 80 → tín hiệu tự động chuyển thành <span class="tt-bad">WAIT (OVERVALUED)</span> — không mua đuổi ở đỉnh.`
+                },
+                fvweekly: {
+                    title: 'Fair Value Weekly — Giá Trị Hợp Lý Theo Ngành',
+                    body: `<strong>FV Weekly là gì?</strong> Giá trị hợp lý trung hạn dựa trên <span class="tt-good">đặc thù ngành</span> và chỉ số tài chính của doanh nghiệp.<br><br>
+<strong>Cách tính:</strong><br>
+• FV Weekly = Giá × (Target_PE ngành / P/E thực tế)<br>
+• Target_PE ngành có thể là Median từ Screener API (Dynamic) hoặc ngưỡng tĩnh cứng (Static)<br><br>
+<strong>Ví dụ Target_PE theo ngành:</strong><br>
+• Banking: 1.65× P/B hoặc P/E tương ứng<br>
+• Real Estate: 1.8× P/B<br>
+• Technology: P/E = 18<br>
+• FMCG: P/E = 14<br><br>
+<strong>Wealth Guard Cap:</strong> Target_PE không vượt quá 125% ngưỡng tĩnh — ngăn không cho phép định giá phi lý.`
+                },
+                foreignstreak: {
+                    title: 'Foreign Streak — Chuỗi Mua Ròng 5–7 Phiên',
+                    body: `<strong>Foreign Streak là gì?</strong> Số phiên <span class="tt-good">liên tiếp khối ngoại mua ròng</span> trong chuỗi 5–7 phiên gần nhất. Cho biết sự kiên trì của Smart Money.<br><br>
+<strong>Thang điểm:</strong><br>
+• Streak ≥ 5 phiên: <span class="tt-good">Kiên trì cao</span> → +5 Foreign Modifier<br>
+• Streak 3–4 phiên: <span class="tt-good">Khá tốt</span> → +4 Foreign Modifier<br>
+• Streak 1–2 phiên: <span class="tt-bad">Yếu</span> → 0 hoặc phạt nhẹ<br>
+• Streak = 0 + Net < 0: <span class="tt-bad">Bán ròng</span> → −8 Foreign Modifier<br><br>
+<strong>Trong hệ thống:</strong> Streak ≥ 5 + BOTTOM_FISHING + Volume < 0.7 → entry_quality = "EXCELLENT" (vùng gom SHARK). Foreign Streak là chỉ báo Smart Money quan trọng.`
+                },
+                foreign5daytrend: {
+                    title: '5–7 Session Trend — Xu Hướng Ngắn Hạn Khối Ngoại',
+                    body: `<strong>5–7 Session Trend là gì?</strong> Đánh giá <span class="tt-good">xu hướng ngắn hạn</span> của khối ngoại dựa trên net value của 2 phiên gần nhất (tương đương 5–7 phiên giao dịch).<br><br>
+<strong>Các trạng thái:</strong><br>
+• <span class="tt-good">ACCUMULATING</span>: Cả 2 phiên đều mua ròng → Smart Money đang gom mạnh<br>
+• <span class="tt-good">SLIGHT_ACCUM</span>: 1 trong 2 phiên mua ròng → Xu hướng tích cực nhẹ<br>
+• <span class="tt-bad">SLIGHT_DIST</span>: 1 trong 2 phiên bán ròng → Xu hướng tiêu cực nhẹ<br>
+• <span class="tt-bad">DISTRIBUTING</span>: Cả 2 phiên đều bán ròng → Smart Money đang xả<br>
+• NEUTRAL: Không có xu hướng rõ ràng<br><br>
+<strong>Trong hệ thống:</strong> ACCUMULATING + Streak ≥ 3 → Smart Money entry → +8 Foreign Modifier. DISTRIBUTING + Breakout → VETO_9 (Foreign Distribution Trap).`
+                },
+                foreignmodifier: {
+                    title: 'Foreign Modifier — Điểm Điều Chỉnh Từ Khối Ngoại',
+                    body: `<strong>Foreign Modifier là gì?</strong> Điểm <span class="tt-good">cộng thêm hoặc trừ</span> trực tiếp vào Master Score dựa trên hành vi khối ngoại (Smart Money).<br><br>
+<strong>Công thức tổng hợp:</strong><br>
+Foreign Modifier = Base Trend + 5–7 Day Modifier + Streak Bonus + Absorption Bonus<br><br>
+<strong>Base Trend (từ 30-Session):</strong><br>
+• ACCUMULATING → <span class="tt-good">+15</span><br>
+• NEUTRAL → <span class="tt-good">0</span><br>
+• DISTRIBUTING → <span class="tt-bad">−15</span><br><br>
+<strong>5–7 Day + Streak:</strong><br>
+• ACCUMULATING + Streak ≥ 5 → <span class="tt-good">+25</span> (tối đa)<br>
+• DISTRIBUTING + Streak = 0 → <span class="tt-bad">−25</span> (tối thiểu)<br><br>
+<strong>Absorption Bonus:</strong><br>
+• Absorption > 20% + Net > 0 → <span class="tt-good">thưởng thêm</span><br>
+• Absorption > 25% + Net < 0 + Breakout → <span class="tt-bad">VETO_9</span>`
+                },
+                netval: {
+                    title: 'Net Value Khối Ngoại — Giá Trị Mua/Bán Ròng',
+                    body: `<strong>Net Value là gì?</strong> Chênh lệch giữa <span class="tt-good">tổng giá trị mua</span> và <span class="tt-bad">tổng giá trị bán</span> của khối ngoại trong một phiên (VND).<br><br>
+<strong>Cách đọc:</strong><br>
+• Net > 0: Khối ngoại <span class="tt-good">mua ròng</span> — dòng tiền chảy vào<br>
+• Net < 0: Khối ngoại <span class="tt-bad">bán ròng</span> — dòng tiền chảy ra<br>
+• Net lớn (tỷ đồng): Cường độ mạnh<br><br>
+<strong>Trong hệ thống:</strong> Net Val kết hợp với Absorption Ratio tạo Foreign Flow Modifier:<br>
+• ACCUMULATING + Net > 0 + Absorption > 20% → <span class="tt-good">+25</span><br>
+• DISTRIBUTING + Net < 0 + Absorption > 20% → <span class="tt-bad">−25</span><br>
+• EARLY_TREND + breakout + Net < 0 + Absorption > 25% → <span class="tt-bad">VETO_9 (Foreign Distribution Trap)</span>`
+                },
+                absorption: {
+                    title: 'Absorption Ratio — Tỷ Lệ Hấp Thụ',
+                    body: `<strong>Absorption Ratio là gì?</strong> Tỷ lệ % mà <span class="tt-good">khối ngoại mua/bán chiếm</span> trong tổng khối lượng giao dịch của cổ phiếu trong ngày. Cho biết mức độ khối ngoại "chi phối" thanh khoản.<br><br>
+<strong>Cách đọc:</strong><br>
+• Absorption > 25%: Khối ngoại <span class="tt-bad">chi phối mạnh</span> thanh khoản<br>
+• Absorption 10–25%: Khối ngoại tham gia vừa phải<br>
+• Absorption < 10%: Khối ngoại không đáng kể<br><br>
+<strong>Trong hệ thống:</strong> Absorption kết hợp với Net Val và xu hướng lũy kế tạo Foreign Flow Modifier:<br>
+• Absorption > 20% + ACCUMULATING + Net > 0 → +25 Foreign Score<br>
+• Absorption > 20% + DISTRIBUTING + Net < 0 → −25 Foreign Score<br>
+• EARLY_TREND + breakout + Net < 0 + Absorption > 25% → <span class="tt-bad">VETO_9</span>`
+                },
+                foreigntrend: {
+                    title: '30-Session Trend — Xu Hướng Lũy Kế 30 Phiên',
+                    body: `<strong>30-Session Trend là gì?</strong> Tổng hợp Net Value của khối ngoại qua <span class="tt-good">30 phiên gần nhất</span>, chia thành 3 nhóm:<br><br>
+<strong>Ba trạng thái:</strong><br>
+• <span class="tt-good">ACCUMULATING (Gom ròng)</span>: Khối ngoại mua ròng tổng cộng trong 30 phiên. Đây là dấu hiệu <span class="tt-good">Smart Money đang gom</span>.<br>
+• <span class="tt-bad">DISTRIBUTING (Phân phối)</span>: Khối ngoại bán ròng tổng cộng. Cảnh báo <span class="tt-bad">Smart Money đang xả</span>.<br>
+• <span class="tt-good">NEUTRAL</span>: Khối ngoại không có xu hướng rõ ràng.<br><br>
+<strong>Trong hệ thống:</strong> Đây là biến quyết định Foreign Flow Modifier:<br>
+• ACCUMULATING + hôm nay mua mạnh → <span class="tt-good">thưởng tối đa +25</span><br>
+• DISTRIBUTING + hôm nay bán mạnh → <span class="tt-bad">phạt tối đa −25</span>`
+                },
+                rslabel: {
+                    title: 'Relative Strength (RS) — Sức Mạnh Tương Đối Ngành',
+                    body: `<strong>Relative Strength là gì?</strong> So sánh <span class="tt-good">hiệu suất cổ phiếu</span> với hiệu suất ngành hoặc thị trường chung. Cho biết cổ phiếu đang <span class="tt-good">dẫn dắt</span> hay <span class="tt-bad">đuối hơn</span> ngành.<br><br>
+<strong>Thang điểm trong hệ thống:</strong><br>
+• Industry RS > 5% → <span class="tt-good">LEADER</span> → +15 Master Score<br>
+• Industry RS > 0% → <span class="tt-good">OUTPERFORM</span> → +8 Master Score<br>
+• Industry RS < 0% → <span class="tt-bad">LAGGARD</span> → −10 Master Score<br><br>
+<strong>Cách đọc:</strong><br>
+• LEADER: Cổ phiếu tăng nhanh hơn ngành >5% → nên ưu tiên mua<br>
+• OUTPERFORM: Cổ phiếu tăng nhưng không nổi bật<br>
+• LAGGARD: Cổ phiếu giảm hoặc tăng ít hơn ngành → hạn chế mua`
+                },
+                // --- NEW: các chỉ số bổ sung ---
+                masterscore: {
+                    title: 'Master Score — Điểm Tổng Hợp Chủ', body: `<strong>Master Score là gì?</strong> Là điểm tổng hợp từ <span class="tt-good">70% Tech Score + 30% Fund Score</span>, rồi cộng thêm các Modifier (Market, RS, Kế hoạch, Khối Ngoại).<br><br>
+<strong>Công thức:</strong><br>
+Base = Tech×0.7 + Fund×0.3<br>
+Master = Base + Market Modifier + RS Bonus + Plan Penalty + Foreign Modifier<br><br>
+<strong>Thang điểm:</strong><br>
+• ≥70: <span class="tt-good">GOLD</span> — Cơ hội mua mạnh<br>
+• 55–69: <span class="tt-good">GUERRILLA</span> — Cơ hội mua trung bình<br>
+• <55: <span class="tt-bad">RISK</span> — Cần cân nhắc kỹ`
+                },
+                techscore: {
+                    title: 'Tech Score — Điểm Kỹ Thuật', body: `<strong>Tech Score là gì?</strong> Tổng điểm dựa trên <span class="tt-good">các chỉ báo kỹ thuật</span>: RSI, ADX, CMF, MACD, Bollinger Bands, Ichimoku, SuperTrend, VWAP, SMAs, Volume Ratio.<br><br>
+<strong>Điểm cộng chính:</strong><br>
+• Giá > SMA10 > SMA20 → <span class="tt-good">+15</span><br>
+• CMF > 0.1 → <span class="tt-good">+15</span><br>
+• ADX > 25 → <span class="tt-good">+15</span><br>
+• RSI 50–65 → <span class="tt-good">+10</span><br><br>
+<strong>Điểm trừ:</strong><br>
+• RSI > 80 → <span class="tt-bad">−15</span><br>
+• CMF < 0 → <span class="tt-bad">−15</span><br>
+• BB% > 100% → <span class="tt-bad">−10</span>`
+                },
+                fundscore: {
+                    title: 'Fund Score — Điểm Cơ Bản', body: `<strong>Fund Score là gì?</strong> Tổng điểm dựa trên <span class="tt-good">sức khỏe tài chính doanh nghiệp</span>: Piotroski F-Score, ROE, P/E, P/B, Tăng trưởng lợi nhuận.<br><br>
+<strong>Điểm cộng chính:</strong><br>
+• F-Score 8–9 → <span class="tt-good">+40</span><br>
+• F-Score 6–7 → <span class="tt-good">+30</span><br>
+• ROE > 25% → <span class="tt-good">+30</span><br>
+• Tăng trưởng LN > 25% → <span class="tt-good">+30</span><br><br>
+<strong>Điểm trừ:</strong><br>
+• F-Score < 5 → <span class="tt-bad">VETO chặn</span><br>
+• Tăng trưởng LN < 0% → <span class="tt-bad">VETO chặn</span><br>
+• ROE < ngưỡng ngành → <span class="tt-bad">−15</span>`
+                },
+                signal: {
+                    title: 'Signal — Tín Hiệu Giao Dịch', body: `<strong>Signal là gì?</strong> Tín hiệu giao dịch tổng hợp từ tất cả các yếu tố: điểm số, R:R, định giá, VETO.<br><br>
+<strong>Các loại Signal:</strong><br>
+• <span class="tt-good">BUY</span>: Điểm cao, R:R ≥ 1.5, không bị VETO → Khuyến nghị mua<br>
+• <span class="tt-bad">SELL</span>: Điểm thấp hoặc có tín hiệu bán rõ ràng<br>
+• <span class="tt-bad">VETO</span>: Có lý do cứng khiến không nên mua<br>
+• <span class="tt-bad">WAIT</span>: Chưa đủ điều kiện hoặc định giá quá cao<br>
+• <span class="tt-bad">OVERVALUED</span>: Giá > FV Daily × 1.15 hoặc RSI > 80 → Signal Override Brake`
+                },
+                trend: {
+                    title: 'Xu Hướng — Trend Direction', body: `<strong>Xu hướng là gì?</strong> Xác định hướng di chuyển chung của giá dựa trên <span class="tt-good">3 đường SMA</span>: SMA 10 (ngắn), SMA 20 (ngắn-trung), SMA 50 (trung).<br><br>
+<strong>Cách đọc:</strong><br>
+• <span class="tt-good">UPTREND</span>: Giá > SMA20 > SMA50 → Cấu trúc tăng rõ ràng<br>
+• <span class="tt-bad">DOWNTREND</span>: Giá < SMA20 < SMA50 → Cấu trúc giảm<br>
+• <span class="tt-bad">SIDEWAYS</span>: Giá xen kẽ các SMA → Thị trường đi ngang<br><br>
+<strong>Trong hệ thống:</strong> UPTREND → Tech Score cao hơn. DOWNTREND → án phạt và có thể VETO. SIDEWAYS → chỉ phù hợp với BOTTOM_FISHING.`
+                },
+                criteria: {
+                    title: 'Criteria Đạt — Số Tiêu Chí Vượt Qua', body: `<strong>Criteria Đạt là gì?</strong> Đếm số tiêu chí kỹ thuật mà cổ phiếu <span class="tt-good">thỏa mãn</span> trong tổng số 12 tiêu chí được đánh giá.<br><br>
+<strong>12 Tiêu chí chính:</strong><br>
+1. RSI 40–70, 2. RSI 50–65, 3. ADX ≥ 25, 4. CMF > 0<br>
+5. MACD > Signal, 6. Giá > SMA10 > SMA20, 7. Giá > SMA20<br>
+8. Volume Ratio > 1.2, 9. VWAP, 10. Ichimoku bullish<br>
+11. R:R ≥ 1.5, 12. BB% 0–100<br><br>
+<strong>Ngưỡng đề xuất:</strong> ≥8/12 → cổ phiếu đạt chất lượng tốt`
+                },
+                marketrisk: {
+                    title: 'Market Risk — Rủi Ro Thị Trường Chung', body: `<strong>Market Risk là gì?</strong> Đánh giá mức độ rủi ro của <span class="tt-good">thị trường chung</span> dựa trên VNIndex: RSI, xu hướng, biến động.<br><br>
+<strong>Thang đánh giá:</strong><br>
+• <span class="tt-good">Safe</span>: VNIndex RSI 40–65, xu hướng ổn định → Mua thoải mái<br>
+• <span class="tt-bad">High</span>: VNIndex RSI > 70 hoặc < 40 → Thận trọng, giảm size<br>
+• <span class="tt-bad">Very High</span>: VNIndex RSI > 80 hoặc có tín hiệu crash → Cắt giảm vị thế<br><br>
+<strong>Trong hệ thống:</strong> Market Risk cao → Market Weight âm (-5 đến -20), giảm điểm Master Score.`
+                },
+                stockrisk: {
+                    title: 'Stock Risk — Rủi Ro Cổ Phiếu Riêng Lẻ', body: `<strong>Stock Risk là gì?</strong> Đánh giá rủi ro riêng của cổ phiếu dựa trên <span class="tt-good">khoảng cách Entry/SL</span>, biến động (ATR), và các yếu tố cảnh báo.<br><br>
+<strong>Thang đánh giá:</strong><br>
+• <span class="tt-good">Very Low</span>: Entry/SL ≤ 3% — Rủi ro cực thấp nhưng dễ bị noise chạm SL<br>
+• <span class="tt-good">Low</span>: Entry/SL 3–5% — Rủi ro thấp, vị thế an toàn<br>
+• <span class="tt-bad">Medium</span>: Entry/SL 5–7% — Chấp nhận được<br>
+• <span class="tt-bad">High</span>: Entry/SL > 7% — Rủi ro cao, cần quản lý size cẩn thận<br><br>
+<strong>Early Exit Sensor:</strong> Lãi ≥ 2% mà giá sụt ≥ 0.7% → Bán ngay bất kể Stock Risk.`
+                },
+                timeframe: {
+                    title: 'Investment Horizon — Khung Thời Gian Đầu Tư', body: `<strong>Investment Horizon là gì?</strong> Xác định <span class="tt-good">khung thời gian nắm giữ</span> dựa trên cấu trúc xu hướng và biên độ ATR.<br><br>
+<strong>Các loại Horizon:</strong><br>
+• <span class="tt-good">Scalping</span>: Entry/SL ≤ 1.5% — Giữ vài phút đến vài giờ<br>
+• <span class="tt-good">Day Trading</span>: Entry/SL 1.5–3% — Giữ trong ngày<br>
+• <span class="tt-good">Swing Trading</span>: Entry/SL 3–7% — Giữ vài ngày đến 2 tuần<br>
+• <span class="tt-bad">Position Trading</span>: Entry/SL > 7% — Giữ vài tuần đến vài tháng<br><br>
+<strong>Trong hệ thống:</strong> Khung thời gian quyết định Trailing Stop strategy và Early Exit parameters.`
+                },
+                estdays: {
+                    title: 'Est. Days — Số Ngày Ước Tính Đến Mục Tiêu', body: `<strong>Est. Days là gì?</strong> Ước tính số ngày cần thiết để giá đạt <span class="tt-good">Take Profit</span> dựa trên biên độ ATR trung bình và upside cần thiết.<br><br>
+<strong>Công thức:</strong><br>
+Upside cần = (Take Profit − Entry) / Entry × 100%<br>
+Est. Days = Upside cần / (% Upside per day ước tính)<br>
+% Upside per day = ATR / Entry × 100 / 2 (ước tính)<br><br>
+<strong>Trong hệ thống:</strong> Est. Days > 30 → tự động chuyển sang Position Trading. Est. Days < 3 → phù hợp Day Trading.`
+                },
+                profitperday: {
+                    title: 'Lợi Nhuận Dự Kiến Mỗi Ngày', body: `<strong>Lợi Nhuận Dự Kiến là gì?</strong> Ước tính số tiền lãi kỳ vọng mỗi ngày nếu cổ phiếu đạt mục tiêu theo đúng kế hoạch.<br><br>
+<strong>Công thức:</strong><br>
+Lợi nhuận kỳ vọng = Take Profit − Entry<br>
+Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
+<strong>Cách đọc:</strong><br>
+• > +500/ngày: <span class="tt-good">Tiềm năng tốt</span><br>
+• 200–500/ngày: <span class="tt-good">Chấp nhận được</span><br>
+• < 200/ngày: <span class="tt-bad">Thấp</span> — cần xem xét lại R:R<br><br>
+<strong>Lưu ý:</strong> Đây là ước tính, không phải bảo đảm. Thực tế có thể khác do biến động thị trường.`
+                },
+                upsideperday: {
+                    title: '% Upside Per Day — Tỷ Lệ Tăng Giá Mỗi Ngày', body: `<strong>% Upside Per Day là gì?</strong> Tỷ lệ % giá tăng kỳ vọng mỗi ngày, dùng để <span class="tt-good">so sánh hiệu quả giữa các cổ phiếu</span>.<br><br>
+<strong>Công thức:</strong><br>
+% Upside/ngày = (Take Profit − Entry) / Entry / Est. Days × 100%<br><br>
+<strong>Thang đánh giá:</strong><br>
+• > 1%/ngày: <span class="tt-good">Excellent</span> — Cơ hội sinh lời nhanh<br>
+• 0.5–1%/ngày: <span class="tt-good">Good</span> — Hợp lý<br>
+• 0.2–0.5%/ngày: <span class="tt-bad">Low</span> — Chậm nhưng ổn định<br>
+• < 0.2%/ngày: <span class="tt-bad">Very Low</span> — Không đáng giữ<br><br>
+<strong>Ứng dụng:</strong> Dùng để sắp xếp thứ tự ưu tiên các cổ phiếu trong watchlist.`
+                },
+                stvalue: {
+                    title: 'ST Value (SuperTrend Value) — Giá SuperTrend', body: `<strong>ST Value là gì?</strong> Mức giá mà SuperTrend xác định là <span class="tt-good">ngưỡng hỗ trợ/kháng cự động</span>. Giá đóng cửa vượt qua ngưỡng này → đảo chiều tín hiệu.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá > ST Value → Xu hướng <span class="tt-good">tăng</span> (SuperTrend = BUY)<br>
+• Giá < ST Value → Xu hướng <span class="tt-bad">giảm</span> (SuperTrend = SELL)<br><br>
+<strong>Trong hệ thống:</strong> ST Value dùng làm Stop Loss thay thế trong một số trường hợp. SuperTrend signal bullish + Ichimoku bullish → xác nhận kép mạnh (+10 Tech Score mỗi).`
+                },
+                macdsignal: {
+                    title: 'MACD Signal — Đường Tín Hiệu MACD', body: `<strong>MACD Signal là gì?</strong> Là <span class="tt-good">EMA 9 phiên</span> của đường MACD chính. Dùng để so sánh với MACD để xác định xung lượng.<br><br>
+<strong>Cách đọc:</strong><br>
+• MACD > Signal → <span class="tt-good">Xung lượng tăng</span> (Histogram dương mở rộng)<br>
+• MACD < Signal → <span class="tt-bad">Xung lượng giảm</span> (Histogram âm mở rộng)<br>
+• MACD cắt lên Signal → Tín hiệu <span class="tt-good">mua</span><br>
+• MACD cắt xuống Signal → Tín hiệu <span class="tt-bad">bán</span><br><br>
+<strong>Trong hệ thống:</strong> MACD > Signal → cộng <span class="tt-good">+10 Tech Score</span>. MACD < Signal → trừ <span class="tt-bad">−10 Tech Score</span>.`
+                },
+                bblower: {
+                    title: 'BB Lower — Dải Dưới Bollinger', body: `<strong>BB Lower là gì?</strong> Dải dưới của Bollinger Bands, nằm cách <span class="tt-good">SMA 20 − 2 lần độ lệch chuẩn</span>. Đại diện cho ngưỡng hỗ trợ dưới cùng.<br><br>
+<strong>Cách đọc:</strong><br>
+• Giá chạm BB Lower → Vùng <span class="tt-good">quá bán</span> — có thể bật lên<br>
+• Giá vượt qua BB Lower → <span class="tt-bad">Phá vỡ hỗ trợ</span> — rủi ro tiếp tục giảm<br><br>
+<strong>Trong hệ thống:</strong> BB Lower dùng làm tham chiếu cho vùng quá bán. BB% < 10% → vùng hỗ trợ mạnh. BB% < 0% → <span class="tt-bad">VETO</span> trong BOTTOM_FISHING (Anti-FOMO).`
+                },
+                annualplan: {
+                    title: 'Kế Hoạch Lợi Nhuận Năm — Annual Profit Plan', body: `<strong>Kế hoạch năm là gì?</strong> Con số <span class="tt-good">lợi nhuận mục tiêu</span> công ty đặt ra cho năm tài chính. Dùng để so sánh với thực tế YTD.<br><br>
+<strong>Cách đọc:</strong><br>
+• LN thực tế > KH → Công ty <span class="tt-good">vượt kế hoạch</span> → Tín hiệu tích cực<br>
+• LN thực tế ≈ KH → Công ty <span class="tt-good">đang đúng kế hoạch</span><br>
+• LN thực tế < KH → Công ty <span class="tt-bad">chưa đạt kế hoạch</span> → Thận trọng<br><br>
+<strong>Trong hệ thống:</strong> KH có thể dùng làm Fair Value Weekly reference. Không đạt KH → có thể trừ điểm Fund Score.`
+                },
+                ytdprofit: {
+                    title: 'LN YTD — Lợi Nhuận Từ Đầu Năm Đến Nay', body: `<strong>LN YTD là gì?</strong> Lợi nhuận <span class="tt-good">từ đầu năm tài chính</span> đến hiện tại. Cho biết công ty đang hoạt động tốt hay kém so với cùng kỳ năm ngoái.<br><br>
+<strong>Cách đọc:</strong><br>
+• YTD > cùng kỳ năm trước → Công ty <span class="tt-good">tăng trưởng</span><br>
+• YTD < cùng kỳ năm trước → Công ty <span class="tt-bad">suy giảm</span><br>
+• YTD âm → Công ty đang <span class="tt-bad">lỗ</span><br><br>
+<strong>Trong hệ thống:</strong> YTD profit âm → <span class="tt-bad">VETO_11</span> (lợi nhuận giảm). Profit Growth = (YTD − cùng kỳ năm trước) / |cùng kỳ năm trước|.`
+                },
+                plancompletion: {
+                    title: 'Hoàn Thành Kế Hoạch — Plan Completion %', body: `<strong>Hoàn thành KH là gì?</strong> Tỷ lệ % lợi nhuận YTD so với <span class="tt-good">kế hoạch năm</span>. Cho biết công ty đang đi đúng tiến độ hay không.<br><br>
+<strong>Cách đọc:</strong><br>
+• > 100%: <span class="tt-good">Vượt kế hoạch</span> — Rất tích cực<br>
+• 80–100%: <span class="tt-good">Đạt kế hoạch</span> — Bình thường<br>
+• 60–80%: <span class="tt-bad">Chậm tiến độ</span> — Cần theo dõi<br>
+• < 60%: <span class="tt-bad">Nguy cơ không đạt KH</span> — Cảnh báo<br><br>
+<strong>Trong hệ thống:</strong> Plan Completion > 100% → cộng <span class="tt-good">+10 Plan Bonus</span>. < 50% → trừ <span class="tt-bad">−15 Plan Penalty</span>.`
+                },
+                planstatus: {
+                    title: 'Trạng Thái Kế Hoạch — Plan Status', body: `<strong>Trạng thái KH là gì?</strong> Đánh giá tổng hợp mức độ hoàn thành kế hoạch lợi nhuận năm.<br><br>
+<strong>Các trạng thái:</strong><br>
+• <span class="tt-good">ON TRACK</span>: Đang đúng kế hoạch (80–110%)<br>
+• <span class="tt-good">EXCEEDING</span>: Vượt kế hoạch (>110%)<br>
+• <span class="tt-bad">BEHIND</span>: Chậm tiến độ (60–80%)<br>
+• <span class="tt-bad">AT RISK</span>: Nguy cơ không đạt (<60%)<br>
+• <span class="tt-bad">MISSED</span>: Không đạt hoặc lỗ<br><br>
+<strong>Trong hệ thống:</strong> EXCEEDING → +10 Plan Bonus. AT RISK/MISSED → −15 Plan Penalty. ON TRACK → không cộng/trừ.`
+                },
+                nim: {
+                    title: 'NIM (Net Interest Margin) — Biên Lãi Ròng Ngân Hàng', body: `<strong>NIM là gì?</strong> Biên lãi ròng = (Thu nhập lãi − Chi phí lãi) / Tổng tài sản sinh lãi. Đo <span class="tt-good">hiệu quả cho vay</span> của ngân hàng.<br><br>
+<strong>Cách đọc:</strong><br>
+• NIM > 3.5%: <span class="tt-good">Tốt</span> — Ngân hàng cho vay hiệu quả<br>
+• NIM 2.5–3.5%: <span class="tt-good">Trung bình</span><br>
+• NIM < 2.5%: <span class="tt-bad">Yếu</span> — Biên lợi nhuận bị thu hẹp<br><br>
+<strong>Ngành ngân hàng VN:</strong> NIM trung bình 2.5–4%. NIM giảm → cổ phiếu ngân hàng chịu áp lực.`
+                },
+                npl: {
+                    title: 'NPL (Non-Performing Loan) — Tỷ Lệ Nợ Xấu', body: `<strong>NPL là gì?</strong> Tỷ lệ % tín dụng <span class="tt-bad">quá hạn hoặc không trả được lãi</span> trên tổng dư nợ. Thể hiện chất lượng tín dụng.<br><br>
+<strong>Cách đọc:</strong><br>
+• NPL < 2%: <span class="tt-good">Rất tốt</span> — Chất lượng tín dụng cao<br>
+• NPL 2–3%: <span class="tt-good">Chấp nhận được</span><br>
+• NPL 3–5%: <span class="tt-bad">Cao</span> — Cần theo dõi chặt<br>
+• NPL > 5%: <span class="tt-bad">Nguy hiểm</span> — Rủi ro tín dụng lớn<br><br>
+<strong>Trong hệ thống:</strong> NPL > 5% → <span class="tt-bad">cảnh báo VETO</span> cho cổ phiếu ngân hàng. NPL tăng đột biến → báo động rủi ro.`
+                },
+                casa: {
+                    title: 'CASA (Current & Savings Account) — Tỷ Lệ Tiền Gửi Không Kỳ Hạn', body: `<strong>CASA là gì?</strong> Tỷ lệ % tiền gửi <span class="tt-good">không kỳ hạn</span> (tiết kiệm + thanh toán) trên tổng tiền gửi. Nguồn vốn "rẻ" vì không phải trả lãi cao.<br><br>
+<strong>Cách đọc:</strong><br>
+• CASA > 30%: <span class="tt-good">Tốt</span> — Chi phí vốn thấp, lợi thế cạnh tranh<br>
+• CASA 15–30%: <span class="tt-good">Trung bình</span><br>
+• CASA < 15%: <span class="tt-bad">Yếu</span> — Phụ thuộc vào vốn đắt đỏ<br><br>
+<strong>Trong hệ thống:</strong> CASA cao → ngân hàng có lợi thế chi phí vốn → hỗ trợ Fund Score.`
+                },
+                de: {
+                    title: 'D/E (Debt to Equity) — Tỷ Lệ Nợ Trên Vốn Chủ', body: `<strong>D/E là gì?</strong> Tỷ lệ tổng nợ phải trả trên <span class="tt-good">vốn chủ sở hữu</span>. Thể hiện mức độ sử dụng đòn bẩy tài chính.<br><br>
+<strong>Cách đọc (bất động sản):</strong><br>
+• D/E < 0.5: <span class="tt-good">An toàn</span> — Ít phụ thuộc nợ<br>
+• D/E 0.5–1.0: <span class="tt-good">Chấp nhận được</span><br>
+• D/E 1.0–1.5: <span class="tt-bad">Cao</span> — Rủi ro lãi vay tăng<br>
+• D/E > 1.5: <span class="tt-bad">Nguy hiểm</span> — Phụ thuộc nặng vào nợ<br><br>
+<strong>Trong hệ thống:</strong> D/E > 1.5 → án phạt Fund Score. D/E ngành BĐS thường cao hơn các ngành khác.`
+                },
+                invdays: {
+                    title: 'Inventory Days — Số Ngày Tồn Kho', body: `<strong>Inventory Days là gì?</strong> Số ngày trung bình để bán hết <span class="tt-good">hàng tồn kho</span> hiện tại. Đo hiệu quả quản lý hàng tồn kho.<br><br>
+<strong>Cách đọc:</strong><br>
+• Tăng đột biến: Doanh nghiệp <span class="tt-bad">khó bán hàng</span><br>
+• Giảm: Doanh nghiệp <span class="tt-good">bán hàng nhanh</span><br>
+• Cao hơn ngành: Kém <span class="tt-bad">hiệu quả</span> so với đối thủ<br><br>
+<strong>Trong hệ thống:</strong> Inventory Days tăng đột biến → cảnh báo <span class="tt-bad">VETO</span> cho bất động sản. Đây là chỉ báo phụ, không có điểm riêng.`
+                },
+                grossmargin: {
+                    title: 'Gross Margin — Biên Lợi Nhuận Gộp', body: `<strong>Gross Margin là gì?</strong> Tỷ lệ % lợi nhuận gộp trên doanh thu: (Doanh thu − Giá vốn) / Doanh thu. Đo <span class="tt-good">sức mạnh định giá</span> và kiểm soát chi phí.<br><br>
+<strong>Cách đọc:</strong><br>
+• Gross Margin > ngành: <span class="tt-good">Lợi thế cạnh tranh</span> (thương hiệu, công nghệ)<br>
+• Gross Margin = ngành: Bình thường<br>
+• Gross Margin < ngành: <span class="tt-bad">Yếu thế</span> về giá thành hoặc bị ép giá<br><br>
+<strong>Trong hệ thống:</strong> Gross Margin cao hơn ngành → cộng điểm Fund Score.`
+                },
+                invturnover: {
+                    title: 'Inventory Turnover — Vòng Quay Hàng Tồn Kho', body: `<strong>Inventory Turnover là gì?</strong> Số lần doanh nghiệp <span class="tt-good">bán hết và thay thế</span> hàng tồn kho trong kỳ. Đo hiệu quả quản lý chuỗi cung ứng.<br><br>
+<strong>Cách đọc:</strong><br>
+• Turnover cao: Doanh nghiệp <span class="tt-good">bán hàng nhanh</span>, quản lý tốt<br>
+• Turnover thấp: Hàng tồn kho <span class="tt-bad">ứ đọng</span>, vốn bị nhốt<br>
+• So với ngành: Cao hơn → <span class="tt-good">Lợi thế</span><br><br>
+<strong>Công thức:</strong> Inventory Turnover = Giá vốn hàng bán / Hàng tồn kho bình quân`
+                },
+                industryperf: {
+                    title: 'Industry Performance — Hiệu Suất Ngành', body: `<strong>Industry Performance là gì?</strong> % chênh lệch hiệu suất giá của <span class="tt-good">ngành cổ phiếu</span> so với VNIndex trong 5 phiên gần nhất.<br><br>
+<strong>Cách đọc:</strong><br>
+• Industry Perf > +5%: Ngành <span class="tt-good">dẫn dắt</span> thị trường<br>
+• Industry Perf > 0%: Ngành <span class="tt-good">tăng tốt hơn</span> thị trường<br>
+• Industry Perf < 0%: Ngành <span class="tt-bad">tăng kém</span> thị trường<br>
+• Industry Perf < −5%: Ngành <span class="tt-bad">yếu</span> — hạn chế mua<br><br>
+<strong>Trong hệ thống:</strong> Industry Perf > 5% → RS Label = "LEADER" (+15). Industry Perf < 0% → RS Label = "LAGGARD" (−10).`
+                },
+                rsbonus: {
+                    title: 'RS Bonus — Điểm Thưởng Relative Strength', body: `<strong>RS Bonus là gì?</strong> Điểm cộng thêm vào Master Score dựa trên <span class="tt-good">sức mạnh tương đối của cổ phiếu</span> so với ngành/thị trường.<br><br>
+<strong>Thang điểm:</strong><br>
+• LEADER (RS > +5%): <span class="tt-good">+15</span><br>
+• OUTPERFORM (RS > 0%): <span class="tt-good">+8</span><br>
+• NEUTRAL (RS ≈ 0%): <span class="tt-good">0</span><br>
+• LAGGARD (RS < 0%): <span class="tt-bad">−10</span><br><br>
+<strong>Trong hệ thống:</strong> RS Bonus cộng trực tiếp vào Final Master Score: Final = Base + Market + RS + Plan + Foreign.`
+                },
+            };
+
+            const data = info[key] || {
+                title: 'Chỉ Số Này',
+                body: 'Thông tin chi tiết đang được cập nhật.'
+            };
+
+            content.innerHTML = `<div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:8px;">${data.title}</div><div style="font-size:12px;line-height:1.7;">${data.body}</div>`;
+            const wasHidden = panel.style.display === 'none' || panel.style.display === '';
+            panel.style.display = 'block';
+            if (wasHidden) {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function getSectorGroup(industry) {
+            const ind = (industry || '').toLowerCase();
+            if (ind.includes('bất động sản') || ind.includes('real estate') || ind.includes('xây dựng') || ind.includes('construction') || ind.includes('thép') || ind.includes('steel') || ind.includes('dầu') || ind.includes('oil')) return 'cyclical';
+            if (ind.includes('ngân hàng') || ind.includes('bank') || ind.includes('chứng khoán') || ind.includes('securities') || ind.includes('bảo hiểm')) return 'banking';
+            return 'general';
+        }
+
+        // Biến tooltip để quản lý đóng/mở
+        let activeTooltip = null;
+
+        // Gắn sự kiện đóng tooltip khi click ra ngoài
+        document.addEventListener('click', function(e) {
+            if (activeTooltip && !activeTooltip.contains(e.target) && !e.target.classList.contains('hint-btn')) {
+                activeTooltip.remove();
+                activeTooltip = null;
+            }
+        });
+
+        function showScoreBreakdown() {
+            const panel = document.getElementById('scoreBreakdown');
+            const content = document.getElementById('scoreBreakdownContent');
+            if (!panel || !content) return;
+            const isActive = panel.classList.contains('active');
+
+            // Toggle
+            if (isActive) {
+                panel.classList.remove('active');
+                return;
+            }
+
+            const s = currentStockData;
+            if (!s) return;
+
+            // ---- TECH SCORE breakdown ----
+            const adx = s.adx || 0;
+            const rsi = s.rsi || 50;
+            const cmf = s.cmf || 0;
+            const mfi = s.mfi || 50;
+            const macd = s.macd || 0;
+            const macdSig = s.macd_signal || 0;
+            const volRatio = s.volume_ratio || 1;
+            const bbPct = s.bb_percent || 50;
+            const sma10 = s.sma_10 || 0;
+            const sma20 = s.sma_20 || 0;
+            const price = s.price || 0;
+            const ichiStatus = s.ichimoku_status || 'neutral';
+            const stSignal = s.supertrend_signal || 'neutral';
+            const scanMode = s.scan_mode || 'EARLY_TREND';
+
+            // Tính điểm tech từng mục
+            let tADX = 0, tSMA = 0, tCMF = 0, tMFI = 0, tMACD = 0, tIchi = 0, tVol = 0, tBrake = 0;
+            let adxHint = '', smaHint = '', cmfHint = '', mfiHint = '', macdHint = '', ichiHint = '', volHint = '', brakeHint = '';
+
+            if (adx > 25) { tADX = 15; adxHint = '✅ ADX > 25 → Xu hướng mạnh, cộng +15'; }
+            else if (adx >= 20) { tADX = 8; adxHint = '🟡 ADX 20–25 → Xu hướng hình thành, cộng +8'; }
+            else {
+                if (scanMode === 'EARLY_TREND') { tADX = -10; adxHint = '⚠️ ADX < 20 + EARLY_TREND → Bị trừ −10 (thiếu xung lực)'; }
+                else { tADX = 0; adxHint = '⚪ ADX < 20 nhưng không bị phạt (chế độ khác)'; }
+            }
+
+            if (price > 0 && sma10 > 0 && sma20 > 0 && price > sma10 && sma10 > sma20) {
+                tSMA = 15; smaHint = '✅ Giá > SMA10 > SMA20 → Cấu trúc tăng, cộng +15';
+            } else { smaHint = '⚪ Chưa có cấu trúc SMA tăng (Giá ≤ SMA10 hoặc SMA10 ≤ SMA20)'; }
+
+            if (cmf > 0.1) { tCMF = 15; cmfHint = '✅ CMF > 0.1 → Lực mua gom chủ động mạnh, cộng +15'; }
+            else if (cmf >= 0) { tCMF = 8; cmfHint = '🟡 CMF 0–0.1 → Lực mua nhẹ, cộng +8'; }
+            else { tCMF = -15; cmfHint = '❌ CMF < 0 → Dòng tiền rút ra, trừ −15'; }
+
+            if (mfi > 50) { tMFI = 15; mfiHint = '✅ MFI > 50 → Dòng tiền nóng cuộn vào, cộng +15'; }
+            else { mfiHint = '⚪ MFI ≤ 50 → Dòng tiền chưa vào mạnh, +0'; }
+
+            if (macd > macdSig) { tMACD = 10; macdHint = '✅ MACD > Signal → Xung lực tăng, cộng +10'; }
+            else if (macd < macdSig) { tMACD = -10; macdHint = '❌ MACD < Signal → Xung lực giảm, trừ −10'; }
+            else { macdHint = '⚪ MACD = Signal → Trung tính, +0'; }
+
+            if (ichiStatus === 'bullish' || stSignal === 'bullish') { tIchi = 10; ichiHint = '✅ Ichimoku/SuperTrend bullish → Tín hiệu kích hoạt xu hướng, cộng +10'; }
+            else { ichiHint = '⚪ Chưa có tín hiệu Ichimoku/SuperTrend bullish, +0'; }
+
+            if (volRatio > 1.5) { tVol = 20; volHint = '✅ Vol Ratio > 1.5 → Thanh khoản đột biến, cộng +20'; }
+            else if (volRatio >= 1.0) { tVol = 10; volHint = '🟡 Vol Ratio 1.0–1.5 → Thanh khoản gia tăng, cộng +10'; }
+            else {
+                if (scanMode === 'EARLY_TREND') { tVol = -10; volHint = '⚠️ Vol Ratio < 0.5 + EARLY_TREND → Mất thanh khoản, trừ −10'; }
+                else { tVol = 0; volHint = '⚪ Vol Ratio thấp nhưng không bị phạt (không phải EARLY_TREND)'; }
+            }
+
+            if (rsi > 80) { tBrake -= 15; brakeHint = '⚠️ RSI > 80 → Quá mua cực đại, trừ −15'; }
+            if (bbPct > 100) { tBrake -= 10; brakeHint += (brakeHint ? ' | ' : '') + '⚠️ BB% > 100% → Giá bay khỏi dải trên, trừ −10'; }
+            if (!brakeHint) brakeHint = '✅ Không vi phạm brake nào (RSI ≤ 80, BB% ≤ 100%)';
+
+            const techTotal = Math.max(0, Math.min(100, tADX + tSMA + tCMF + tMFI + tMACD + tIchi + tVol + tBrake));
+
+            // ---- FUND SCORE breakdown ----
+            const fScore = s.f_score || 0;
+            const roe = s.roe || 0;
+            const pg = s.profit_growth;
+            const sectorGroup = s.sector_group || getSectorGroup(s.sector || 'general');
+
+            let fFscore = 0, fROE = 0, fPG = 0, fROEPenalty = 0;
+            let fsHint = '', roeHint = '', pgHint = '';
+
+            if (fScore >= 8) { fFscore = 40; fsHint = '✅ F-Score 8–9 → Piotroski 9 điểm tài chính, cộng +40'; }
+            else if (fScore >= 6) { fFscore = 30; fsHint = '🟡 F-Score 6–7 → Tài chính khá, cộng +30'; }
+            else if (fScore === 5) { fFscore = 20; fsHint = '🟡 F-Score = 5 → Tài chính trung bình, cộng +20'; }
+            else { fFscore = 0; fsHint = '❌ F-Score < 5 → Yếu kém (VETO chặn nếu cổ phiếu)'; }
+
+            const isCapitalIntensive = sectorGroup === 'cyclical';
+            const roeFloor = isCapitalIntensive ? 10 : 15;
+            if (roe > 25) { fROE = 30; roeHint = `✅ ROE > 25% → Hiệu quả vốn xuất sắc, cộng +30`; }
+            else if (roe >= 15) { fROE = 20; roeHint = `🟡 ROE 15–25% → Khá, cộng +20`; }
+            else if (roe >= 10) { fROE = 10; roeHint = `🟡 ROE 10–15% → Trung bình, cộng +10`; }
+            else {
+                fROE = 0;
+                if (roe > 0) { fROEPenalty = -15; roeHint = `❌ ROE ${roe.toFixed(1)}% < ngưỡng ngành ${roeFloor}% → Yếu, cộng +0 và trừ −15`; }
+                else { roeHint = '⚪ ROE không có dữ liệu, +0'; }
+            }
+
+            if (pg !== null && pg !== undefined) {
+                if (pg > 25) { fPG = 30; pgHint = `✅ Profit Growth > 25% → Tăng trưởng mạnh, cộng +30`; }
+                else if (pg >= 15) { fPG = 20; pgHint = `🟡 Profit Growth 15–25% → Khá, cộng +20`; }
+                else if (pg >= 5) { fPG = 10; pgHint = `🟡 Profit Growth 5–15% → Tăng trưởng cơ bản, cộng +10`; }
+                else { fPG = 0; pgHint = `❌ Profit Growth ${pg.toFixed(1)}% < 5% → Giảm hoặc thấp, +0`; }
+            } else { pgHint = '⚪ Profit Growth không có dữ liệu'; }
+
+            const fundTotal = Math.max(0, Math.min(100, fFscore + fROE + fPG + fROEPenalty));
+
+            // ---- MODIFIERS ----
+            const marketRSI = s.market_rsi || 50;
+            const marketWeight = marketRSI < 25 ? 20 : marketRSI > 80 ? -20 : marketRSI > 70 ? -10 : 0;
+            const marketHint = marketWeight > 0 ? `✅ Market RSI ${marketRSI} < 25 → Oversold, thưởng +${marketWeight}`
+                : marketWeight < -15 ? `❌ Market RSI ${marketRSI} > 80 → Bong bóng, phạt ${marketWeight}`
+                : marketWeight < 0 ? `⚠️ Market RSI ${marketRSI} > 70 → Rủi ro, phạt ${marketWeight}`
+                : `⚪ Market RSI ${marketRSI} ở vùng trung tính (25–70), +0`;
+
+            const rsPerf = s.industry_performance || 0;
+            let rsBonus = 0, rsHint = '';
+            if (rsPerf > 5) { rsBonus = 15; rsHint = `✅ Industry RS > 5% → Cổ phiếu dẫn dắt ngành, thưởng +15`; }
+            else if (rsPerf > 0) { rsBonus = 8; rsHint = `🟡 Industry RS > 0 → Outperform thị trường, thưởng +8`; }
+            else { rsBonus = -10; rsHint = `❌ Industry RS ${rsPerf}% ≤ 0 → Laggard, phạt ${rsBonus}`; }
+
+            const fmmTrend = s.foreign_accumulated_trend || 'NEUTRAL';
+            const fmmNet = s.latest_net_val || 0;
+            const fmmAbs = s.foreign_absorption_ratio || 0;
+            const fmmStreak = s.foreign_buy_streak || 0;
+            let fmm = 0, fmmHint = '';
+            if (fmmTrend === 'ACCUMULATING') {
+                if (fmmNet > 0 && fmmAbs > 20) { fmm = 25; fmmHint = `✅ ACCUMULATING + mua mạnh (abs > 20%) → Khối ngoại gom ròng dài hạn, thưởng +25`; }
+                else if (fmmNet > 0 && fmmAbs >= 10) { fmm = 15; fmmHint = `🟡 ACCUMULATING + mua vừa (abs 10–20%) → Thưởng +15`; }
+                else { fmm = 0; fmmHint = `⚪ ACCUMULATING nhưng chưa có mua ròng hôm nay, +0`; }
+            } else if (fmmTrend === 'DISTRIBUTING') {
+                if (fmmNet < 0 && fmmAbs > 20) { fmm = -25; fmmHint = `❌ DISTRIBUTING + bán mạnh (abs > 20%) → Khối ngoại xả ròng dài hạn, phạt −25`; }
+                else { fmm = 0; fmmHint = `⚠️ DISTRIBUTING nhưng chưa có bán ròng mạnh, +0`; }
+            } else {
+                if (fmmStreak >= 5) { fmm = 13; fmmHint = `🟡 NEUTRAL + streak ≥ 5 phiên → Chuỗi kiên trì mua, thưởng +13 (8+5 streak)`; }
+                else if (fmmStreak >= 3) { fmm = 4; fmmHint = `🟡 NEUTRAL + streak ≥ 3 phiên → Thưởng +4`; }
+                else if (fmmStreak === 0 && fmmNet < 0) { fmm = -8; fmmHint = `❌ NEUTRAL + streak=0 + bán ròng → Phạt −8`; }
+                else { fmm = 0; fmmHint = `⚪ NEUTRAL, streak=0, không bán ròng, +0`; }
+            }
+
+            const planPenalty = s.profit_plan_status === 'BEHIND' ? -20 : 0;
+            const planHint = planPenalty < 0 ? `❌ Kế hoạch năm chậm < 80% tiến độ quý → Phạt −20` : `⚪ Kế hoạch năm không bị phạt (ON_TRACK hoặc thiếu dữ liệu)`;
+
+            // ---- FINAL ----
+            const baseMaster = Math.round(techTotal * 0.7 + fundTotal * 0.3);
+            const masterScore = Math.max(0, Math.min(100, baseMaster + marketWeight + rsBonus + planPenalty + fmm));
+
+            // ---- BUILD HTML ----
+            function bRow(label, hint, value, cls) {
+                const vStr = value >= 0 ? `+${value}` : `${value}`;
+                return `<div class="breakdown-row">
+                    <span class="b-label">${label}
+                        <button class="hint-btn" onclick="showMetricTooltip(this, '${hint.replace(/'/g, "\\'")}')">👁</button>
+                    </span>
+                    <span class="b-value ${cls}">${vStr}</span>
+                </div>`;
+            }
+
+            const techRows = bRow('① Xu hướng: ADX', adxHint, tADX, tADX > 0 ? 'pos' : tADX < 0 ? 'neg' : 'neu')
+                + bRow('① Xu hướng: Cấu trúc SMA', smaHint, tSMA, tSMA > 0 ? 'pos' : 'neu')
+                + bRow('② Dòng tiền: CMF', cmfHint, tCMF, tCMF > 0 ? 'pos' : tCMF < 0 ? 'neg' : 'neu')
+                + bRow('② Dòng tiền: MFI', mfiHint, tMFI, tMFI > 0 ? 'pos' : 'neu')
+                + bRow('③ Kích hoạt: MACD', macdHint, tMACD, tMACD > 0 ? 'pos' : tMACD < 0 ? 'neg' : 'neu')
+                + bRow('③ Kích hoạt: Ichimoku/SuperTrend', ichiHint, tIchi, tIchi > 0 ? 'pos' : 'neu')
+                + bRow('④ Thanh khoản: Vol Ratio', volHint, tVol, tVol > 0 ? 'pos' : tVol < 0 ? 'neg' : 'neu')
+                + bRow('⑤ Phanh: RSI/BB%', brakeHint, tBrake, tBrake > 0 ? 'pos' : tBrake < 0 ? 'neg' : 'neu')
+                + `<div class="breakdown-row total"><span class="b-label">TECH SCORE</span><span class="b-value">${techTotal}/100</span></div>`;
+
+            const fundRows = bRow('① Piotroski F-Score', fsHint, fFscore, fFscore > 25 ? 'pos' : fFscore === 0 ? 'neg' : 'neu')
+                + bRow('② ROE', roeHint, fROE + fROEPenalty, fROE > 0 ? 'pos' : fROEPenalty < 0 ? 'neg' : 'neu')
+                + bRow('③ Profit Growth', pgHint, fPG, fPG > 15 ? 'pos' : fPG === 0 ? 'neg' : 'neu')
+                + `<div class="breakdown-row total"><span class="b-label">FUND SCORE</span><span class="b-value">${fundTotal}/100</span></div>`;
+
+            const modRows = bRow('Market Weight', marketHint, marketWeight, marketWeight > 0 ? 'pos' : marketWeight < 0 ? 'neg' : 'neu')
+                + bRow('RS Industry', rsHint, rsBonus, rsBonus > 0 ? 'pos' : 'neg')
+                + bRow('Khối Ngoại', fmmHint, fmm, fmm > 0 ? 'pos' : fmm < 0 ? 'neg' : 'neu')
+                + bRow('Kế hoạch LN', planHint, planPenalty, planPenalty < 0 ? 'neg' : 'neu')
+                + `<div class="breakdown-row subtotal"><span class="b-label">Modifiers Tổng</span><span class="b-value">${marketWeight + rsBonus + fmm + planPenalty > 0 ? '+' : ''}${marketWeight + rsBonus + fmm + planPenalty}</span></div>`;
+
+            const baseStr = `<div class="breakdown-row subtotal"><span class="b-label">Base = Tech×70% + Fund×30%</span><span class="b-value">${baseMaster}</span></div>`;
+            const masterStr = `<div class="breakdown-row total"><span class="b-label">MASTER SCORE</span><span class="b-value">${masterScore}/100</span></div>`;
+
+            content.innerHTML = `
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">
+                    📌 Tech×0.7 + Fund×0.3 = Base, rồi cộng thêm Modifiers (Mkt + RS + Khối Ngoại + Plan).
+                </div>
+                <h4>⚙️ TECHNICAL SCORE (${techTotal}/100)</h4>
+                ${techRows}
+                <h4 style="margin-top:14px;">📊 FUNDAMENTAL SCORE (${fundTotal}/100)</h4>
+                ${fundRows}
+                <h4 style="margin-top:14px;">⚡ MASTER SCORE MODIFIERS</h4>
+                ${modRows}
+                ${baseStr}
+                ${masterStr}
+            `;
+
+            panel.classList.add('active');
+        }
+
+        function showMetricTooltip(btn, hint) {
+            // Đóng tooltip cũ nếu có
+            if (activeTooltip) { activeTooltip.remove(); activeTooltip = null; }
+            const tooltip = document.createElement('div');
+            tooltip.className = 'metric-tooltip';
+            tooltip.textContent = hint;
+            document.body.appendChild(tooltip);
+            activeTooltip = tooltip;
+
+            // Vị trí: phía trên nút, căn giữa
+            const rect = btn.getBoundingClientRect();
+            const tW = tooltip.offsetWidth;
+            tooltip.style.left = (rect.left + rect.width / 2 - tW / 2) + 'px';
+            tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+            // Né méo cạnh màn hình
+            const scrolled = window.scrollY;
+            tooltip.style.top = (parseFloat(tooltip.style.top) + scrolled) + 'px';
         }
 
         function openStockModal(symbol) {
@@ -1386,17 +2391,14 @@
             rows.forEach(row => {
                 const d = row.dataset;
                 const price = parseFloat(d.price) || 0;
-                const fvWeekly = parseFloat(d.fvWeekly) || 0;
                 const fvDaily = parseFloat(d.fvDaily) || 0;
-                
-                // Hiển thị FV từ Backend
+
+                // Hiển thị FV Daily từ Backend
                 const valCell = row.querySelector(`#val-${d.symbol}`);
                 if (valCell) {
                     valCell.querySelector('.fv-daily').textContent = `Day: ${Math.round(fvDaily).toLocaleString('vi-VN')}`;
-                    valCell.querySelector('.fv-weekly').textContent = `Week: ${Math.round(fvWeekly).toLocaleString('vi-VN')}`;
-                    
-                    // Màu sắc: Nếu giá < FV Weekly -> Xanh (Rẻ)
-                    valCell.querySelector('.fv-weekly').style.color = (price < fvWeekly && fvWeekly > 0) ? "#22c55e" : "#ef4444";
+                    // Màu sắc: Nếu giá < FV Daily -> Xanh (Rẻ)
+                    valCell.querySelector('.fv-daily').style.color = (price < fvDaily && fvDaily > 0) ? "#22c55e" : "#ef4444";
                 }
             });
         }
@@ -1417,7 +2419,6 @@
             const elCompany = getEl('modalCompany');
             const elPrice = getEl('modalPrice');
             const elFVDaily = getEl('modalFVDaily');
-            const elFVWeekly = getEl('modalFVWeekly');
             const elChange = getEl('modalChange');
             const elScore = getEl('modalScore');
             const elScoreDetail = getEl('modalScoreDetail');
@@ -1475,25 +2476,35 @@
             const elValDot = getEl('modalValDot');
             const elEarlyExitSection = getEl('modalEarlyExitSection');
             const elEarlyExitDetail = getEl('modalEarlyExitDetail');
+            const elForeignStreak = getEl('modalForeignStreak');
+            const elLatestNetVal = getEl('modalLatestNetVal');
+            const elLatestNetVal2 = getEl('modalLatestNetVal2');
+            const elAbsorption = getEl('modalAbsorption');
+            const elForeign5DayTrend = getEl('modalForeign5DayTrend');
+            const elForeignBuyVal = getEl('modalForeignBuyVal');
+            const elForeignSellVal = getEl('modalForeignSellVal');
+            const elForeignTradingShare = getEl('modalForeignTradingShare');
+            const elForeignAccumTrend = getEl('modalForeignAccumTrend');
+            const elForeignModifier = getEl('modalForeignModifier');
+            const elForeignNote = getEl('modalForeignNote');
 
             if (elSymbol) elSymbol.textContent = stockData.symbol || '';
             if (elCompany) elCompany.textContent = (stockData.company_name || '') + ' | ' + (stockData.industry || stockData.sector || 'Other') + ' | ' + (stockData.market_group || 'MIDCAP');
             if (elPrice) elPrice.textContent = formatNumber(stockData.price, 1);
             if (elFVDaily) elFVDaily.textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
-            if (elFVWeekly) elFVWeekly.textContent = stockData.fv_weekly > 0 ? formatNumber(stockData.fv_weekly, 0) : 'N/A';
 
             const price = stockData.price || 0;
-            const fv = stockData.fv_weekly || 0;
+            const fvDaily = stockData.fv_daily || 0;
             let gaugePos = 50;
-            if (fv > 0 && price > 0) {
-                gaugePos = Math.min(95, Math.max(5, (fv / price) * 50));
+            if (fvDaily > 0 && price > 0) {
+                gaugePos = Math.min(95, Math.max(5, (fvDaily / price) * 50));
             }
             if (elValDot) elValDot.style.left = gaugePos + '%';
 
-            const targetYield = stockData.target_yield_pct || 0;
+            const rrRatio = stockData.risk_reward_ratio || 0;
             if (elChange) {
-                elChange.textContent = (targetYield >= 0 ? '+' : '') + targetYield.toFixed(1) + '%';
-                elChange.className = 'change ' + (targetYield >= 0 ? 'positive' : 'negative');
+                elChange.textContent = rrRatio.toFixed(1);
+                elChange.className = 'change ' + (rrRatio >= 1.5 ? 'positive' : 'negative');
             }
 
             if (elScore) elScore.textContent = (stockData.master_score || 0) + '/100';
@@ -1501,7 +2512,14 @@
                 if (stockData.base_score && stockData.market_weight !== 0) {
                     const weightSign = stockData.market_weight > 0 ? '+' : '';
                     const mktLabel = stockData.market_weight < 0 ? 'MKT Risk' : 'MKT Oversold';
-                    elScoreDetail.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span> <span style="color:#f59e0b;">(${weightSign}${stockData.market_weight} ${mktLabel})</span>`;
+                    const fmVal = stockData.foreign_master_modifier || 0;
+                    const fmSign = fmVal > 0 ? '+' : '';
+                    const fmColor = fmVal > 0 ? '#22c55e' : fmVal < 0 ? '#ef4444' : '#94a3b8';
+                    if (fmVal !== 0) {
+                        elScoreDetail.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span> <span style="color:#f59e0b;">(${weightSign}${stockData.market_weight} ${mktLabel})</span> <span style="color:${fmColor};">(${fmSign}${fmVal} Foreign)</span>`;
+                    } else {
+                        elScoreDetail.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span> <span style="color:#f59e0b;">(${weightSign}${stockData.market_weight} ${mktLabel})</span>`;
+                    }
                 } else if (stockData.base_score && stockData.base_score !== stockData.master_score) {
                     elScoreDetail.innerHTML = `<span style="color:#94a3b8;">Base: ${stockData.base_score}</span>`;
                 } else {
@@ -1541,9 +2559,10 @@
 
             const entryPrice = stockData.entry_price || stockData.price || 0;
             const takeProfitPrice = stockData.take_profit || entryPrice * 1.05;
+            const targetYield = stockData.target_yield_pct || 0;
             if (elTargetPct) elTargetPct.textContent = '+' + targetYield.toFixed(1) + '%';
             if (elEntryPrice) elEntryPrice.textContent = formatNumber(entryPrice, 0);
-            if (elTargetPrice) elTargetPrice.textContent = formatNumber(takeProfitPrice, 0) + ' (FV Weekly)';
+            if (elTargetPrice) elTargetPrice.textContent = formatNumber(takeProfitPrice, 0) + ' (TP: Entry+2ATR)';
 
             let progressPct = 0;
             const totalRange = takeProfitPrice - entryPrice;
@@ -1746,6 +2765,98 @@
                 const rsBonus = stockData.rs_bonus || 0;
                 elRSBonus.textContent = (rsBonus >= 0 ? '+' : '') + rsBonus;
                 elRSBonus.className = 'value ' + (rsBonus >= 0 ? 'positive' : 'negative');
+            }
+
+            // ========== FOREIGN FLOW ==========
+            const foreignStreak = stockData.foreign_buy_streak || 0;
+            const netVal = stockData.latest_net_val || 0;
+            const netVal2 = stockData.latest_net_val_2 || 0;
+            const absorption = stockData.foreign_absorption_ratio || 0;
+            const buyVal = stockData.foreign_buy_val || 0;
+            const sellVal = stockData.foreign_sell_val || 0;
+            const tradingShare = stockData.foreign_trading_share || 0;
+            const accumTrend = stockData.foreign_accumulated_trend || 'NEUTRAL';
+
+            if (elForeignStreak) {
+                elForeignStreak.textContent = foreignStreak + ' phiên';
+                elForeignStreak.className = 'value ' + (foreignStreak >= 3 ? 'positive' : 'negative');
+            }
+            // 5-7 Session Trend: tính từ netVal và netVal2 (2 phiên gần nhất)
+            if (elForeign5DayTrend) {
+                let f5Trend = 'NEUTRAL';
+                if (netVal > 0 && netVal2 > 0) {
+                    f5Trend = 'ACCUMULATING';
+                } else if (netVal < 0 && netVal2 < 0) {
+                    f5Trend = 'DISTRIBUTING';
+                } else if (netVal > 0 || netVal2 > 0) {
+                    f5Trend = 'SLIGHT_ACCUM';
+                } else if (netVal < 0 || netVal2 < 0) {
+                    f5Trend = 'SLIGHT_DIST';
+                }
+                elForeign5DayTrend.textContent = f5Trend;
+                const f5Class = f5Trend === 'ACCUMULATING' ? 'positive' : f5Trend === 'DISTRIBUTING' ? 'negative' : 'neutral';
+                elForeign5DayTrend.className = 'value ' + f5Class;
+            }
+            if (elLatestNetVal) {
+                const netB = netVal / 1e9;
+                elLatestNetVal.textContent = netB >= 0 ? '+' + netB.toFixed(2) + 'B' : netB.toFixed(2) + 'B';
+                elLatestNetVal.className = 'value ' + (netVal >= 0 ? 'positive' : 'negative');
+            }
+            if (elLatestNetVal2) {
+                const netB2 = netVal2 / 1e9;
+                elLatestNetVal2.textContent = netB2 >= 0 ? '+' + netB2.toFixed(2) + 'B' : netB2.toFixed(2) + 'B';
+                elLatestNetVal2.className = 'value ' + (netVal2 >= 0 ? 'positive' : 'negative');
+            }
+            if (elAbsorption) {
+                elAbsorption.textContent = absorption.toFixed(1) + '%';
+                elAbsorption.className = 'value ' + (absorption >= 10 ? 'positive' : 'neutral');
+            }
+            if (elForeignBuyVal) {
+                const buyB = buyVal / 1e9;
+                elForeignBuyVal.textContent = buyB >= 0 ? '+' + buyB.toFixed(2) + 'B' : buyB.toFixed(2) + 'B';
+                elForeignBuyVal.className = 'value ' + (buyVal >= 0 ? 'positive' : 'negative');
+            }
+            if (elForeignSellVal) {
+                const sellB = sellVal / 1e9;
+                elForeignSellVal.textContent = sellB >= 0 ? '+' + sellB.toFixed(2) + 'B' : sellB.toFixed(2) + 'B';
+                elForeignSellVal.className = 'value ' + (sellVal >= 0 ? 'positive' : 'negative');
+            }
+            if (elForeignTradingShare) {
+                elForeignTradingShare.textContent = tradingShare.toFixed(1) + '%';
+                elForeignTradingShare.className = 'value ' + (tradingShare > 25 ? 'positive' : tradingShare > 15 ? 'neutral' : 'negative');
+            }
+            if (elForeignAccumTrend) {
+                elForeignAccumTrend.textContent = accumTrend;
+                elForeignAccumTrend.className = 'value ' + (accumTrend === 'ACCUMULATING' ? 'positive' : accumTrend === 'DISTRIBUTING' ? 'negative' : 'neutral');
+            }
+            // Foreign Modifier hiển thị ảnh hưởng lên Master Score
+            if (elForeignModifier) {
+                const fmVal = stockData.foreign_master_modifier || stockData.foreign_bonus || 0;
+                elForeignModifier.textContent = (fmVal >= 0 ? '+' : '') + fmVal;
+                elForeignModifier.className = 'value ' + (fmVal > 0 ? 'positive' : fmVal < 0 ? 'negative' : 'neutral');
+            }
+            if (elForeignNote) {
+                let note = '';
+                if (accumTrend === 'ACCUMULATING' && tradingShare > 25) {
+                    note = '🏦 Khối ngoại đang tích lũy dài hạn và chiếm ' + tradingShare.toFixed(1) + '% thanh khoản — Hỗ trợ tâm lý mạnh';
+                } else if (netVal > 0 && absorption >= 20) {
+                    note = '🏦 Khối ngoại mua ròng mạnh chiếm ' + absorption.toFixed(1) + '% thanh khoản — Hỗ trợ vững chắc';
+                } else if (netVal > 0 && absorption >= 10) {
+                    note = '🏦 Khối ngoại mua ròng vừa (' + absorption.toFixed(1) + '% thanh khoản) — Tích cực';
+                } else if (netVal > 0) {
+                    note = '🏦 Khối ngoại mua ròng nhẹ — Biên độ hấp thụ ' + absorption.toFixed(1) + '%';
+                } else if (accumTrend === 'DISTRIBUTING') {
+                    note = '⚠️ Khối ngoại phân phối dài hạn — Cảnh báo xu hướng xả trong 30 phiên gần nhất';
+                } else if (netVal < 0 && absorption > 25) {
+                    note = '⚠️ Khối ngoại bán ròng KHỐC LIỆT (' + absorption.toFixed(1) + '% thanh khoản) — Cảnh báo phân phối!';
+                } else if (netVal < 0 && netVal2 < 0) {
+                    note = '⚠️ Khối ngoại bán ròng 2 phiên liên tiếp — Theo dõi chặt Exit Sensor';
+                } else if (netVal < 0) {
+                    note = '⚠️ Khối ngoại bán ròng phiên gần nhất';
+                } else {
+                    note = '➡️ Khối ngoại trung lập phiên gần nhất';
+                }
+                elForeignNote.textContent = note;
             }
 
             if (elMarketRSI) elMarketRSI.textContent = (stockData.market_rsi || 50).toFixed(0);
@@ -2569,8 +3680,8 @@
                 </div>
                 <div class="modal-price">
                     <div class="price" id="modalPrice">95,000</div>
-                    <div class="label" style="color: #94a3b8; font-size: 10px;">Target Yield</div>
-                    <div class="change positive" id="modalChange" style="font-size: 18px;">+2.5%</div>
+                    <div class="label" style="color: #94a3b8; font-size: 10px;">R:R Ratio</div>
+                    <div class="change positive" id="modalChange" style="font-size: 18px;">2.5</div>
                 </div>
             </div>
 
@@ -2589,7 +3700,10 @@
 
             <!-- Explanation Panel (Hidden by default) -->
             <div id="explanationPanel" style="display: none; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <div class="label" style="color: #60a5fa; margin-bottom: 12px;">🧠 Phân Tích Chuyên Sâu</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <div class="label" style="color: #60a5fa; margin-bottom: 0;">🧠 Phân Tích Chuyên Sâu</div>
+                    <button onclick="document.getElementById('explanationPanel').style.display='none'" style="background:#334155;border:none;color:#94a3b8;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:12px;">✕ Đóng</button>
+                </div>
                 <div id="modalExplanation" style="color: #e2e8f0; font-size: 13px; line-height: 1.8;"></div>
             </div>
 
@@ -2608,12 +3722,12 @@
     <h3 style="color: #f8fafc; border: none; margin-bottom: 15px;">🎯 Dự Báo Giá Trị Hợp Lý (Wealth Guard)</h3>
     <div class="modal-grid">
         <div class="modal-item" style="border: 1px solid #f59e0b;">
-            <div class="label" style="color: #f59e0b;">FV Trong Ngày (Daily)</div>
+            <div class="label" style="color: #f59e0b;">FV Trong Ngày (Daily) <button class="hint-btn" onclick="showIndicatorInfo('fvdaily')">👁</button></div>
             <div class="value" id="modalFVDaily" style="color: #f59e0b;">--</div>
             <div style="font-size: 10px; color: #64748b;">Dựa trên VWAP & SMA10</div>
         </div>
         <div class="modal-item" style="border: 1px solid #3b82f6;">
-            <div class="label" style="color: #3b82f6;">FV Trong Tuần (Weekly)</div>
+            <div class="label" style="color: #3b82f6;">FV Trong Tuần (Weekly) <button class="hint-btn" onclick="showIndicatorInfo('fvweekly')">👁</button></div>
             <div class="value" id="modalFVWeekly" style="color: #3b82f6;">--</div>
             <div style="font-size: 10px; color: #64748b;">Nội tại ngành & Kỹ thuật</div>
         </div>
@@ -2630,33 +3744,44 @@
         </div>
     </div>
 </div>
-                <h3>Đánh Giá Tổng Quan</h3>
+                <h3>Đánh Giá Tổng Quan
+                    <button onclick="showScoreBreakdown()" style="background:#1e3a5f;border:1px solid #334155;color:#38bdf8;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-left:8px;">📊 Xem chi tiết điểm</button>
+                </h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">Master Score</div>
+                        <div class="label">Master Score <button class="hint-btn" onclick="showIndicatorInfo('masterscore')">👁</button></div>
                         <div class="value" id="modalScore">75/100</div>
                         <div style="font-size: 10px; color: #64748b; margin-top: 2px;" id="modalScoreDetail"></div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Tech Score</div>
+                        <div class="label">Tech Score <button class="hint-btn" onclick="showIndicatorInfo('techscore')">👁</button></div>
                         <div class="value" id="modalTechScore">80/100</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Fund Score</div>
+                        <div class="label">Fund Score <button class="hint-btn" onclick="showIndicatorInfo('fundscore')">👁</button></div>
                         <div class="value" id="modalFundScore">70/100</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Signal</div>
+                        <div class="label">Foreign Modifier <button class="hint-btn" onclick="showIndicatorInfo('foreignmodifier')">👁</button></div>
+                        <div class="value" id="modalForeignModifier">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Signal <button class="hint-btn" onclick="showIndicatorInfo('signal')">👁</button></div>
                         <div class="value positive" id="modalSignal">BUY</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Xu hướng</div>
+                        <div class="label">Xu hướng <button class="hint-btn" onclick="showIndicatorInfo('trend')">👁</button></div>
                         <div class="value" id="modalTrend">UPTREND</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Criteria Đạt</div>
+                        <div class="label">Criteria Đạt <button class="hint-btn" onclick="showIndicatorInfo('criteria')">👁</button></div>
                         <div class="value" id="modalCriteria">8/12</div>
                     </div>
+                </div>
+
+                <!-- Score Breakdown Panel -->
+                <div class="score-breakdown" id="scoreBreakdown">
+                    <div id="scoreBreakdownContent"></div>
                 </div>
             </div>
 
@@ -2665,11 +3790,11 @@
                 <h3>Rủi Ro Đánh Giá</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">Market Risk</div>
+                        <div class="label">Market Risk <button class="hint-btn" onclick="showIndicatorInfo('marketrisk')">👁</button></div>
                         <div class="value" id="modalMarketRisk">Safe ✅</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Stock Risk</div>
+                        <div class="label">Stock Risk <button class="hint-btn" onclick="showIndicatorInfo('stockrisk')">👁</button></div>
                         <div class="value" id="modalStockRisk">Low</div>
                     </div>
                 </div>
@@ -2694,19 +3819,19 @@
                 <h3>Mức Giao Dịch</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">Entry Price</div>
+                        <div class="label">Entry Price <button class="hint-btn" onclick="showIndicatorInfo('entry')">👁</button></div>
                         <div class="value positive" id="modalEntry">95,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Stop Loss</div>
+                        <div class="label">Stop Loss <button class="hint-btn" onclick="showIndicatorInfo('sl')">👁</button></div>
                         <div class="value negative" id="modalSL">91,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Take Profit</div>
+                        <div class="label">Take Profit <button class="hint-btn" onclick="showIndicatorInfo('tp')">👁</button></div>
                         <div class="value positive" id="modalTP">100,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">R:R Ratio</div>
+                        <div class="label">R:R Ratio <button class="hint-btn" onclick="showIndicatorInfo('rr')">👁</button></div>
                         <div class="value" id="modalRR">2.5</div>
                     </div>
                 </div>
@@ -2717,27 +3842,27 @@
                 <h3 style="color: #f8fafc; margin-bottom: 12px;">📊 Investment Horizon</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">Khung Thời Gian</div>
+                        <div class="label">Khung Thời Gian <button class="hint-btn" onclick="showIndicatorInfo('timeframe')">👁</button></div>
                         <div class="value" id="modalTimeframeLabel" style="font-size: 16px;">Swing Trading</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Est. Days</div>
+                        <div class="label">Est. Days <button class="hint-btn" onclick="showIndicatorInfo('estdays')">👁</button></div>
                         <div class="value" id="modalEstDays">7.5</div>
                     </div>
                     <div class="modal-item" id="modalProfitPerDayContainer">
-                        <div class="label">Lợi Nhuận Dự Kiến</div>
+                        <div class="label">Lợi Nhuận Dự Kiến <button class="hint-btn" onclick="showIndicatorInfo('profitperday')">👁</button></div>
                         <div class="value positive" id="modalProfitPerDay">+850/ngày</div>
                     </div>
                     <div class="modal-item" id="modalUpsidePerDayContainer">
-                        <div class="label">% Upside / Ngày</div>
+                        <div class="label">% Upside / Ngày <button class="hint-btn" onclick="showIndicatorInfo('upsideperday')">👁</button></div>
                         <div class="value" id="modalUpsidePerDay">0.85%</div>
                     </div>
                 </div>
 
-                <!-- Dynamic Progress Bar: Entry Price -> Take Profit (FV Weekly) -->
+                <!-- Dynamic Progress Bar: Entry Price -> Take Profit -->
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #334155;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="color: #f8fafc; font-size: 13px;">🎯 Entry → Take Profit Progress</span>
+                        <span style="color: #f8fafc; font-size: 13px;">🎯 Entry → Take Profit</span>
                         <span id="modalTargetPct" style="color: #22c55e; font-weight: bold;">0%</span>
                     </div>
                     <div style="background: #0f172a; border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
@@ -2746,7 +3871,7 @@
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #64748b;">
                         <span id="modalEntryPrice">Entry</span>
-                        <span id="modalTargetPrice">Target (FV Weekly)</span>
+                        <span id="modalTargetPrice">Target (2ATR)</span>
                     </div>
                 </div>
 
@@ -2771,19 +3896,19 @@
                 <h3>Chỉ Báo Kỹ Thuật</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">RSI (14)</div>
+                        <div class="label">RSI (14) <button class="hint-btn" onclick="showIndicatorInfo('rsi')">👁</button></div>
                         <div class="value" id="modalRSI">55</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">ADX</div>
+                        <div class="label">ADX <button class="hint-btn" onclick="showIndicatorInfo('adx')">👁</button></div>
                         <div class="value" id="modalADX">28</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">CMF</div>
+                        <div class="label">CMF <button class="hint-btn" onclick="showIndicatorInfo('cmf')">👁</button></div>
                         <div class="value" id="modalCMF">+0.15</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">MFI</div>
+                        <div class="label">MFI <button class="hint-btn" onclick="showIndicatorInfo('mfi')">👁</button></div>
                         <div class="value" id="modalMFI">58</div>
                     </div>
                 </div>
@@ -2794,27 +3919,27 @@
                 <h3>Chỉ Báo Nâng Cao</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">VWAP</div>
+                        <div class="label">VWAP <button class="hint-btn" onclick="showIndicatorInfo('vwap')">👁</button></div>
                         <div class="value" id="modalVWAP">94,500</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Ichimoku</div>
+                        <div class="label">Ichimoku <button class="hint-btn" onclick="showIndicatorInfo('ichimoku')">👁</button></div>
                         <div class="value" id="modalIchimoku">BULLISH</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Tenkan</div>
+                        <div class="label">Tenkan <button class="hint-btn" onclick="showIndicatorInfo('tenkan')">👁</button></div>
                         <div class="value" id="modalTenkan">95,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Kijun</div>
+                        <div class="label">Kijun <button class="hint-btn" onclick="showIndicatorInfo('kijun')">👁</button></div>
                         <div class="value" id="modalKijun">94,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">SuperTrend</div>
+                        <div class="label">SuperTrend <button class="hint-btn" onclick="showIndicatorInfo('supertrend')">👁</button></div>
                         <div class="value" id="modalST">BUY</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">ST Value</div>
+                        <div class="label">ST Value <button class="hint-btn" onclick="showIndicatorInfo('stvalue')">👁</button></div>
                         <div class="value" id="modalSTValue">94,500</div>
                     </div>
                 </div>
@@ -2825,23 +3950,23 @@
                 <h3>Trung Bình Động & MACD</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">SMA 10</div>
+                        <div class="label">SMA 10 <button class="hint-btn" onclick="showIndicatorInfo('sma10')">👁</button></div>
                         <div class="value" id="modalSMA10">94,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">SMA 20</div>
+                        <div class="label">SMA 20 <button class="hint-btn" onclick="showIndicatorInfo('sma20')">👁</button></div>
                         <div class="value" id="modalSMA20">92,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">SMA 50</div>
+                        <div class="label">SMA 50 <button class="hint-btn" onclick="showIndicatorInfo('sma50')">👁</button></div>
                         <div class="value" id="modalSMA50">90,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">MACD</div>
+                        <div class="label">MACD <button class="hint-btn" onclick="showIndicatorInfo('macd')">👁</button></div>
                         <div class="value" id="modalMACD">+150</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">MACD Signal</div>
+                        <div class="label">MACD Signal <button class="hint-btn" onclick="showIndicatorInfo('macdsignal')">👁</button></div>
                         <div class="value" id="modalMACDSignal">+120</div>
                     </div>
                 </div>
@@ -2852,15 +3977,15 @@
                 <h3>Bollinger Bands</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">BB Upper</div>
+                        <div class="label">BB Upper <button class="hint-btn" onclick="showIndicatorInfo('bb')">👁</button></div>
                         <div class="value" id="modalBBUpper">97,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">BB Lower</div>
+                        <div class="label">BB Lower <button class="hint-btn" onclick="showIndicatorInfo('bblower')">👁</button></div>
                         <div class="value" id="modalBBLower">91,000</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">BB Position</div>
+                        <div class="label">BB Position <button class="hint-btn" onclick="showIndicatorInfo('bbpercent')">👁</button></div>
                         <div class="value" id="modalBBPercent">55%</div>
                     </div>
                 </div>
@@ -2871,23 +3996,23 @@
                 <h3>Sức Khỏe Tài Chính <span id="modalSectorBadge" style="font-size: 11px; color: #64748b; font-weight: normal;"></span></h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">F-Score</div>
+                        <div class="label">F-Score <button class="hint-btn" onclick="showIndicatorInfo('fscore')">👁</button></div>
                         <div class="value" id="modalFScore">7/9</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">ROE</div>
+                        <div class="label">ROE <button class="hint-btn" onclick="showIndicatorInfo('roe')">👁</button></div>
                         <div class="value" id="modalROE">22.5%</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">P/E</div>
+                        <div class="label">P/E <button class="hint-btn" onclick="showIndicatorInfo('pe')">👁</button></div>
                         <div class="value" id="modalPE">12.5</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">P/B</div>
+                        <div class="label">P/B <button class="hint-btn" onclick="showIndicatorInfo('pb')">👁</button></div>
                         <div class="value" id="modalPB">2.1</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Tăng trưởng LN</div>
+                        <div class="label">Tăng trưởng LN <button class="hint-btn" onclick="showIndicatorInfo('pg')">👁</button></div>
                         <div class="value" id="modalProfitGrowth">+15.2%</div>
                     </div>
                 </div>
@@ -2895,19 +4020,19 @@
                 <!-- Earning Guidance (Kế hoạch lợi nhuận năm) -->
                 <div class="modal-grid" id="modalPlanSection" style="margin-top: 12px; display: none;">
                     <div class="modal-item">
-                        <div class="label">Kế hoạch năm</div>
+                        <div class="label">Kế hoạch năm <button class="hint-btn" onclick="showIndicatorInfo('annualplan')">👁</button></div>
                         <div class="value" id="modalAnnualPlan">N/A</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">LN YTD</div>
+                        <div class="label">LN YTD <button class="hint-btn" onclick="showIndicatorInfo('ytdprofit')">👁</button></div>
                         <div class="value" id="modalYTDProfit">N/A</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Hoàn thành KH</div>
+                        <div class="label">Hoàn thành KH <button class="hint-btn" onclick="showIndicatorInfo('plancompletion')">👁</button></div>
                         <div class="value" id="modalPlanCompletion">N/A</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Trạng thái</div>
+                        <div class="label">Trạng thái <button class="hint-btn" onclick="showIndicatorInfo('planstatus')">👁</button></div>
                         <div class="value badge" id="modalPlanStatus">N/A</div>
                     </div>
                 </div>
@@ -2916,54 +4041,82 @@
                 <div class="modal-grid" id="modalSectorMetrics" style="margin-top: 12px; display: none;">
                     <!-- Banking metrics: NIM, NPL, CASA -->
                     <div class="modal-item sector-banking">
-                        <div class="label">NIM</div>
+                        <div class="label">NIM <button class="hint-btn" onclick="showIndicatorInfo('nim')">👁</button></div>
                         <div class="value" id="modalNIM">N/A</div>
                     </div>
                     <div class="modal-item sector-banking">
-                        <div class="label">NPL</div>
+                        <div class="label">NPL <button class="hint-btn" onclick="showIndicatorInfo('npl')">👁</button></div>
                         <div class="value" id="modalNPL">N/A</div>
                     </div>
                     <div class="modal-item sector-banking">
-                        <div class="label">CASA</div>
+                        <div class="label">CASA <button class="hint-btn" onclick="showIndicatorInfo('casa')">👁</button></div>
                         <div class="value" id="modalCASA">N/A</div>
                     </div>
                     
                     <!-- Real Estate metrics: D/E, Inventory -->
                     <div class="modal-item sector-real-estate">
-                        <div class="label">D/E</div>
+                        <div class="label">D/E <button class="hint-btn" onclick="showIndicatorInfo('de')">👁</button></div>
                         <div class="value" id="modalDE">N/A</div>
                     </div>
                     <div class="modal-item sector-real-estate">
-                        <div class="label">Inventory Days</div>
+                        <div class="label">Inventory Days <button class="hint-btn" onclick="showIndicatorInfo('invdays')">👁</button></div>
                         <div class="value" id="modalInventoryDays">N/A</div>
                     </div>
                     
                     <!-- Manufacturing metrics: Gross Margin, Inventory Turnover -->
                     <div class="modal-item sector-manufacturing">
-                        <div class="label">Gross Margin</div>
+                        <div class="label">Gross Margin <button class="hint-btn" onclick="showIndicatorInfo('grossmargin')">👁</button></div>
                         <div class="value" id="modalGrossMargin">N/A</div>
                     </div>
                     <div class="modal-item sector-manufacturing">
-                        <div class="label">Inv. Turnover</div>
+                        <div class="label">Inv. Turnover <button class="hint-btn" onclick="showIndicatorInfo('invturnover')">👁</button></div>
                         <div class="value" id="modalInvTurnover">N/A</div>
                     </div>
                 </div>
             </div>
             
+            <!-- Foreign Flow -->
+            <div class="modal-section" id="modalForeignSection">
+                <h3>Dòng Tiền Khối Ngoại</h3>
+                <div class="modal-grid">
+                    <div class="modal-item">
+                        <div class="label">Foreign Streak <button class="hint-btn" onclick="showIndicatorInfo('foreignstreak')">👁</button></div>
+                        <div class="value" id="modalForeignStreak">0</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Net Val (Latest) <button class="hint-btn" onclick="showIndicatorInfo('netval')">👁</button></div>
+                        <div class="value" id="modalLatestNetVal">N/A</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">Absorption Ratio <button class="hint-btn" onclick="showIndicatorInfo('absorption')">👁</button></div>
+                        <div class="value" id="modalAbsorption">0%</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">5-7 Session Trend <button class="hint-btn" onclick="showIndicatorInfo('foreign5daytrend')">👁</button></div>
+                        <div class="value" id="modalForeign5DayTrend">NEUTRAL</div>
+                    </div>
+                    <div class="modal-item">
+                        <div class="label">30-Session Trend <button class="hint-btn" onclick="showIndicatorInfo('foreigntrend')">👁</button></div>
+                        <div class="value" id="modalForeignAccumTrend">NEUTRAL</div>
+                    </div>
+                </div>
+                <div id="modalForeignNote" style="margin-top: 8px; font-size: 12px; color: #94a3b8;"></div>
+            </div>
+
             <!-- Relative Strength -->
             <div class="modal-section" id="modalRSSection">
                 <h3>Relative Strength</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
-                        <div class="label">RS Label</div>
+                        <div class="label">RS Label <button class="hint-btn" onclick="showIndicatorInfo('rslabel')">👁</button></div>
                         <div class="value" id="modalRSLabel">NEUTRAL</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">Industry Perf</div>
+                        <div class="label">Industry Perf <button class="hint-btn" onclick="showIndicatorInfo('industryperf')">👁</button></div>
                         <div class="value" id="modalIndustryPerf">0%</div>
                     </div>
                     <div class="modal-item">
-                        <div class="label">RS Bonus</div>
+                        <div class="label">RS Bonus <button class="hint-btn" onclick="showIndicatorInfo('rsbonus')">👁</button></div>
                         <div class="value" id="modalRSBonus">0</div>
                     </div>
                 </div>

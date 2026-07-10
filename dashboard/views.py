@@ -732,7 +732,6 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "profit_growth": getattr(s, 'profit_growth', None),
             # Fair Value (from sync_service) - tính toán trong view
             "fv_daily": getattr(a, 'fv_daily', 0) or 0,
-            "fv_weekly": getattr(a, 'fv_weekly', 0) or 0,
             "valuation_status": getattr(a, 'valuation_status', 'N/A'),
             "intrinsic_value": getattr(a, 'intrinsic_value', 0),
             # Analysis
@@ -763,7 +762,17 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             # Smart Money & Industry
             "foreign_buy_streak": getattr(a, 'foreign_buy_streak', 0),
             "foreign_bonus": getattr(a, 'foreign_bonus', 0),
+            "foreign_master_modifier": getattr(a, 'foreign_master_modifier', 0),
+            "latest_net_val": getattr(a, 'latest_net_val', 0.0) or 0.0,
+            "foreign_absorption_ratio": getattr(a, 'foreign_absorption_ratio', 0.0) or 0.0,
+            "latest_net_val_2": getattr(a, 'latest_net_val_2', 0.0) or 0.0,
+            "foreign_buy_val": getattr(a, 'foreign_buy_val', 0.0) or 0.0,
+            "foreign_sell_val": getattr(a, 'foreign_sell_val', 0.0) or 0.0,
+            "foreign_trading_share": getattr(a, 'foreign_trading_share', 0.0) or 0.0,
+            "foreign_accumulated_trend": getattr(a, 'foreign_accumulated_trend', 'NEUTRAL') or 'NEUTRAL',
+            "foreign_accumulated_slope": getattr(a, 'foreign_accumulated_slope', 0.0) or 0.0,
             "industry_performance": getattr(a, 'industry_performance', 0),
+            "sector_group": getattr(a, 'sector_group', 'general'),
             "is_industry_leader": getattr(a, 'is_industry_leader', True),
             # Dynamic GOLD explanation fields
             "rs_label": getattr(a, 'rs_label', 'NEUTRAL') or 'NEUTRAL',
@@ -858,7 +867,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
     writer = csv.writer(response)
     writer.writerow([
         "Symbol", "Company", "Industry", "Sector Category", "Price", "Change%",
-        "FV Daily", "FV Weekly", "Valuation Status",
+        "FV Daily", "Valuation Status",
         "Signal", "Recommendation Label", "Strategy Group",
         "Master Score", "Tech Score", "Fund Score",
         "RS Label", "RS Bonus", "RS Industry Perf %",
@@ -867,7 +876,10 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         "Entry", "Stop Loss", "Take Profit",
         "VETO Label", "Is Vetoed", "Veto Reason",
         "Market RSI", "Stock Risk Level", "Is Market High Risk",
-        "Criteria Met", "Is Fast Pick"
+        "Criteria Met", "Is Fast Pick",
+        "Foreign Streak", "Foreign Bonus", "Latest Net Val", "Prev Net Val",
+        "Absorption Ratio", "Industry Perf %", "Is Industry Leader",
+        "Buy Val", "Sell Val", "Trading Share", "30-Session Trend", "30-Session Slope"
     ])
 
     for a in analyses:
@@ -901,7 +913,6 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
         )
         
         fv_daily = val_result.fv_daily
-        fv_weekly = val_result.fv_weekly
         valuation_status = val_result.valuation_status
         
         # VETO label
@@ -922,7 +933,7 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
 
         writer.writerow([
             s.symbol, s.company_name, s.industry or s.get_industry(), sector_category, s.price, s.change_percent,
-            fv_daily, fv_weekly, valuation_status,
+            fv_daily, valuation_status,
             a.signal, recommendation_label, strategy_group,
             a.master_score, a.technical_score, a.fundamental_score,
             rs_label, rs_bonus, rs_industry_perf,
@@ -1007,7 +1018,6 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     )
 
     writer.writerow(["FV Trong Ngày (Daily)", val_result.fv_daily])
-    writer.writerow(["FV Trong Tuần (Weekly)", val_result.fv_weekly])
     writer.writerow(["Trạng Thái Định Giá", val_result.valuation_status])
     writer.writerow(["Giá Trị Nội Tại (Intrinsic)", val_result.intrinsic_value])
     writer.writerow(["Loại Định Giá Ngành", val_result.valuation_type])
@@ -1032,9 +1042,11 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow(["Entry Price", analysis.entry_price])
     writer.writerow(["Stop Loss", analysis.stop_loss])
     writer.writerow(["Trailing SL (5% từ đỉnh)", analysis.trailing_sl])
-    writer.writerow(["Take Profit (FV Weekly)", analysis.take_profit])
+    writer.writerow(["Take Profit (Entry + 2ATR)", analysis.take_profit])
     writer.writerow(["R:R Ratio", analysis.risk_reward_ratio])
     writer.writerow(["R:R Quality", analysis.rr_quality or "N/A"])
+    writer.writerow(["Hard Risk %", getattr(analysis, 'hard_risk_pct', 0)])
+    writer.writerow(["Support Price", getattr(analysis, 'support_price', 0)])
     writer.writerow(["Est. Days", analysis.estimated_days_to_target])
     writer.writerow(["Timeframe", analysis.timeframe_label])
     writer.writerow(["Lợi nhuận/ngày", analysis.expected_profit_per_day])
@@ -1052,10 +1064,12 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow(["ATR", stock.atr])
 
     writer.writerow([])
-    writer.writerow(["=== TRUNG BÌNH ĐỘNG ==="])
+    writer.writerow(["=== TRUNG BÌNH ĐỘNG & MACD ==="])
     writer.writerow(["SMA 10", stock.sma_10])
     writer.writerow(["SMA 20", stock.sma_20])
     writer.writerow(["SMA 50", stock.sma_50])
+    writer.writerow(["MACD", stock.macd])
+    writer.writerow(["MACD Signal", stock.macd_signal])
 
     writer.writerow([])
     writer.writerow(["=== BOLLINGER BANDS ==="])
@@ -1063,11 +1077,6 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow(["BB Middle", stock.bb_middle])
     writer.writerow(["BB Lower", stock.bb_lower])
     writer.writerow(["BB Position %", stock.bb_percent])
-
-    writer.writerow([])
-    writer.writerow(["=== MACD ==="])
-    writer.writerow(["MACD", stock.macd])
-    writer.writerow(["MACD Signal", stock.macd_signal])
 
     writer.writerow([])
     writer.writerow(["=== CHỈ BÁO NÂNG CAO ==="])
@@ -1086,15 +1095,59 @@ def export_stock_detail_csv(request: HttpRequest, symbol: str) -> HttpResponse:
     writer.writerow(["P/E", stock.pe])
     writer.writerow(["P/B", stock.pb])
     writer.writerow(["Tăng trưởng LN quý", getattr(stock, 'profit_growth', None)])
+    writer.writerow(["Kế hoạch LN năm", getattr(stock, 'annual_profit_plan', None)])
+    writer.writerow(["LN YTD", getattr(stock, 'current_ytd_profit', None)])
+    writer.writerow(["Hoàn thành KH (%)", getattr(stock, 'profit_plan_completion', None)])
+    writer.writerow(["Trạng thái KH", getattr(stock, 'profit_plan_status', None)])
+
+    writer.writerow([])
+    writer.writerow(["=== ĐẦU TƯ & SMART MONEY ==="])
+    writer.writerow(["Foreign Streak", getattr(analysis, 'foreign_buy_streak', 0)])
+    writer.writerow(["Foreign Bonus", getattr(analysis, 'foreign_bonus', 0)])
+    writer.writerow(["Net Val (Latest)", getattr(analysis, 'latest_net_val', 0)])
+    writer.writerow(["Net Val (Prev)", getattr(analysis, 'latest_net_val_2', 0)])
+    writer.writerow(["Buy Val", getattr(analysis, 'foreign_buy_val', 0)])
+    writer.writerow(["Sell Val", getattr(analysis, 'foreign_sell_val', 0)])
+    writer.writerow(["Trading Share", getattr(analysis, 'foreign_trading_share', 0)])
+    writer.writerow(["30-Session Trend", getattr(analysis, 'foreign_accumulated_trend', 'NEUTRAL')])
+    writer.writerow(["30-Session Slope", getattr(analysis, 'foreign_accumulated_slope', 0)])
+    writer.writerow(["Absorption Ratio", getattr(analysis, 'foreign_absorption_ratio', 0)])
+    writer.writerow(["Is Industry Leader", "Yes" if getattr(analysis, 'is_industry_leader', True) else "No"])
+    writer.writerow(["Industry Perf %", getattr(analysis, 'industry_performance', 0)])
+
+    writer.writerow([])
+    writer.writerow(["=== RELATIVE STRENGTH ==="])
+    writer.writerow(["RS Label", getattr(analysis, 'rs_label', 'NEUTRAL')])
+    writer.writerow(["RS Bonus", getattr(analysis, 'rs_bonus', 0)])
+    writer.writerow(["Sector", getattr(analysis, 'sector', 'general')])
 
     writer.writerow([])
     writer.writerow(["=== TRẠNG THÁI ==="])
     writer.writerow(["Is Vetoed", "Yes" if analysis.is_vetoed else "No"])
     writer.writerow(["Veto Reason", analysis.veto_reason])
+    writer.writerow(["Veto Reasons", getattr(analysis, 'veto_reasons', '')])
+    writer.writerow(["Is Vetoed (WG)", "Yes" if getattr(analysis, 'is_veto_wg', False) else "No"])
     writer.writerow(["Is Fast Pick", "Yes" if analysis.is_fast_pick else "No"])
     writer.writerow(["Is High Risk", "Yes" if analysis.is_high_risk else "No"])
+    writer.writerow(["Stock Risk Level", getattr(analysis, 'stock_risk_level', 'Medium')])
+    writer.writerow(["Stock Risk Reason", getattr(analysis, 'stock_risk_reason', '')])
+    writer.writerow(["Is Safe Entry", "Yes" if getattr(analysis, 'is_safe_entry', False) else "No"])
+    writer.writerow(["Has High Resistance", "Yes" if getattr(analysis, 'has_high_resistance', False) else "No"])
     writer.writerow(["Breakout Status", analysis.breakout_status])
     writer.writerow(["Market RSI", analysis.market_rsi])
+    writer.writerow(["Is Market High Risk", "Yes" if getattr(analysis, 'is_market_high_risk', False) else "No"])
+    writer.writerow(["Trend Factor", getattr(analysis, 'trend_factor', 0.6)])
+    writer.writerow(["Avg Volume Value (20D)", getattr(analysis, 'avg_volume_value', 0)])
+
+    writer.writerow([])
+    writer.writerow(["=== WEALTH GUARD ==="])
+    writer.writerow(["Final Score", getattr(analysis, 'final_score', 0)])
+    writer.writerow(["Final Group", getattr(analysis, 'final_group', 'RISK')])
+    writer.writerow(["T-Score", getattr(analysis, 't_score', 0)])
+    writer.writerow(["Recommendation Label", getattr(analysis, 'recommendation_label', '')])
+    writer.writerow(["Base Score", getattr(analysis, 'base_score', 0)])
+    writer.writerow(["Market Weight", getattr(analysis, 'market_weight', 0)])
+    writer.writerow(["RR Quality Detail", getattr(analysis, 'rr_quality_detail', '')])
 
     writer.writerow([])
     writer.writerow([f"Export lúc: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
@@ -1898,7 +1951,6 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "Est_Days": result.get('estimated_days_to_target', 15),
                 "ATR": round(result.get('atr', 0), 2),
                 "FV_Daily": round(result.get('fv_daily', 0), 2),
-                "FV_Weekly": round(result.get('fv_weekly', 0), 2),
                 "Take_Profit": result.get('take_profit', 0),
                 "Stop_Loss": result.get('stop_loss', 0),
                 "Is_Vetoed": result.get('is_vetoed', False),
@@ -1917,6 +1969,7 @@ def api_wealth_guard_data(request: HttpRequest) -> JsonResponse:
                 "MACD_Status": 'neutral',
                 "MACD_Histogram": 0,
                 "Foreign_Streak": result.get('foreign_buy_streak', 0),
+                "Foreign_Master_Modifier": result.get('foreign_master_modifier', 0),
             }
             data_array.append(record)
         

@@ -2,7 +2,7 @@
 ValuationEngine - Centralized Fair Value Calculation Service
 ============================================================
 
-Module này chứa tất cả logic tính toán FV Daily, FV Weekly, Intrinsic Value
+Module này chứa tất cả logic tính toán FV Daily (ngắn hạn) và Intrinsic Value
 Dùng chung cho cả sync_service.py (background) và views.py (CSV/Web export)
 """
 
@@ -15,7 +15,6 @@ import pandas as pd
 class ValuationResult:
     """Kết quả định giá"""
     fv_daily: float
-    fv_weekly: float
     intrinsic_value: float
     target_pe: float
     valuation_type: str
@@ -146,7 +145,6 @@ class ValuationService:
         
         return ValuationResult(
             fv_daily=0,  # Sẽ được tính trong compute_fair_value
-            fv_weekly=0,
             intrinsic_value=0,
             target_pe=round(final_target, 2),
             valuation_type=val_type,
@@ -184,8 +182,8 @@ class ValuationService:
             ValuationResult với đầy đủ thông tin định giá
         """
         if price <= 0:
-            return ValuationResult(
-                fv_daily=0, fv_weekly=0, intrinsic_value=0,
+        return ValuationResult(
+            fv_daily=0, intrinsic_value=0,
                 target_pe=0, valuation_type='PE',
                 valuation_source='error', sector_median_pe=0,
                 sector_median_pb=0, cap_applied=False, valuation_status='RISK'
@@ -241,36 +239,15 @@ class ValuationService:
                 intrinsic_value = price
             val_result.valuation_type = 'PE'
         
-        # 52-week high valuation (slightly adjusted for sector)
-        high_52w = tech.get('high_52w', 0)
-        if high_52w > 0:
-            high_52w_valuation = high_52w
-        else:
-            high_52w_valuation = price * 1.20  # Fallback: +20%
-        
-        # FV Weekly = trung bình (Intrinsic + 52-week high)
-        fv_weekly = (intrinsic_value + high_52w_valuation) / 2
-        fv_weekly = round(fv_weekly, 2)
-        
-        # Cap FV_weekly at 130% of current price (adjusted for sector)
-        max_fv = price * 1.30
-        if fv_weekly > max_fv:
-            fv_weekly = round(max_fv, 2)
-        
-        # Market Risk Adjustment: -10% when Market RSI > 75
-        if market_rsi > 75:
-            fv_weekly = round(fv_weekly * 0.9, 2)
-        
-        # Valuation Status
+        # Valuation Status (based on fv_daily: VWAP * 0.4 + SMA20 * 0.6)
         if is_vetoed:
             valuation_status = 'RISK'
         else:
-            safe_threshold = fv_weekly * 0.9
+            safe_threshold = fv_daily * 0.9
             valuation_status = 'Rẻ' if price < safe_threshold else 'Đắt'
-        
+
         return ValuationResult(
             fv_daily=fv_daily,
-            fv_weekly=fv_weekly,
             intrinsic_value=round(intrinsic_value, 2),
             target_pe=val_result.target_pe,
             valuation_type=val_result.valuation_type,
@@ -309,7 +286,6 @@ class ValuationService:
         
         return {
             'fv_daily': val.fv_daily,
-            'fv_weekly': val.fv_weekly,
             'intrinsic_value': val.intrinsic_value,
             'valuation_status': val.valuation_status,
             'valuation_source': val.valuation_source,

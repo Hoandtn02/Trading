@@ -219,6 +219,15 @@ class StockAnalysis(models.Model):
     # Smart Money & Industry
     foreign_buy_streak = models.IntegerField(default=0)  # Số phiên khối ngoại mua ròng liên tiếp
     foreign_bonus = models.IntegerField(default=0)  # Điểm cộng từ Smart Money
+    foreign_master_modifier = models.IntegerField(default=0)  # Điểm thưởng/phạt trực tiếp từ khối ngoại (X2)
+    latest_net_val = models.FloatField(default=0.0)  # Giá trị mua bán ròng phiên gần nhất (VND)
+    foreign_absorption_ratio = models.FloatField(default=0.0)  # % khối ngoại / tổng thanh khoản phiên
+    latest_net_val_2 = models.FloatField(default=0.0)  # Giá trị mua bán ròng phiên trước (để so sánh 2 phiên)
+    foreign_buy_val = models.FloatField(default=0.0)  # Giá trị mua khối ngoại phiên gần nhất (VND)
+    foreign_sell_val = models.FloatField(default=0.0)  # Giá trị bán khối ngoại phiên gần nhất (VND)
+    foreign_trading_share = models.FloatField(default=0.0)  # Tỷ lệ giao dịch khối ngoại/tổng thanh khoản phiên (%)
+    foreign_accumulated_trend = models.CharField(default='NEUTRAL', max_length=20)  # Xu hướng lũy kế 30 phiên: ACCUMULATING/DISTRIBUTING/NEUTRAL
+    foreign_accumulated_slope = models.FloatField(default=0.0)  # Độ dốc đường lũy kế net_val 30 phiên
     industry_performance = models.FloatField(default=0)  # % chênh lệch vs ngành
     is_industry_leader = models.BooleanField(default=True)  # True = mạnh hơn ngành
     

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from time import sleep
 from typing import List, Optional, Dict, Any
+import numpy as np
 import pandas as pd
 
 from django.utils import timezone
@@ -479,6 +480,49 @@ def get_market_rsi() -> float:
     return 50.0
 
 
+def _get_market_regime_from_etf_flow(default_regime: str = "NORMAL") -> str:
+    """
+    Macro/ETF foreign-flow sentiment hook.
+    Dùng dữ liệu foreign_flow của ETF lớn để xác định xu hướng rút/gom tổng thể của nước ngoài.
+
+    Returns:
+        "NORMAL", "DEFENSE", hoặc "FREEZE"
+    """
+    try:
+        from vnstock_data import Market
+        mkt = Market()
+        etf_symbols = ["E1VFVN30"]
+        foreign_rows = []
+
+        for sym in etf_symbols:
+            try:
+                df = mkt.equity(sym).foreign_flow()
+                if df is None or df.empty:
+                    continue
+                date_col = 'trading_date' if 'trading_date' in df.columns else 'time'
+                if date_col not in df.columns:
+                    continue
+                df = df.sort_values(date_col, ascending=False).head(5)
+                net_vals = []
+                for _, row in df.iterrows():
+                    net_val = float(row.get('net_val', 0) or row.get('fr_net_value_total', 0) or 0)
+                    net_vals.append(net_val)
+                if net_vals:
+                    foreign_rows.append(sum(net_vals))
+            except Exception:
+                continue
+
+        if not foreign_rows:
+            return default_regime
+
+        total_net = sum(foreign_rows)
+        if total_net < 0:
+            return "DEFENSE"
+        return default_regime
+    except Exception:
+        return default_regime
+
+
 def get_company_name(symbol: str) -> str:
     """Lấy tên công ty từ vnstock"""
     try:
@@ -567,6 +611,14 @@ def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None) 
         "profit_growth_note": "N/A",  # Phương pháp tính: YoY, QoQ_adj, TTM, NEW_LISTING
         "is_new_listing": False,  # Cổ phiếu mới (< 2 quý)
         "foreign_buy_streak": 0,
+        "latest_net_val": 0.0,
+        "foreign_absorption_ratio": 0.0,
+        "latest_net_val_2": 0.0,
+        "foreign_buy_val": 0.0,
+        "foreign_sell_val": 0.0,
+        "foreign_trading_share": 0.0,
+        "foreign_accumulated_trend": "NEUTRAL",
+        "foreign_accumulated_slope": 0.0,
         "industry_performance": 0,
         "is_industry_leader": True,
     }
@@ -659,9 +711,19 @@ def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None) 
                 result['profit_growth_note'] = profit_growth_result.get('profit_growth_note', 'N/A')
                 result['is_new_listing'] = profit_growth_result.get('is_new_listing', False)
                 result['pe_industry_avg'] = get_industry_pe_average(symbol)
-                result['foreign_buy_streak'] = get_foreign_buy_streak(symbol)
                 result['industry_performance'] = get_industry_performance(symbol, None, vnindex_df=vnindex_df)
                 result['is_industry_leader'] = result['industry_performance'] >= 0
+                # Exact foreign metrics (foreign_flow API)
+                foreign_metrics = get_exact_foreign_metrics(symbol)
+                result['foreign_buy_streak'] = foreign_metrics.get('foreign_streak', 0)
+                result['latest_net_val'] = foreign_metrics.get('latest_net_val', 0.0)
+                result['foreign_absorption_ratio'] = foreign_metrics.get('foreign_absorption_ratio', 0.0)
+                result['latest_net_val_2'] = foreign_metrics.get('latest_net_val_2', 0.0)
+                result['foreign_buy_val'] = foreign_metrics.get('foreign_buy_val', 0.0)
+                result['foreign_sell_val'] = foreign_metrics.get('foreign_sell_val', 0.0)
+                result['foreign_trading_share'] = foreign_metrics.get('foreign_trading_share', 0.0)
+                result['foreign_accumulated_trend'] = foreign_metrics.get('foreign_accumulated_trend', 'NEUTRAL')
+                result['foreign_accumulated_slope'] = foreign_metrics.get('foreign_accumulated_slope', 0.0)
                 result['f_score'] = calculate_f_score(symbol, result)
                 result['f_score_grade'] = get_f_score_grade(result['f_score'])
 
@@ -854,9 +916,13 @@ def build_veto_response(
         Dict với tất cả các field của compute_core_logic() nhưng bị veto
     """
     price_val = tech.get("price", 0)
-    fv_weekly = round(price_val * 1.05, 2)  # Conservative placeholder
+    vwap_val = tech.get("vwap", price_val)
+    sma20_val = tech.get("sma_20", price_val)
+    fv_daily = round((vwap_val * 0.4) + (sma20_val * 0.6), 2)
+    atr_val = tech.get("atr", price_val * 0.02)
     rr_ratio = 0.0
     stop_loss = round(support_price * 0.985, 2) if support_price > 0 else round(entry * 0.96, 2)
+    take_profit = round(entry + 2 * atr_val, 2)
 
     return {
         # Basic info
@@ -896,14 +962,13 @@ def build_veto_response(
         "entry_price": entry,
         "stop_loss": stop_loss,
         "trailing_sl": stop_loss,
-        "take_profit": fv_weekly,
+        "take_profit": take_profit,
         "risk_reward_ratio": rr_ratio,
         "rr_quality": "Poor",
         "rr_quality_detail": "R:R thấp - VETO",
         "rr_warning": "VETO - không khuyến nghị giao dịch",
         # Fair Value
-        "fv_daily": fv_weekly,
-        "fv_weekly": fv_weekly,
+        "fv_daily": fv_daily,
         "valuation_status": "RISK",
         "intrinsic_value": round(price_val, 2),
         "sector_median_pe": None,
@@ -969,6 +1034,9 @@ def build_veto_response(
         # Smart Money & Industry
         "foreign_buy_streak": 0,
         "foreign_bonus": 0,
+        "latest_net_val": 0.0,
+        "foreign_absorption_ratio": 0.0,
+        "latest_net_val_2": 0.0,
         "industry_performance": fund_data.get('industry_performance', 0),
         "is_industry_leader": False,
         # Real R:R
@@ -995,57 +1063,144 @@ def build_veto_response(
     }
 
 
-def get_foreign_buy_streak(symbol: str, lookback: int = 5) -> int:
+def get_exact_foreign_metrics(symbol: str) -> dict:
     """
-    Lấy số phiên liên tiếp khối ngoại mua ròng từ vnstock_data
-    Returns: Số phiên mua ròng liên tiếp (0 = không có)
+    Lấy chỉ số khối ngoại chuẩn xác từ vnstock_data foreign_flow().
+    Trả về:
+        foreign_streak: Số phiên liên tiếp mua ròng (tính đến phiên trước hôm nay)
+        latest_net_val: Giá trị mua ròng phiên gần nhất (VND)
+        foreign_absorption_ratio: % khối ngoại mua ròng / tổng thanh khoản phiên
+        latest_net_val_2: Giá trị mua ròng phiên trước (để so sánh 2 phiên gần nhất)
+        foreign_buy_val: Giá trị mua phiên gần nhất (VND)
+        foreign_sell_val: Giá trị bán phiên gần nhất (VND)
+        foreign_trading_share: % giá trị giao dịch khối ngoại / tổng thanh khoản phiên
+        foreign_accumulated_trend: 'ACCUMULATING'/'DISTRIBUTING'/'NEUTRAL' dựa trên độ dốc chuỗi 30 phiên
+        foreign_accumulated_slope: độ dốc của đường lũy kế net_val 30 phiên
     """
+    default = {
+        "foreign_streak": 0,
+        "latest_net_val": 0.0,
+        "foreign_absorption_ratio": 0.0,
+        "latest_net_val_2": 0.0,
+        "foreign_buy_val": 0.0,
+        "foreign_sell_val": 0.0,
+        "foreign_trading_share": 0.0,
+        "foreign_accumulated_trend": "NEUTRAL",
+        "foreign_accumulated_slope": 0.0,
+    }
     try:
-        from vnstock_data import TopStock
-        insights = TopStock()
-        
-        # Lấy dữ liệu foreign buy gần đây
-        foreign_buy = insights.foreign_buy(limit=lookback)
-        
-        # Lấy dữ liệu foreign sell gần đây
-        foreign_sell = insights.foreign_sell(limit=lookback)
-        
-        if foreign_buy is None or foreign_sell is None:
-            return 0
-        
-        # Tạo dict để tracking
-        buy_dates = set()
-        sell_dates = set()
-        
-        # Parse foreign buy
-        if len(foreign_buy) > 0:
-            for idx, row in foreign_buy.iterrows():
-                sym = str(row.get('symbol', '')).upper()
-                date = str(row.get('date', ''))
-                if sym == symbol.upper():
-                    buy_dates.add(date)
-        
-        # Parse foreign sell
-        if len(foreign_sell) > 0:
-            for idx, row in foreign_sell.iterrows():
-                sym = str(row.get('symbol', '')).upper()
-                date = str(row.get('date', ''))
-                if sym == symbol.upper():
-                    sell_dates.add(date)
-        
-        # Đếm streak: nếu ngày trong buy nhưng không trong sell = mua ròng
-        all_dates = sorted(list(buy_dates | sell_dates), reverse=True)
-        
+        from vnstock_data import Market
+        mkt = Market()
+        df = mkt.equity(symbol).foreign_flow()
+
+        if df is None or df.empty:
+            return default
+
+        # API mới dùng 'trading_date', API cũ dùng 'time'
+        date_col = 'trading_date' if 'trading_date' in df.columns else 'time'
+        if date_col not in df.columns:
+            return default
+        df = df.sort_values(date_col, ascending=False).reset_index(drop=True)
+
+        # Helper lấy net_val từ nhiều tên cột có thể có
+        def _net(row):
+            return float(row.get('net_val', 0) or row.get('fr_net_value_total', 0) or 0)
+
+        # 1. Tính streak: đếm các phiên liên tiếp có net_val > 0
         streak = 0
-        for date in all_dates:
-            if date in buy_dates and date not in sell_dates:
+        for _, row in df.iterrows():
+            net_val = _net(row)
+            if net_val > 0:
                 streak += 1
             else:
                 break
-        
-        return streak
+        default["foreign_streak"] = streak
+
+        # 2. latest_net_val / buy/sell / prev net
+        row0 = df.iloc[0]
+        row1 = df.iloc[1] if len(df) > 1 else None
+        default["latest_net_val"] = _net(row0)
+        if row1 is not None:
+            default["latest_net_val_2"] = _net(row1)
+
+        # buy/sell value từ foreign_flow nếu có
+        buy_val = 0.0
+        sell_val = 0.0
+        for col in ['buy_val', 'fr_buy_value_matched', 'buy_value']:
+            if col in row0.index:
+                buy_val = float(row0.get(col) or 0)
+                if buy_val:
+                    break
+        for col in ['sell_val', 'fr_sell_value_matched', 'sell_value']:
+            if col in row0.index:
+                sell_val = float(row0.get(col) or 0)
+                if sell_val:
+                    break
+        default["foreign_buy_val"] = buy_val
+        default["foreign_sell_val"] = sell_val
+
+        # 3. absorption ratio: |net_val| / total_trade_value
+        # 4. foreign trading share: (buy_val + sell_val) / total_trade_value
+        total_val = 0.0
+        try:
+            latest_date = row0['trading_date']
+            ohlcv = mkt.equity(symbol).ohlcv(
+                start=(pd.Timestamp(latest_date) - pd.Timedelta(days=3)).strftime("%Y-%m-%d"),
+                end=(pd.Timestamp(latest_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            )
+            if ohlcv is not None and not ohlcv.empty:
+                date_col_ohlcv = 'time' if 'time' in ohlcv.columns else 'trading_date'
+                ohlcv2 = ohlcv.sort_values(date_col_ohlcv, ascending=False).reset_index(drop=True)
+                for _, row in ohlcv2.iterrows():
+                    row_date = pd.Timestamp(row[date_col_ohlcv]).normalize()
+                    if row_date == pd.Timestamp(latest_date).normalize():
+                        vol = float(row.get('volume', 0))
+                        close_k = float(row.get('close', 0) or 0)
+                        if close_k > 0 and vol > 0:
+                            close_vnd = close_k * 1000  # convert K VND -> VND
+                            total_val = close_vnd * vol
+                        break
+        except Exception:
+            pass
+
+        if total_val > 0:
+            default["foreign_absorption_ratio"] = round(abs(default["latest_net_val"]) / total_val * 100, 2)
+            trading_share = (buy_val + sell_val) / total_val * 100 if buy_val or sell_val else abs(default["latest_net_val"]) / total_val * 100
+            default["foreign_trading_share"] = round(trading_share, 2)
+        else:
+            default["foreign_absorption_ratio"] = 0.0
+            default["foreign_trading_share"] = 0.0
+
+        # 5. Chuỗi 30 phiên: tính TỔNG net_val → xác định xu hướng dài hạn
+        # Theo spec: ACCUMULATING nếu tổng 30 phiên > 0, DISTRIBUTING nếu tổng < 0
+        try:
+            work_df = df.head(min(30, len(df))).copy()
+            work_df['_net'] = work_df.apply(lambda r: _net(r), axis=1)
+            total_net_30 = work_df['_net'].sum()
+            if total_net_30 > 0:
+                default["foreign_accumulated_trend"] = "ACCUMULATING"
+            elif total_net_30 < 0:
+                default["foreign_accumulated_trend"] = "DISTRIBUTING"
+            else:
+                default["foreign_accumulated_trend"] = "NEUTRAL"
+            # Slope chỉ dùng để tham chiếu, không còn làm trend determinant
+            work_sorted = work_df.sort_values(date_col, ascending=True).reset_index(drop=True)
+            cum_net = work_sorted['_net'].cumsum()
+            if len(cum_net) >= 5:
+                x = np.arange(len(cum_net))
+                slope = np.polyfit(x, cum_net.values, 1)[0] if len(cum_net) > 1 else 0.0
+                default["foreign_accumulated_slope"] = round(float(slope), 2)
+            else:
+                default["foreign_accumulated_slope"] = 0.0
+        except Exception:
+            default["foreign_accumulated_trend"] = "NEUTRAL"
+            default["foreign_accumulated_slope"] = 0.0
+
+        return default
+
     except Exception as e:
-        return 0
+        print(f"[Foreign Error] {symbol}: {e}")
+        return default
 
 
 def get_industry_performance(symbol: str, df: pd.DataFrame = None, lookback: int = 5, vnindex_df=None) -> float:
@@ -1230,8 +1385,8 @@ def calculate_profit_growth(symbol: str) -> dict:
             return result
         
         # ========== METHOD 1: TTM (Trailing Twelve Months) ==========
-        # Tổng 4 quý gần nhất vs 4 quý trước
-        if valid_quarters >= 4:
+        # Chỉ tính TTM khi có đủ dữ liệu 8 quý liên tiếp để tránh bất đối xứng
+        if len(income) >= 8:
             ttm_current = 0
             ttm_prev = 0
             for i in range(4):
@@ -1246,10 +1401,12 @@ def calculate_profit_growth(symbol: str) -> dict:
                     ttm_prev += val
             
             if ttm_current > 0 and ttm_prev > 0:
-                ttm_growth = ((ttm_current / ttm_prev) - 1) * 100
+                ttm_growth = ((ttm_current - ttm_prev) / abs(ttm_prev)) * 100
                 result['profit_growth'] = round(ttm_growth, 2)
                 result['profit_growth_note'] = 'TTM'
                 return result
+        elif valid_quarters >= 4:
+            result['profit_growth_note'] = 'YoY'
         
         # ========== METHOD 2: YoY (Year-over-Year) ==========
         # Tìm cùng kỳ năm trước (cách 4 quý)
@@ -1273,7 +1430,7 @@ def calculate_profit_growth(symbol: str) -> dict:
                     break
         
         if same_quarter_last_year is not None:
-            yoy_growth = ((latest_profit / same_quarter_last_year) - 1) * 100
+            yoy_growth = ((latest_profit - same_quarter_last_year) / abs(same_quarter_last_year)) * 100
             result['profit_growth'] = round(yoy_growth, 2)
             result['profit_growth_note'] = 'YoY'
             return result
@@ -1284,8 +1441,8 @@ def calculate_profit_growth(symbol: str) -> dict:
             prev_idx = income.index[1]
             prev_profit = get_profit(prev_idx)
             
-            if prev_profit is not None and prev_profit > 0:
-                qoq_growth = ((latest_profit / prev_profit) - 1) * 100
+            if prev_profit is not None and prev_profit != 0:
+                qoq_growth = ((latest_profit - prev_profit) / abs(prev_profit)) * 100
                 # Áp dụng hệ số 0.8 để tránh sai số mùa vụ
                 adjusted_growth = qoq_growth * 0.8
                 result['profit_growth'] = round(adjusted_growth, 2)
@@ -1304,7 +1461,8 @@ def calculate_profit_growth(symbol: str) -> dict:
 def calculate_f_score(symbol: str, fund_data: dict = None) -> int:  # pyright: ignore[reportArgumentType]
     """
     Calculate Piotroski F-Score (0-9)
-    fund_data: Optional dict with ROE, PE, PB to use in score calculation
+    Pure accounting-based financial health score using income statement,
+    balance sheet, and cash flow only. No market valuation inputs.
     """
     score = 0
 
@@ -1374,22 +1532,49 @@ def calculate_f_score(symbol: str, fund_data: dict = None) -> int:  # pyright: i
             if ocf_val and ni_val and float(ocf_val) > float(ni_val):
                 score += 1
 
-        # 5. Leverage decrease
-        if ta_col:
-            current_assets_col = 'total_current_assets' if 'total_current_assets' in balance.columns else None
-            if current_assets_col:
-                ca = get_val(balance, latest_row, current_assets_col)
-                if ta and ca and float(ta) > 0:
-                    de_ratio = float(ta) / float(ca) if float(ca) > 0 else 0
-                    if prev_row:
-                        ca_prev = get_val(balance, prev_row, current_assets_col)
-                        ta_prev = get_val(balance, prev_row, ta_col)
-                        if ca_prev and ta_prev and float(ta_prev) > 0:
-                            de_ratio_prev = float(ta_prev) / float(ca_prev)
-                            if de_ratio < de_ratio_prev:
-                                score += 1
+        # 5. Leverage decrease: ưu tiên Total Debt / Total Equity, fallback sang Total Debt / Total Assets
+        leverage_current = None
+        leverage_prev = None
+
+        debt_cols = [
+            'total_liabilities',
+            'total_debt',
+            'short_term_borrowings',
+            'long_term_borrowings',
+            'total_loans',
+        ]
+        equity_col = 'total_equity' if 'total_equity' in balance.columns else None
+        assets_col = 'total_assets' if 'total_assets' in balance.columns else None
+
+        current_debt = 0.0
+        prev_debt = 0.0
+        for col in debt_cols:
+            if col in balance.columns:
+                current_debt += float(get_val(balance, latest_row, col) or 0)
+                if prev_row:
+                    prev_debt += float(get_val(balance, prev_row, col) or 0)
+
+        if equity_col:
+            current_equity = float(get_val(balance, latest_row, equity_col) or 0)
+            prev_equity = float(get_val(balance, prev_row, equity_col) or 0) if prev_row else 0
+            if current_equity > 0:
+                leverage_current = current_debt / current_equity
+            if prev_equity > 0:
+                leverage_prev = prev_debt / prev_equity
+        elif assets_col:
+            current_assets = float(get_val(balance, latest_row, assets_col) or 0)
+            prev_assets = float(get_val(balance, prev_row, assets_col) or 0) if prev_row else 0
+            if current_assets > 0:
+                leverage_current = current_debt / current_assets
+            if prev_assets > 0:
+                leverage_prev = prev_debt / prev_assets
+
+        if leverage_current is not None and leverage_prev is not None and leverage_current < leverage_prev:
+            score += 1
 
         # 6. Current ratio increase
+        current_assets_col = 'total_current_assets' if 'total_current_assets' in balance.columns else None
+        ca = get_val(balance, latest_row, current_assets_col) if current_assets_col else None
         if current_assets_col and 'total_current_liabilities' in balance.columns:
             cl = get_val(balance, latest_row, 'total_current_liabilities')
             if ca and cl and float(cl) > 0:
@@ -1402,18 +1587,63 @@ def calculate_f_score(symbol: str, fund_data: dict = None) -> int:  # pyright: i
                         if cr > cr_prev:
                             score += 1
 
-        # 7-9. Margin/Asset improvements (simplified for speed)
-        # Use fund_data if provided
-        _roe = fund_data.get('roe', 0) if fund_data else None
-        _pe = fund_data.get('pe', 0) if fund_data else None
-        _pb = fund_data.get('pb', 0) if fund_data else None
-        
-        if _roe and _roe > 10:
-            score += 1
-        if _pe and 5 < _pe < 25:
-            score += 1
-        if _pb and _pb < 3:
-            score += 1
+        # 7-9. Financial statement improvements (margin, asset turnover, leverage quality)
+        revenue_col = None
+        for col in ['revenue', 'total_revenue', 'net_revenue', 'doanh_thu_thuần', 'doanh_thu']:
+            if col in income.columns:
+                revenue_col = col
+                break
+
+        gross_profit_col = None
+        for col in ['gross_profit', 'lợi_nhuận_gộp']:
+            if col in income.columns:
+                gross_profit_col = col
+                break
+
+        # 7. Gross margin improvement
+        if revenue_col and gross_profit_col:
+            try:
+                gp = get_val(income, latest_row, gross_profit_col)
+                rev = get_val(income, latest_row, revenue_col)
+                if gp is not None and rev is not None and float(rev) > 0:
+                    gm_current = float(gp) / float(rev)
+                    if prev_row:
+                        gp_prev = get_val(income, prev_row, gross_profit_col)
+                        rev_prev = get_val(income, prev_row, revenue_col)
+                        if gp_prev is not None and rev_prev is not None and float(rev_prev) > 0:
+                            gm_prev = float(gp_prev) / float(rev_prev)
+                            if gm_current > gm_prev:
+                                score += 1
+            except Exception:
+                pass
+
+        # 8. Asset turnover improvement = Revenue / Total Assets
+        if revenue_col and assets_col:
+            try:
+                rev = get_val(income, latest_row, revenue_col)
+                ta = get_val(balance, latest_row, assets_col)
+                if rev is not None and ta is not None and float(ta) > 0:
+                    at_current = float(rev) / float(ta)
+                    if prev_row:
+                        rev_prev = get_val(income, prev_row, revenue_col)
+                        ta_prev = get_val(balance, prev_row, assets_col)
+                        if rev_prev is not None and ta_prev is not None and float(ta_prev) > 0:
+                            at_prev = float(rev_prev) / float(ta_prev)
+                            if at_current > at_prev:
+                                score += 1
+            except Exception:
+                pass
+
+        # 9. Operating efficiency proxy: OCF improvement when available
+        if ocf_col and prev_row:
+            try:
+                ocf = get_val(cf, latest_row, ocf_col)
+                ocf_prev = get_val(cf, prev_row, ocf_col)
+                if ocf is not None and ocf_prev is not None:
+                    if float(ocf) > float(ocf_prev):
+                        score += 1
+            except Exception:
+                pass
 
     except:
         pass
@@ -1474,8 +1704,12 @@ def get_sector_category(industry: str, icb_code: str = "") -> str:
     
     industry_lower = industry.lower()
     
+    # Securities: separate from Banking because business model and key metrics differ
+    if 'chứng khoán' in industry_lower:
+        return 'general'
+    
     # Banking & Financial
-    if any(k in industry_lower for k in ['bank', 'ngân hàng', 'chứng khoán', 'bảo hiểm', 'tín dụng', 'tài chính']):
+    if any(k in industry_lower for k in ['bank', 'ngân hàng', 'bảo hiểm', 'tín dụng', 'tài chính']):
         return 'banking'
     
     # Real Estate
@@ -2162,37 +2396,52 @@ def check_health_veto(
     if tech.get('cmf', 0) < 0:
         veto_reasons.append(f"VETO_1: CMF < 0 ({tech.get('cmf', 0):.2f})")
     # VETO_2: Volume TB 20 phiên < 15 tỷ
-    elif avg_volume_value < 15:
+    if avg_volume_value < 15:
         veto_reasons.append(f"VETO_2: VolTB20 < 15B ({avg_volume_value:.1f}B)")
-    # VETO_3: Volume_Ratio < 0.5
-    elif volume_ratio_val < 0.5:
+    # VETO_3: Volume_Ratio < 0.5 - chỉ áp dụng cho EARLY_TREND; BOTTOM_FISHING cho phép volume cạn kiệt
+    if scan_mode != "BOTTOM_FISHING" and volume_ratio_val < 0.5:
         veto_reasons.append(f"VETO_3: VolRatio < 0.5 ({volume_ratio_val:.2f})")
     # VETO_4: Anti-FOMO - RSI quá cao (chỉ BOTTOM_FISHING)
     # EARLY_TREND: breakout hợp lệ sẽ tự nhiên có RSI cao -> không VETO cứng ở Layer 1
-    elif scan_mode == "BOTTOM_FISHING" and rsi_val > 70:
+    if scan_mode == "BOTTOM_FISHING" and rsi_val > 70:
         veto_reasons.append(f"VETO_4: Anti-FOMO RSI > 70 ({rsi_val:.1f})")
     # VETO_5: Anti-FOMO - BB% quá cao (chỉ BOTTOM_FISHING)
-    elif scan_mode == "BOTTOM_FISHING" and bb_percent_val > 95:
+    if scan_mode == "BOTTOM_FISHING" and bb_percent_val > 95:
         veto_reasons.append(f"VETO_5: Anti-FOMO BB% > 95 ({bb_percent_val:.1f})")
 
     # ===== NHÓM 2: NEO DÀI HẠN & LỌC VOLUME DƯỚI SMA50 =====
     # VETO_6: Giá dưới SMA200 -> xu hướng dài hạn gãy
-    elif price_val > 0 and sma_200_val > 0 and price_val < sma_200_val:
+    if price_val > 0 and sma_200_val > 0 and price_val < sma_200_val:
         veto_reasons.append("VETO_6: Giá < SMA200 (Xu hướng dài hạn gãy)")
 
     # VETO_7: Dưới SMA50 nhưng volume còn lớn -> rơi tự do chưa kết thúc
-    elif price_val > 0 and sma_50_val > 0 and price_val < sma_50_val:
+    if price_val > 0 and sma_50_val > 0 and price_val < sma_50_val:
         if volume_ratio_val > 1.2:
             veto_reasons.append(f"VETO_7: Giá < SMA50 + VolRatio {volume_ratio_val:.2f} (Rơi tự do)")
         # Nếu volume_ratio < 0.8: xác nhận cạn cung -> cho phép tiếp
         # Còn lại 0.8-1.2: trung tính -> không VETO
 
     # VETO_8: ADX quá thấp
-    elif tech.get('adx', 25) < 20:
+    if tech.get('adx', 25) < 20:
         veto_reasons.append(f"VETO_8: ADX < 20 ({tech.get('adx', 0):.1f})")
 
-    # ===== NHÓM 3: SỨC KHỎE TÀI CHÍNH =====
-    # VETO_14: RELATIVE VETO for Real Estate (D/E vs Sector Median)
+    # VETO_9: Foreign Distribution Trap (EARLY_TREND only)
+    # Breakout kèm khối ngoại bán ròng khốc liệt -> Bulltrap của đội lái trong nước
+    if scan_mode == "EARLY_TREND":
+        latest_net_val = fund_data.get('latest_net_val', 0.0)
+        absorption = fund_data.get('foreign_absorption_ratio', 0.0)
+        breakout_signal = (
+            tech.get('price', 0) > tech.get('sma_10', 0) and
+            tech.get('price', 0) > tech.get('sma_20', 0) and
+            tech.get('volume_ratio', 1.0) > 1.5
+        )
+        if breakout_signal and latest_net_val < 0 and absorption > 25:
+            veto_reasons.append(
+                f"VETO_9: Foreign Dist. Trap (net={latest_net_val/1e9:.2f}B, abs={absorption:.1f}%)"
+            )
+
+    # ===== NHÓM 3: SỨC KHỎE TÀI CHÍNH (ĐÃ SỬA THÀNH CÁC LỆNH IF ĐỘC LẬP) =====
+    # Luật 1: Kiểm tra tỷ lệ nợ theo đặc thù ngành
     if sector == 'real_estate':
         de = fund_data.get('debt_equity') or fund_data.get('de') or 0
         if de > 0:
@@ -2200,43 +2449,39 @@ def check_health_veto(
             relative_threshold = sector_median_de * 1.2
             if de > relative_threshold:
                 veto_reasons.append(f"VETO_14: RE D/E > {relative_threshold:.2f} (sector median: {sector_median_de:.2f})")
-
-    # VETO_15: D/E > 1.5 (Non-Banking, Non-RE sectors)
     elif sector != 'banking':
         de = fund_data.get('debt_equity') or fund_data.get('de') or 0
         if de > 1.5:
             veto_reasons.append(f"VETO_15: D/E > 1.5 ({de:.2f})")
-
-    # VETO_15: NPL > 3% (Banking only)
     elif sector == 'banking':
         npl = fund_data.get('npl') or fund_data.get('npl_ratio') or 0
         if npl > 3:
             veto_reasons.append(f"VETO_15: NPL > 3% ({npl:.2f}%)")
 
-    # VETO_9: ROE < threshold
-    elif fund_data.get('roe') is not None:
+    # Luật 2: Ép kiểm tra ROE độc lập cho TẤT CẢ các ngành
+    if fund_data.get('roe') is not None:
         roe_val = fund_data['roe']
         if roe_val < roe_threshold:
             threshold_note = "10%" if is_capital_intensive else "15%"
             veto_reasons.append(f"VETO_9: ROE < {threshold_note} ({roe_val:.1f}%)")
 
-    # VETO_10: F-Score < 5
-    elif fund_data.get('f_score', 0) < 5:
+    # Luật 3: Ép kiểm tra F-Score độc lập cho TẤT CẢ các ngành
+    if fund_data.get('f_score', 0) < 5:
         veto_reasons.append(f"VETO_10: F-Score < 5 ({fund_data.get('f_score', 0)}/9)")
 
-    # VETO_11: Profit_Growth < 0 (trừ cổ phiếu mới listing)
-    elif not fund_data.get('is_new_listing', False):
+    # Luật 4: Ép kiểm tra Tăng trưởng lợi nhuận độc lập
+    if not fund_data.get('is_new_listing', False):
         pg = fund_data.get('profit_growth')
         if pg is not None and pg < 0:
             veto_reasons.append(f"VETO_11: ProfitGrowth < 0 ({pg:.1f}%)")
 
     # VETO_12: Thiếu dữ liệu tài chính
-    elif fund_data.get('roe') is None or fund_data.get('pe') is None or fund_data.get('pb') is None:
+    if fund_data.get('roe') is None or fund_data.get('pe') is None or fund_data.get('pb') is None:
         veto_reasons.append("VETO_12: Thiếu dữ liệu tài chính")
 
     # ===== NHÓM 4: THỊ TRƯỜNG =====
     # VETO_13: VNIndex RSI > 80
-    elif market_rsi > 80:
+    if market_rsi > 80:
         veto_reasons.append(f"VETO_13: Market RSI > 80 ({market_rsi:.1f})")
 
     # ===== KẾT QUẢ =====
@@ -2366,59 +2611,69 @@ def compute_core_logic(
     )
 
     if health_result["is_vetoed"]:
-        # Compute a baseline support_price for the veto response
+        is_vetoed = True
+        veto_reason = health_result["veto_reason"]
         support_price = sma_50_val if sma_50_val > 0 else entry * 0.97
-        return build_veto_response(
-            symbol=symbol,
-            tech=tech,
-            fund_data=fund_data,
-            veto_reason=health_result["veto_reason"],
-            entry=entry,
-            support_price=support_price,
-            avg_volume_value=avg_volume_value,
-            industry=industry,
-            market_rsi=market_rsi
-        )
-
-    is_vetoed = False
-    veto_reason = ""
 
     # ============================================================
     # LAYER 2: THE ACCELERATORS (TECHNICAL SCORE)
-    # Momentum indicators ONLY. NO RSI/Bollinger penalties in this layer.
+    # Spec: điểm nền 0, trần 100, tổng 5 mục = 30 + 30 + 20 + 20.
     # ============================================================
-    tech_score = 50
+    tech_score = 0
 
-    # ADX contribution
+    # --- 1. Xu hướng & Động lực (tối đa 30) ---
     if adx_val > 25:
         tech_score += 15
-    elif adx_val > 20:
+    elif 20 <= adx_val <= 25:
         tech_score += 8
-    else:
-        tech_score -= 10
 
-    # MACD contribution
-    if macd_val > macd_signal_val:
+    if sma_10_val > 0 and sma_20_val > 0 and price_val > sma_10_val > sma_20_val:
         tech_score += 15
-    else:
-        tech_score -= 15
 
-    # CMF contribution
+    if scan_mode == "EARLY_TREND" and adx_val < 20:
+        tech_score -= 10
+    elif scan_mode == "BOTTOM_FISHING" and adx_val < 20 and volume_ratio_val < 0.7 and cmf_val > 0:
+        tech_score += 10
+
+    # --- 2. Xung lực dòng tiền nội tại (tối đa 30) ---
     if cmf_val > 0.1:
         tech_score += 15
-    elif cmf_val > 0:
+    elif 0 <= cmf_val <= 0.1:
         tech_score += 8
-    else:
+
+    mfi_val = tech.get("mfi", 50) or 50
+    if mfi_val > 50:
+        tech_score += 15
+
+    if cmf_val < 0:
         tech_score -= 15
 
-    # Volume Ratio contribution
-    if volume_ratio_val > 1.5:
-        tech_score += 10
-    elif volume_ratio_val > 1.0:
-        tech_score += 5
-
-    # Fast pick flag
+    # Fast pick flag (giữ logic cũ cho UI)
     is_fast_pick = adx_val > 18 and volume_ratio_val > 0.8
+
+    # --- 3. Tín hiệu kích hoạt xu hướng (tối đa 20) ---
+    if macd_val > macd_signal_val:
+        tech_score += 10
+    if ichimoku_status_val == "bullish" or supertrend_signal_val == "bullish":
+        tech_score += 10
+    if macd_val < macd_signal_val:
+        tech_score -= 10
+
+    # --- 4. Thanh khoản đột biến (tối đa 20) ---
+    if volume_ratio_val > 1.5:
+        tech_score += 20
+    elif 1.0 <= volume_ratio_val <= 1.5:
+        tech_score += 10
+    if scan_mode == "EARLY_TREND" and volume_ratio_val < 0.5:
+        tech_score -= 10
+
+    # --- 5. Bộ phanh hạ nhiệt kỹ thuật (trừ trực tiếp) ---
+    if rsi_val > 80:
+        tech_score -= 15
+    if bb_percent_val > 100:
+        tech_score -= 10
+
+    tech_score = max(0, min(100, tech_score))
 
     # ============================================================
     # SCAN MODE SCORING (Layer 2/3 extension)
@@ -2430,22 +2685,9 @@ def compute_core_logic(
 
     # ============================================================
     # SECTOR-AWARE TECH SCORING (Layer 2 extension)
+    # Spec không yêu cầu cộng/trừ thêm theo sector trong tech_score
+    # (sector được xử lý qua Relative Strength ở Layer Master).
     # ============================================================
-    if sector_group == 'cyclical':
-        if volume_ratio_val > 1.5 and cmf_val > 0.1:
-            tech_score += 5
-        elif volume_ratio_val < 0.8 or cmf_val < -0.1:
-            tech_score -= 10
-    elif sector_group == 'banking':
-        if adx_val > 25 and sma_10_val > 0 and sma_20_val > 0 and sma_10_val > sma_20_val:
-            tech_score += 5
-        elif adx_val < 20:
-            tech_score -= 5
-    elif sector_group == 'growth_defensive':
-        if vwap_status_val == 'above' or ichimoku_status_val == 'bullish':
-            tech_score += 5
-        elif price_val < sma_10_val and sma_10_val > 0:
-            tech_score -= 5
 
     # ============================================================
     # LAYER 3: THE TIMERS (ENTRY QUALITY)
@@ -2453,7 +2695,12 @@ def compute_core_logic(
     # is_safe_entry: distance to SMA20 <= 2%
     # ============================================================
     if scan_mode == "BOTTOM_FISHING":
-        if is_bottom_setup or (35 <= rsi_val <= 45 and volume_ratio_val < 1.0):
+        # EXCELLENT: Khối ngoại gom âm thầm >= 3 phiên liên tiếp (vùng đáy Shark accumulation)
+        foreign_streak = fund_data.get('foreign_buy_streak', 0)
+        if foreign_streak >= 3 and volume_ratio_val < 0.7:
+            entry_quality = "EXCELLENT"
+            entry_quality_reason = f"VÙNG GOM SHARK: Foreign streak {foreign_streak} phiên + volume cạn"
+        elif is_bottom_setup or (35 <= rsi_val <= 45 and volume_ratio_val < 1.0):
             entry_quality = "ACCUMULATE"
             entry_quality_reason = "ZONE ĐÁY: Volume cạn + thắt nút cổ chai"
         elif rsi_val > 70 or bb_percent_val > 95:
@@ -2512,25 +2759,10 @@ def compute_core_logic(
     valuation_cap_applied = val_config['cap_applied']
     sector_median_pe = val_config['dynamic']
 
-    # 52-week high based valuation
-    high_52w = tech.get('high_52w', 0)
-    if high_52w > 0:
-        high_52w_valuation = high_52w
-    else:
-        high_52w_valuation = price_val * 1.20  # Fallback
-
-    # FV Weekly = average of PE valuation and 52-week high
-    fv_weekly = (pe_valuation + high_52w_valuation) / 2
-    fv_weekly = round(fv_weekly, 2)
-
-    # Cap FV_weekly at 130% of current price
-    max_fv = price_val * 1.30
-    if fv_weekly > max_fv:
-        fv_weekly = round(max_fv, 2)
-
-    # Market Risk Adjustment: -10% when Market RSI > 75
-    if market_rsi > 75:
-        fv_weekly = round(fv_weekly * 0.9, 2)
+    # Valuation source info
+    valuation_source = val_config['source']
+    valuation_cap_applied = val_config['cap_applied']
+    sector_median_pe = val_config['dynamic']
 
     # ---- 4b. Trading levels: SL/TP/Support ----
     # Support = min(SMA50, 20-day low)
@@ -2593,7 +2825,7 @@ def compute_core_logic(
         accumulation_sl = round((low_10_val - 1.5 * atr_value), 2) if low_10_val > 0 else round(entry * 0.97, 2)
         stop_loss = accumulation_sl
     else:
-        breakout_sl = round(min(breakout_candle_low, price_val * 0.95), 2)
+        breakout_sl = round(max(breakout_candle_low, price_val * 0.95), 2)
         stop_loss = breakout_sl
 
     # ===== MINIMUM RISK BUFFER (3%) =====
@@ -2604,8 +2836,8 @@ def compute_core_logic(
     # Inverted SL check
     has_inverted_sl = stop_loss >= entry
 
-    # Take profit = FV Weekly (Layer 4 anchors the TP)
-    take_profit = round(fv_weekly, 2)
+    # Take profit = Entry + 2*ATR (short-term momentum-based, no fundamental bias)
+    take_profit = round(entry + 2 * atr_value, 2)
 
     # Trailing SL = 5% below current price
     trailing_sl = round(price_val * 0.95, 2)
@@ -2644,6 +2876,21 @@ def compute_core_logic(
         early_exit_trigger_pct = 2.0
         early_exit_drop_pct = 0.7
 
+    # ===== LAYER 4 EXIT SENSOR: FOREIGN DISTRIBUTION WARNING =====
+    # Nếu giá tiến sát fv_daily mà khối ngoại quay xe bán ròng liên tiếp 2 phiên
+    # -> Siết early_exit_drop_pct để bám đuổi sát đỉnh
+    if fv_daily > 0 and entry > 0:
+        price_to_fv_pct = ((fv_daily - entry) / entry) * 100
+
+        latest_net = fund_data.get('latest_net_val', 0.0)
+        prev_net = fund_data.get('latest_net_val_2', 0.0)
+
+        # Foreign selling 2 phiên liên tiếp + giá đang tiến về fv_daily target
+        if latest_net < 0 and prev_net < 0 and price_to_fv_pct >= 70:
+            early_exit_trigger_pct = 1.5
+            early_exit_drop_pct = 0.3  # Siết từ 0.7 -> 0.3
+
+
     # Recalculate R:R with final stop loss
     risk = entry - stop_loss
     is_inverted_risk = False
@@ -2676,8 +2923,12 @@ def compute_core_logic(
             tech_score += 18
         if target_yield_pct < 10:
             tech_score -= 25
+        # NOTE: Theo spec mới, các bonus liên quan foreign flow (absorption,
+        # trading_share, sponsor, distributing, streak) KHÔNG được cộng vào
+        # tech_score. Tác động khối ngoại được áp dụng thống nhất tại
+        # Master Score (Foreign Flow Modifier -25..+30).
 
-    # Clamp tech_score to [0, 100]
+    # Clamp tech_score theo trần 0..100 sau mọi điều chỉnh scan_mode
     tech_score = max(0, min(100, tech_score))
 
     # Trend Factor dựa trên ADX
@@ -2688,15 +2939,12 @@ def compute_core_logic(
     else:
         trend_factor = 0.6
 
-    # Est. Days với Trend Factor
-    price_diff = take_profit - entry
-    if atr_value > 0 and atr_value < entry:
-        est_days = price_diff / (atr_value * trend_factor)
-    elif atr_value > 0:
-        est_days = price_diff / (atr_value * trend_factor)
+    # Est. Days dựa trên upside thực tế, không triệt tiêu ATR nữa.
+    upside_pct = ((take_profit - entry) / entry) if entry > 0 else 0
+    if upside_pct > 0:
+        est_days = upside_pct / (abs(trend_factor - 1.0) + 0.01)
     else:
-        est_days = price_diff / (entry * 0.02 * trend_factor) if entry > 0 else 10
-
+        est_days = 30 if atr_value > 0 else 10
     est_days = min(max(est_days, 1), 30)
     est_days_rounded = round(est_days)
 
@@ -2715,6 +2963,51 @@ def compute_core_logic(
         timeframe_color = "amber"
 
     profit_per_day = round(target_yield_pct / est_days, 2) if est_days > 0 else 0
+
+    # ============================================================
+    # MARKET REGIME FILTER
+    # Moved to BEFORE position sizing so market_position_scale applies correctly.
+    # ============================================================
+    if market_rsi > 80:
+        market_regime = "FREEZE"
+        market_regime_label = "Đóng băng"
+        market_regime_icon = "❄️"
+        market_regime_color = "red"
+        market_veto_boost = True
+        market_position_scale = 0.0
+        market_tp_scale = 0.85
+    elif market_rsi > 70:
+        market_regime = "DEFENSE"
+        market_regime_label = "Phòng thủ"
+        market_regime_icon = "🛡️"
+        market_regime_color = "amber"
+        market_veto_boost = True
+        market_position_scale = 0.5
+        market_tp_scale = 0.9
+    elif 40 <= market_rsi <= 65:
+        market_regime = "NORMAL"
+        market_regime_label = "Thuận lợi"
+        market_regime_icon = "🌤️"
+        market_regime_color = "emerald"
+        market_veto_boost = False
+        market_position_scale = 1.0
+        market_tp_scale = 1.0
+    elif market_rsi < 40:
+        market_regime = "NORMAL"
+        market_regime_label = "Thuận lợi"
+        market_regime_icon = "🌤️"
+        market_regime_color = "emerald"
+        market_veto_boost = False
+        market_position_scale = 1.0
+        market_tp_scale = 1.0
+    else:
+        market_regime = "NORMAL"
+        market_regime_label = "Trung tính"
+        market_regime_icon = "☁️"
+        market_regime_color = "sky"
+        market_veto_boost = False
+        market_position_scale = 1.0
+        market_tp_scale = 1.0
 
     # ---- 4d. Position sizing ----
     atr_risk = max(atr_value * 2, entry * 0.01)
@@ -2804,40 +3097,46 @@ def compute_core_logic(
 
     criteria_met = len(criteria)
 
-    # ========== FUND SCORE (unchanged legacy logic) ==========
-    fund_score = 50
-    if f_score_val >= 8:
-        fund_score = 85
-    elif f_score_val >= 7:
-        fund_score = 78
-    elif f_score_val >= 6:
-        fund_score = 70
-    elif f_score_val >= 5:
-        fund_score = 55
-    else:
-        fund_score = 40
+    # ========== FUND SCORE (Spec mới: trần 100, 3 mục = 40 + 30 + 30) ==========
+    fund_score = 0
 
+    # 1. Piotroski F-Score (tối đa 40)
+    if f_score_val >= 8:
+        fund_score += 40
+    elif f_score_val >= 6:
+        fund_score += 30
+    elif f_score_val == 5:
+        fund_score += 20
+    # F < 5: +0 và VETO layer 1 đã chặn (VETO_10) — không tính thêm
+
+    # 2. ROE (tối đa 30)
     if roe_val is not None:
         if roe_val > 25:
-            fund_score = min(100, fund_score + 12)
-        elif roe_val > 20:
-            fund_score = min(100, fund_score + 10)
-        elif roe_val > 15:
-            fund_score = min(100, fund_score + 8)
-        elif roe_val < 5:
-            fund_score = max(0, fund_score - 15)
+            fund_score += 30
+        elif 15 <= roe_val <= 25:
+            fund_score += 20
+        elif 10 <= roe_val < 15:
+            fund_score += 10
+        # Án phạt ROE yếu kém so với ngưỡng ngành
+        is_capital_intensive = sector_group in ('cyclical',)
+        roe_floor = 10 if is_capital_intensive else 15
+        if roe_val < roe_floor:
+            fund_score -= 15
 
-    # ========== PROFIT GROWTH STRATEGY ==========
+    # 3. Profit Growth (tối đa 30)
     profit_growth = fund_data.get('profit_growth')
     if profit_growth is not None:
         if profit_growth > 25:
-            fund_score = min(100, fund_score + 20)
-        elif profit_growth > 15:
-            fund_score = min(100, fund_score + 12)
-        elif profit_growth > 5:
-            fund_score = min(100, fund_score + 8)
+            fund_score += 30
+        elif 15 <= profit_growth <= 25:
+            fund_score += 20
+        elif 5 <= profit_growth < 15:
+            fund_score += 10
+
+    fund_score = max(0, min(100, fund_score))
 
     # ========== EARNING GUIDANCE (profit_plan_completion) ==========
+    # Theo spec: chỉ dùng làm Plan Penalty cho Master Score (KHÔNG cộng vào fund_score)
     plan_penalty = 0
     plan_completion_pct = None
     plan_status = "N/A"
@@ -2860,26 +3159,15 @@ def compute_core_logic(
             plan_status = "BEHIND"
         elif plan_completion_pct >= expected_progress_pct:
             plan_status = "ON_TRACK"
-            fund_score = min(100, fund_score + 5)
         else:
             plan_status = "SLIGHTLY_BEHIND"
 
-    # ========== SMART MONEY & INDUSTRY BONUS ==========
-    foreign_streak = fund_data.get('foreign_buy_streak', 0)
-    foreign_bonus = 0
-    if foreign_streak >= 5:
-        foreign_bonus = 20
-    elif foreign_streak >= 3:
-        foreign_bonus = 15
+    # NOTE: Theo spec mới, foreign_streak/foreign_bonus và industry_perf
+    # KHÔNG còn được cộng trực tiếp vào fund_score. Tác động khối ngoại
+    # được áp dụng tại Master Score (Foreign Flow Modifier), còn industry
+    # dùng cho Relative Strength Bonus.
 
     industry_perf = fund_data.get('industry_performance', 0)
-    industry_bonus = 0
-    if industry_perf > 5:
-        industry_bonus = 15
-    elif industry_perf > 0:
-        industry_bonus = 10
-
-    fund_score = min(100, fund_score + foreign_bonus + industry_bonus)
 
     # ========== RISK ASSESSMENT ==========
     is_market_high_risk = market_rsi > 80
@@ -2919,96 +3207,90 @@ def compute_core_logic(
     else:
         signal = "WAIT"
 
-    # ========== MARKET WEIGHT ==========
-    market_weight = 0
-    if market_rsi > 85:
-        market_weight = -25
-    elif market_rsi > 80:
-        market_weight = -20
-    elif market_rsi > 70:
-        market_weight = -10
-    elif market_rsi < 25:
-        market_weight = 20
-    elif market_rsi < 40:
-        market_weight = +10
+    # Bộ phanh rủi ro đơn lẻ: Nếu cổ phiếu quá đắt hoặc RSI cá nhân quá nóng, cấm mua mạnh
+    if price_val > (fv_daily * 1.15) or rsi_val > 80:
+        if signal in ["STRONG_BUY", "BUY"]:
+            signal = "WAIT"
 
     # ============================================================
-    # MARKET REGIME FILTER
+    # MARKET REGIME ADJUSTMENTS
+    # Apply TP scale and FREEZE override AFTER signal is determined.
     # ============================================================
-    if market_rsi > 80:
-        market_regime = "FREEZE"
-        market_regime_label = "Đóng băng"
-        market_regime_icon = "❄️"
-        market_regime_color = "red"
-        market_veto_boost = True
-        market_position_scale = 0.0
-        market_tp_scale = 0.85
-    elif market_rsi > 70:
-        market_regime = "DEFENSE"
-        market_regime_label = "Phòng thủ"
-        market_regime_icon = "🛡️"
-        market_regime_color = "amber"
-        market_veto_boost = True
-        market_position_scale = 0.5
-        market_tp_scale = 0.9
-    elif 40 <= market_rsi <= 65:
-        market_regime = "NORMAL"
-        market_regime_label = "Thuận lợi"
-        market_regime_icon = "🌤️"
-        market_regime_color = "emerald"
-        market_veto_boost = False
-        market_position_scale = 1.0
-        market_tp_scale = 1.0
-    elif market_rsi < 40:
-        market_regime = "NORMAL"
-        market_regime_label = "Thuận lợi"
-        market_regime_icon = "🌤️"
-        market_regime_color = "emerald"
-        market_veto_boost = False
-        market_position_scale = 1.0
-        market_tp_scale = 1.0
-    else:
-        market_regime = "NORMAL"
-        market_regime_label = "Trung tính"
-        market_regime_icon = "☁️"
-        market_regime_color = "sky"
-        market_veto_boost = False
-        market_position_scale = 1.0
-        market_tp_scale = 1.0
-
-    # Market regime affects FV Weekly as dynamic TP anchor
     if market_regime == "DEFENSE":
-        fv_weekly = round(fv_weekly * market_tp_scale, 2)
-        take_profit = round(fv_weekly, 2)
+        take_profit = round(take_profit * market_tp_scale, 2)
     elif market_regime == "FREEZE":
         signal = "WAIT"
         master_score = min(master_score, 45)
-        fv_weekly = round(fv_weekly * market_tp_scale, 2)
-        take_profit = round(fv_weekly, 2)
+        take_profit = round(take_profit * market_tp_scale, 2)
 
     # Recalculate target yield after market-adjusted TP
     target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
 
-    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY ==========
+    # ========== MARKET WEIGHT (spec: -25..+20) ==========
+    market_weight = 0
+    if market_rsi < 25:
+        market_weight = 20
+    elif market_rsi > 80:
+        market_weight = -20
+    elif market_rsi > 70:
+        market_weight = -10
+
+    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY (spec: -10..+15) ==========
     rs_bonus = 0
     rs_label = "NEUTRAL"
 
-    if industry_perf >= 5:
+    if industry_perf > 5:
         rs_bonus = 15
         rs_label = "LEADER"
-    elif industry_perf >= 2:
+    elif industry_perf > 0:
         rs_bonus = 8
         rs_label = "OUTPERFORM"
-    elif industry_perf <= -5:
+    elif industry_perf < 0:
         rs_bonus = -10
         rs_label = "LAGGARD"
-    elif industry_perf <= -2:
-        rs_bonus = -5
-        rs_label = "UNDERPERFORM"
+
+    # ========== FOREIGN FLOW MODIFIER (spec: -25..+30) ==========
+    fmm_latest_net = fund_data.get('latest_net_val', 0.0)
+    fmm_streak = fund_data.get('foreign_buy_streak', 0)
+    absorption = fund_data.get('foreign_absorption_ratio', 0.0)
+    foreign_accumulated_trend = fund_data.get('foreign_accumulated_trend', 'NEUTRAL')
+
+    foreign_master_modifier = 0
+
+    if foreign_accumulated_trend == 'ACCUMULATING':
+        if fmm_latest_net > 0:
+            if absorption > 20:
+                foreign_master_modifier = 25   # Case 1: Gom rực rỡ
+            elif 10 <= absorption <= 20:
+                foreign_master_modifier = 15   # Case 2: Gom bền bỉ
+    elif foreign_accumulated_trend == 'DISTRIBUTING':
+        if fmm_latest_net < 0 and absorption > 20:
+            foreign_master_modifier = -25      # Case 3: Bẫy phân phối
+
+    # Case 4: Streak Bonus — cộng thêm +5 khi streak >= 5 phiên
+    if fmm_streak >= 5:
+        foreign_master_modifier += 5
+
+    # NEUTRAL: streak >= 5 → +8, streak >= 3 → +4, streak=0 + bán ròng → -8
+    if foreign_accumulated_trend == 'NEUTRAL':
+        if fmm_streak >= 5:
+            foreign_master_modifier = 8
+        elif fmm_streak >= 3:
+            foreign_master_modifier = 4
+        elif fmm_streak == 0 and fmm_latest_net < 0:
+            foreign_master_modifier = -8
+
+    foreign_master_modifier = max(-25, min(30, foreign_master_modifier))
 
     # ========== MASTER SCORE ==========
-    base_master_score = int(tech_score * 0.7 + fund_score * 0.3)
-    final_master_score = base_master_score + market_weight + rs_bonus + plan_penalty
+    base_master_score = int(round(tech_score * 0.7 + fund_score * 0.3))
+    final_master_score = (
+        base_master_score
+        + market_weight
+        + rs_bonus
+        + plan_penalty
+        + foreign_master_modifier
+    )
     master_score = max(0, min(100, final_master_score))
 
     rs_info = {
@@ -3041,9 +3323,17 @@ def compute_core_logic(
 
     recommendation_label = f"{signal} ({strategy_group})"
 
-    # ========== VALUATION STATUS ==========
-    safe_threshold = fv_weekly * 0.9
+    if is_vetoed:
+        recommendation_label = "WAIT (VETO)"
+        signal = "WAIT"
+        breakout_status = "VETO"
+
+    # ========== VALUATION STATUS (based on fv_daily) ==========
+    safe_threshold = fv_daily * 0.9
     valuation_status = "Rẻ" if price_val < safe_threshold else "Đắt"
+
+    if is_vetoed:
+        valuation_status = "RISK"
 
     # ===== R:R QUALITY GRADING =====
     rr_quality = ""
@@ -3066,6 +3356,14 @@ def compute_core_logic(
     else:
         rr_quality = "Poor"
         rr_quality_detail = "R:R thấp"
+
+    # ============================================================
+    # SIGNAL OVERRIDE BRAKE - chặn mua đuổi khi quá đắt hoặc RSI quá nóng
+    # Đặt cuối hàm, trên return để đảm bảo chặn mọi tín hiệu BUY/STRONG_BUY.
+    # ============================================================
+    if (fv_daily > 0 and price_val > fv_daily * 1.15) or rsi_val > 80:
+        signal = "WAIT"
+        recommendation_label = "WAIT (OVERVALUED)"
 
     # ========== RETURN ==========
     return {
@@ -3111,9 +3409,10 @@ def compute_core_logic(
         "rr_quality": rr_quality,
         "rr_quality_detail": rr_quality_detail,
         "rr_warning": rr_warning,
+        # Foreign Master Modifier (X2)
+        "foreign_master_modifier": foreign_master_modifier,
         # Fair Value
         "fv_daily": fv_daily,
-        "fv_weekly": fv_weekly,
         "valuation_status": valuation_status,
         "intrinsic_value": round(pe_valuation, 2),
         "sector_median_pe": sector_median_pe,
@@ -3184,8 +3483,16 @@ def compute_core_logic(
         "profit_growth_note": fund_data.get('profit_growth_note', 'N/A'),
         "is_new_listing": fund_data.get('is_new_listing', False),
         # Smart Money & Industry
-        "foreign_buy_streak": foreign_streak,
-        "foreign_bonus": foreign_bonus,
+        "foreign_buy_streak": fund_data.get('foreign_buy_streak', 0),
+        "foreign_bonus": 0,  # giữ field cho UI; tác động khối ngoại đã gộp vào foreign_master_modifier
+        "latest_net_val": fund_data.get('latest_net_val', 0.0),
+        "foreign_absorption_ratio": fund_data.get('foreign_absorption_ratio', 0.0),
+        "latest_net_val_2": fund_data.get('latest_net_val_2', 0.0),
+        "foreign_buy_val": fund_data.get('foreign_buy_val', 0.0),
+        "foreign_sell_val": fund_data.get('foreign_sell_val', 0.0),
+        "foreign_trading_share": fund_data.get('foreign_trading_share', 0.0),
+        "foreign_accumulated_trend": fund_data.get('foreign_accumulated_trend', 'NEUTRAL'),
+        "foreign_accumulated_slope": fund_data.get('foreign_accumulated_slope', 0.0),
         "industry_performance": industry_perf,
         "is_industry_leader": industry_perf >= 0,
         # Real R:R
@@ -3208,10 +3515,14 @@ def compute_core_logic(
         "rs_bonus": rs_info['bonus'],
         "rs_label": rs_info['label'],
         "rs_industry_performance": rs_info['industry_performance'],
-        # Entry quality (new fields per refactor)
-        "entry_quality": entry_quality,
-        "entry_quality_reason": entry_quality_reason,
-    }
+    # Entry quality (new fields per refactor)
+    "entry_quality": entry_quality,
+    "entry_quality_reason": entry_quality_reason,
+}
+
+    tech_score = max(0, min(100, tech_score))
+    final_master_score = int(tech_score * 0.7 + fund_score * 0.3) + market_weight + rs_info['bonus'] + plan_penalty + foreign_master_modifier
+    master_score = max(0, min(100, final_master_score))
 
 
 def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
@@ -3598,7 +3909,7 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False
         return None
 
 
-def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bool = False, retry_failed: int = 2) -> Dict[str, Any]:
+def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bool = False, retry_failed: int = 2, vnindex_df=None) -> Dict[str, Any]:
     """Đồng bộ một batch mã cổ phiếu với timeout per-symbol, retry logic và fast_mode"""
     SYMBOL_TIMEOUT = 35 if fast_mode else 60  # Fast mode = 35s, Full mode = 60s
     MAX_RETRIES = retry_failed  # Số lần retry cho failed symbols
@@ -3715,7 +4026,7 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
         print(f"[Sync] Batch {batch_num}/{total_batches}: {batch[:3]}...")
         print(f"[Sync] Progress: {min(i + batch_size, len(symbols))}/{len(symbols)} symbols ({(min(i + batch_size, len(symbols)) / len(symbols) * 100):.0f}%)")
 
-        batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode)
+        batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode, vnindex_df=vnindex_df)
         all_results.extend(batch_result["results"])
         
         if batch_result.get("failed"):
@@ -3870,6 +4181,15 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     # Smart Money & Industry
                     "foreign_buy_streak": data.get("foreign_buy_streak", 0),
                     "foreign_bonus": data.get("foreign_bonus", 0),
+                    "foreign_master_modifier": data.get("foreign_master_modifier", 0),
+                    "latest_net_val": data.get("latest_net_val", 0.0),
+                    "foreign_absorption_ratio": data.get("foreign_absorption_ratio", 0.0),
+                    "latest_net_val_2": data.get("latest_net_val_2", 0.0),
+                    "foreign_buy_val": data.get("foreign_buy_val", 0.0),
+                    "foreign_sell_val": data.get("foreign_sell_val", 0.0),
+                    "foreign_trading_share": data.get("foreign_trading_share", 0.0),
+                    "foreign_accumulated_trend": data.get("foreign_accumulated_trend", "NEUTRAL"),
+                    "foreign_accumulated_slope": data.get("foreign_accumulated_slope", 0.0),
                     "industry_performance": data.get("industry_performance", 0),
                     "is_industry_leader": data.get("is_industry_leader", True),
                     # Real R:R
@@ -3891,9 +4211,8 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
                     "criteria_met": data["criteria_met"],
                     "criteria_list": data["criteria_list"],
                     "recommendation_label": data.get("recommendation_label", ""),
-                    # Fair Value (v10.3 - Dynamic Sector Valuation)
+                    # Fair Value
                     "fv_daily": data.get("fv_daily", 0),
-                    "fv_weekly": data.get("fv_weekly", 0),
                     "valuation_status": data.get("valuation_status", "N/A"),
                     "intrinsic_value": data.get("intrinsic_value", 0),
                     "sector_median_pe": data.get("sector_median_pe") or 0,
@@ -4313,7 +4632,6 @@ def diagnose_stock(symbol: str) -> Dict[str, Any]:
             
             print(f"\n  📊 COMPUTED VALUES:")
             print(f"  ├── FV Daily: {analysis.get('fv_daily')}")
-            print(f"  ├── FV Weekly: {analysis.get('fv_weekly')}")
             print(f"  ├── Intrinsic Value: {analysis.get('intrinsic_value')}")
             print(f"  ├── Take Profit: {analysis.get('take_profit')}")
             print(f"  ├── Stop Loss: {analysis.get('stop_loss')}")
@@ -4364,7 +4682,6 @@ def diagnose_stock(symbol: str) -> Dict[str, Any]:
                 "master_score": analysis.get('master_score'),
                 "is_vetoed": is_vetoed,
                 "veto_reason": veto_reason,
-                "fv_weekly": analysis.get('fv_weekly'),
                 "valuation_status": analysis.get('valuation_status'),
                 "valuation_source": analysis.get('valuation_source')
             }

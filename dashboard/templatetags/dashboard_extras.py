@@ -22,6 +22,14 @@ def pprint(obj):
 
 
 @register.filter
+def to_int(value):
+    try:
+        return str(int(float(value)))
+    except Exception:
+        return str(value)
+
+
+@register.filter
 def json_dumps(obj):
     try:
         return json.dumps(obj, indent=2, ensure_ascii=False, default=str)
