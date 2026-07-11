@@ -625,27 +625,29 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     """Trang xem tất cả cổ phiếu với thông tin phân tích chi tiết"""
     from .models import StockData, StockAnalysis
 
-    # Lấy filter từ query params
-    filter_type = request.GET.get("filter", "all")
+    # ===== PIPELINE 6 BƯỚC (Server-side filtering) =====
+    filter_strategy = request.GET.get("strategy", "all")
     sort_by = request.GET.get("sort", "master_score")
-    search = request.GET.get("search", "").upper()
-    min_score = int(request.GET.get("min_score", 0))
-    market_filter = request.GET.get("market", "all")  # VN30, MIDCAP, SMALL, ALL
+    search = request.GET.get("search", "").upper().strip()
+    try:
+        min_score = int(request.GET.get("min_score", 0) or 0)
+    except ValueError:
+        min_score = 0
+    market_filter = request.GET.get("market", "all")
+    industry_filter = request.GET.get("industry", "all")
+    below_fv_only = request.GET.get("below_fv") in ("1", "true", "on", "yes")
 
-    # Query cơ bản
     analyses = StockAnalysis.objects.select_related("symbol").all()
 
-    # Filter by signal/type
-    if filter_type == "buy":
-        analyses = analyses.filter(signal__in=["BUY", "STRONG_BUY"])
-    elif filter_type == "veto":
+    # Tầng lọc 1 (Chiến thuật): GOLD ≥ 70, GUERRILLA 55-69, RISK < 55, VETO
+    if filter_strategy == "GOLD":
+        analyses = analyses.filter(is_vetoed=False, master_score__gte=70)
+    elif filter_strategy == "GUERRILLA":
+        analyses = analyses.filter(is_vetoed=False, master_score__gte=55, master_score__lt=70)
+    elif filter_strategy == "RISK":
+        analyses = analyses.filter(is_vetoed=False, master_score__lt=55)
+    elif filter_strategy == "VETO":
         analyses = analyses.filter(is_vetoed=True)
-    elif filter_type == "fast":
-        analyses = analyses.filter(is_fast_pick=True, is_vetoed=False)
-    elif filter_type == "high_risk":
-        analyses = analyses.filter(is_high_risk=True)
-    elif filter_type == "qualified":
-        analyses = analyses.filter(criteria_met__gte=7)
 
     # Filter by market group (VN30, MIDCAP, SMALL)
     if market_filter == "vn30":
@@ -656,16 +658,16 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         analyses = analyses.filter(symbol__market_group="SMALL")
 
     # Filter by industry - sử dụng get_industry() method từ model
-    industry_filter = request.GET.get("industry", "all")
     if industry_filter and industry_filter != "all":
-        # Lấy tất cả stock có trong danh sách filter
-        from dashboard.models import StockData
         matching_symbols = []
-        for s in StockData.objects.only('symbol').all():
-            ind = s.industry or s.get_industry()
+        for s in StockData.objects.only('symbol', 'industry').all():
+            ind = s.industry or s.get_industry() or ''
             if industry_filter.lower() in ind.lower():
                 matching_symbols.append(s.symbol)
-        analyses = analyses.filter(symbol__symbol__in=matching_symbols)
+        if matching_symbols:
+            analyses = analyses.filter(symbol__symbol__in=matching_symbols)
+        else:
+            analyses = analyses.none()
 
     # Search
     if search:
@@ -675,7 +677,10 @@ def stock_list(request: HttpRequest) -> HttpResponse:
     if min_score > 0:
         analyses = analyses.filter(master_score__gte=min_score)
 
-    # Sort
+    # Lấy danh sách thô trước khi áp dụng post-fetch filter (giá < fv_daily)
+    raw_analyses = list(analyses)
+
+    # BƯỚC 6: Sắp xếp
     sort_fields = {
         "master_score": "-master_score",
         "rsi": "-symbol__rsi",
@@ -686,11 +691,64 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         "change": "-symbol__change_percent",
     }
     order_field = sort_fields.get(sort_by, "-master_score")
-    analyses = analyses.order_by(order_field)
+    sort_attr = order_field.lstrip('-')
+
+    def _sort_key(x):
+        v = getattr(x, sort_attr, None)
+        if v is None:
+            v = getattr(x.symbol, sort_attr, 0)
+        return v or 0
+
+    raw_analyses.sort(key=_sort_key, reverse=order_field.startswith('-'))
+
+    # BƯỚC 4: Tầng lọc Định giá (post-fetch)
+    if below_fv_only:
+        raw_analyses = [
+            a for a in raw_analyses
+            if (getattr(a, 'fv_daily', 0) or 0) > 0
+            and (a.symbol.price or 0) < (getattr(a, 'fv_daily', 0) or 0)
+        ]
+
+    # Tính count cho từng tab Chiến thuật (áp dụng filter phụ, không áp strategy hiện tại)
+    base_for_counts = StockAnalysis.objects.select_related("symbol").all()
+    if market_filter == "vn30":
+        base_for_counts = base_for_counts.filter(symbol__symbol__in=list(VN30_SYMBOLS))
+    elif market_filter == "midcap":
+        base_for_counts = base_for_counts.filter(symbol__market_group="MIDCAP")
+    elif market_filter == "small":
+        base_for_counts = base_for_counts.filter(symbol__market_group="SMALL")
+    if industry_filter and industry_filter != "all":
+        matching_symbols_c = []
+        for s in StockData.objects.only('symbol', 'industry').all():
+            ind = s.industry or s.get_industry() or ''
+            if industry_filter.lower() in ind.lower():
+                matching_symbols_c.append(s.symbol)
+        if matching_symbols_c:
+            base_for_counts = base_for_counts.filter(symbol__symbol__in=matching_symbols_c)
+        else:
+            base_for_counts = base_for_counts.none()
+    if search:
+        base_for_counts = base_for_counts.filter(symbol__symbol__icontains=search)
+    if min_score > 0:
+        base_for_counts = base_for_counts.filter(master_score__gte=min_score)
+
+    base_list = list(base_for_counts)
+    if below_fv_only:
+        base_list = [
+            a for a in base_list
+            if (getattr(a, 'fv_daily', 0) or 0) > 0
+            and (a.symbol.price or 0) < (getattr(a, 'fv_daily', 0) or 0)
+        ]
+
+    count_all = len(base_list)
+    count_gold = sum(1 for a in base_list if (not getattr(a, 'is_vetoed', False)) and (getattr(a, 'master_score', 0) or 0) >= 70)
+    count_guerrilla = sum(1 for a in base_list if (not getattr(a, 'is_vetoed', False)) and 55 <= (getattr(a, 'master_score', 0) or 0) < 70)
+    count_risk = sum(1 for a in base_list if (not getattr(a, 'is_vetoed', False)) and (getattr(a, 'master_score', 0) or 0) < 55)
+    count_veto = sum(1 for a in base_list if getattr(a, 'is_vetoed', False))
 
     # Build stocks list
     stocks = []
-    for a in analyses[:200]:  # Limit to 200 for performance
+    for a in raw_analyses[:200]:  # Limit to 200 for performance
         s = a.symbol
         stocks.append({
             "symbol": s.symbol,
@@ -838,12 +896,18 @@ def stock_list(request: HttpRequest) -> HttpResponse:
         "market_rsi": market_rsi,
         "market_rsi_status": market_rsi_status,
         "is_market_high_risk": is_market_high_risk,
-        "current_filter": filter_type,
+        "current_strategy": filter_strategy,
         "current_sort": sort_by,
         "current_market": market_filter,
         "current_industry": industry_filter,
+        "below_fv_only": below_fv_only,
         "search_value": search,
         "min_score_value": min_score,
+        "count_all": count_all,
+        "count_gold": count_gold,
+        "count_guerrilla": count_guerrilla,
+        "count_risk": count_risk,
+        "count_veto": count_veto,
         "last_sync": last_sync,
     }
 
@@ -945,7 +1009,11 @@ def export_stocks_csv(request: HttpRequest) -> HttpResponse:
             round(a.market_rsi, 0) if a.market_rsi else '',
             getattr(a, 'stock_risk_level', 'Medium'),
             "Yes" if getattr(a, 'is_market_high_risk', False) else "No",
-            a.criteria_met, "Yes" if a.is_fast_pick else "No"
+            a.criteria_met, "Yes" if a.is_fast_pick else "No",
+            getattr(a, 'foreign_buy_val', 0), getattr(a, 'foreign_sell_val', 0),
+            getattr(a, 'foreign_trading_share', 0),
+            getattr(a, 'foreign_accumulated_trend', 'NEUTRAL'),
+            getattr(a, 'foreign_accumulated_slope', 0),
         ])
 
     return response

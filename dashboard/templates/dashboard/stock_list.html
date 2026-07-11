@@ -9,8 +9,8 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #0a0f1a 0%, #0e1a2b 100%);
-            color: #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
             min-height: 100vh;
             padding: 20px;
         }
@@ -21,21 +21,23 @@
             align-items: center;
             margin-bottom: 24px;
             padding-bottom: 16px;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #e2e8f0;
         }
-        .header h1 { font-size: 24px; color: #fff; }
-        .header .subtitle { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .header h1 { font-size: 24px; color: #0f172a; font-weight: 700; }
+        .header .subtitle { font-size: 12px; color: #475569; font-weight: 500; margin-top: 4px; }
         .nav-links { display: flex; gap: 12px; }
         .nav-links a {
-            color: #94a3b8;
+            color: #475569;
             text-decoration: none;
             padding: 8px 16px;
             border-radius: 8px;
-            background: #1e293b;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             transition: all 0.2s;
+            font-weight: 500;
         }
-        .nav-links a:hover { background: #334155; color: #fff; }
-        .nav-links a.active { background: #3b82f6; color: #fff; }
+        .nav-links a:hover { background: #f1f5f9; color: #0f172a; }
+        .nav-links a.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
 
         .export-btn {
             background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
@@ -50,8 +52,9 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
         }
-        .export-btn:hover { opacity: 0.9; }
+        .export-btn:hover { opacity: 0.92; }
 
         /* Summary Cards */
         .summary-row {
@@ -61,26 +64,29 @@
             margin-bottom: 24px;
         }
         .summary-card {
-            background: #1e293b;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
             padding: 16px;
             text-align: center;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.06);
         }
         .summary-value {
             font-size: 28px;
             font-weight: 700;
-            color: #fff;
+            color: #1e293b;
         }
-        .summary-value.buy { color: #22c55e; }
-        .summary-value.veto { color: #ef4444; }
+        .summary-value.buy { color: #16a34a; }
+        .summary-value.veto { color: #dc2626; }
         .summary-value.fast { color: #f59e0b; }
         .summary-value.qualified { color: #8b5cf6; }
-        .summary-value.neutral { color: #94a3b8; }
-        .summary-label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .summary-value.neutral { color: #64748b; }
+        .summary-label { font-size: 12px; color: #334155; margin-top: 4px; font-weight: 600; }
 
         /* Filters */
         .filters {
-            background: #1e293b;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 20px;
@@ -88,6 +94,7 @@
             flex-wrap: wrap;
             gap: 12px;
             align-items: center;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
         }
         .filters .filter-group {
             display: flex;
@@ -96,12 +103,12 @@
         }
         .filters label {
             font-size: 13px;
-            color: #94a3b8;
+            color: #475569;
         }
         .filters select, .filters input {
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: #fff;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #0f172a;
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 13px;
@@ -109,18 +116,19 @@
         .filters select:focus, .filters input:focus {
             outline: none;
             border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
         }
         .filter-btn {
             padding: 8px 16px;
             border-radius: 6px;
             font-size: 13px;
             cursor: pointer;
-            border: 1px solid #334155;
-            background: #0f172a;
-            color: #94a3b8;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
             transition: all 0.2s;
         }
-        .filter-btn:hover { border-color: #3b82f6; color: #fff; }
+        .filter-btn:hover { border-color: #3b82f6; color: #1e293b; }
         .filter-btn.active {
             background: #3b82f6;
             border-color: #3b82f6;
@@ -129,9 +137,11 @@
 
         /* Table */
         .table-container {
-            background: #1e293b;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
             overflow: hidden;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
         }
         .table-scroll {
             overflow-x: auto;
@@ -142,10 +152,10 @@
             min-width: 1400px;
         }
         th {
-            background: #0f172a;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #334155;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             padding: 12px 8px;
             text-align: left;
@@ -153,48 +163,52 @@
             position: sticky;
             top: 0;
             cursor: pointer;
+            border-bottom: 1px solid #e2e8f0;
         }
-        th:hover { color: #fff; }
+        th:hover { color: #0f172a; }
         td {
             padding: 10px 8px;
             font-size: 13px;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #e2e8f0;
             white-space: nowrap;
+            color: #334155;
         }
-        tr:hover { background: #1e293b; }
-        tr.vetoed { opacity: 0.6; background: rgba(239, 68, 68, 0.05); }
-        tr.fast-pick { background: rgba(245, 158, 11, 0.05); }
-        tr.qualified { background: rgba(34, 197, 94, 0.05); }
+        tbody tr { background: #ffffff; transition: background 0.15s ease; }
+        tr:hover { background: #f8fafc !important; }
+        tr.vetoed { background: rgba(239, 68, 68, 0.04); }
+        tr.fast-pick { background: rgba(245, 158, 11, 0.06); }
+        tr.qualified { background: rgba(34, 197, 94, 0.06); }
 
-        /* Badges */
+        /* Badges (Light theme - pastel + dark text) */
         .badge {
             display: inline-block;
             padding: 3px 8px;
             border-radius: 4px;
             font-size: 11px;
             font-weight: 600;
+            border: 1px solid transparent;
         }
-        .badge-buy { background: #22c55e; color: #fff; }
-        .badge-sell { background: #ef4444; color: #fff; }
-        .badge-wait { background: #64748b; color: #fff; }
-        .badge-veto { background: #ef4444; color: #fff; }
-        .badge-fast { background: #f59e0b; color: #000; }
-        .badge-high-risk { background: #dc2626; color: #fff; }
-        .badge-qualified { background: #8b5cf6; color: #fff; }
-        .badge-very-low { background: #10b981; color: #fff; }
-        .badge-low { background: #22c55e; color: #fff; }
-        .badge-medium { background: #f59e0b; color: #000; }
-        .badge-gold { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
-        .badge-guerrilla { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
-        .badge-diamond { background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #a855f7 100%); color: #fff; box-shadow: 0 0 12px rgba(139, 92, 246, 0.5); }
-        .badge-risk { background: #334155; color: #94a3b8; }
-        .badge-veto-group { 
-            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); 
-            color: #fff; 
-            font-weight: 700; 
-            font-size: 12px; 
+        .badge-buy { background: #dcfce7; color: #166534; border-color: #22c55e; }
+        .badge-sell { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+        .badge-wait { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+        .badge-veto { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+        .badge-fast { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+        .badge-high-risk { background: #fee2e2; color: #991b1b; border-color: #dc2626; }
+        .badge-qualified { background: #ede9fe; color: #6d28d9; border-color: #8b5cf6; }
+        .badge-very-low { background: #dcfce7; color: #166534; border-color: #10b981; }
+        .badge-low { background: #dcfce7; color: #166534; border-color: #22c55e; }
+        .badge-medium { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+        .badge-gold { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+        .badge-guerrilla { background: #dcfce7; color: #166534; border-color: #22c55e; }
+        .badge-diamond { background: #ede9fe; color: #6d28d9; border-color: #a855f7; }
+        .badge-risk { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+        .badge-veto-group {
+            background: #fee2e2;
+            color: #991b1b;
+            font-weight: 700;
+            font-size: 12px;
             padding: 4px 10px;
-            box-shadow: 0 2px 8px rgba(220, 38, 38, 0.5);
+            border-color: #ef4444;
         }
 
         /* Recommendation Label Styles - Strategy Group Styling */
@@ -208,38 +222,35 @@
             white-space: nowrap;
         }
         .rec-label-gold {
-            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.25) 100%);
-            color: #fbbf24;
-            border: 1px solid rgba(251, 191, 36, 0.5);
-            box-shadow: 0 0 12px rgba(251, 191, 36, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #f59e0b;
         }
         .rec-label-guerrilla {
-            background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(22, 163, 74, 0.2) 100%);
-            color: #4ade80;
-            border: 1px solid rgba(34, 197, 94, 0.4);
-            box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #22c55e;
         }
         .rec-label-risk {
-            background: rgba(148, 163, 184, 0.1);
-            color: #94a3b8;
-            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
         }
         .rec-label-veto {
-            background: rgba(239, 68, 68, 0.1);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            opacity: 0.7;
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+            opacity: 0.85;
         }
         .rec-label-default {
-            background: rgba(148, 163, 184, 0.1);
-            color: #cbd5e1;
-            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
         }
 
         /* Strategy Filter Bar */
         .strategy-filter-container {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            background: #ffffff;
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -247,7 +258,8 @@
             flex-wrap: wrap;
             gap: 10px;
             align-items: center;
-            border: 1px solid #334155;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
         }
 
         /* Filter Toolbar - New Layout */
@@ -258,7 +270,9 @@
             margin-bottom: 16px;
             border-radius: 12px;
             overflow: hidden;
-            border: 1px solid #334155;
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
         }
         .toolbar-row {
             display: flex;
@@ -266,10 +280,10 @@
             gap: 12px;
             align-items: center;
             padding: 14px 16px;
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            background: #ffffff;
         }
         .toolbar-row:first-child {
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid #e2e8f0;
         }
         .strategy-row {
             padding: 0;
@@ -280,23 +294,24 @@
             gap: 8px;
         }
         .toolbar-input {
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: #fff;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #0f172a;
             padding: 10px 14px;
             border-radius: 8px;
             font-size: 13px;
             min-width: 180px;
         }
+        .toolbar-input::placeholder { color: #94a3b8; }
         .toolbar-input:focus {
             outline: none;
             border-color: #3b82f6;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
         }
         .toolbar-select {
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: #fff;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #0f172a;
             padding: 10px 14px;
             border-radius: 8px;
             font-size: 13px;
@@ -305,9 +320,10 @@
         .toolbar-select:focus {
             outline: none;
             border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
         }
         .toolbar-submit {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
             color: #fff;
             border: none;
             padding: 10px 24px;
@@ -317,14 +333,37 @@
             cursor: pointer;
             margin-left: auto;
             transition: all 0.2s;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
         }
         .toolbar-submit:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45);
+        }
+        .fv-toggle-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border: 1px solid #22c55e;
+            border-radius: 8px;
+            color: #15803d;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #dcfce7;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .fv-toggle-label:hover {
+            background: #bbf7d0;
+        }
+        .fv-toggle-label input[type="checkbox"] {
+            accent-color: #22c55e;
+            cursor: pointer;
         }
         .strategy-filter-label {
             font-size: 13px;
-            color: #94a3b8;
+            color: #475569;
             font-weight: 600;
             margin-right: 8px;
         }
@@ -337,44 +376,42 @@
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            border: 2px solid transparent;
+            border: 1px solid #cbd5e1;
             transition: all 0.25s ease;
-            background: #0f172a;
-            color: #94a3b8;
+            background: #ffffff;
+            color: #475569;
         }
         .strategy-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
         }
         .strategy-btn.active {
-            border-color: currentColor;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.1);
         }
-        .strategy-btn.all { border-color: #64748b; }
-        .strategy-btn.all.active { background: #64748b; color: #fff; }
-        .strategy-btn.gold { border-color: #f59e0b; color: #f59e0b; }
-        .strategy-btn.gold.active { background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #000; }
-        .strategy-btn.guerrilla { border-color: #22c55e; color: #22c55e; }
-        .strategy-btn.guerrilla.active { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #fff; }
-        .strategy-btn.risk { border-color: #94a3b8; color: #94a3b8; }
-        .strategy-btn.risk.active { background: #475569; color: #fff; }
-        .strategy-btn.veto { border-color: #ef4444; color: #ef4444; }
-        .strategy-btn.veto.active { background: #dc2626; color: #fff; }
+        .strategy-btn.all { border-color: #94a3b8; color: #475569; }
+        .strategy-btn.all.active { background: #64748b; color: #fff; border-color: #64748b; }
+        .strategy-btn.gold { border-color: #f59e0b; color: #92400e; }
+        .strategy-btn.gold.active { background: #fef3c7; color: #92400e; border-color: #f59e0b; box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25); }
+        .strategy-btn.guerrilla { border-color: #22c55e; color: #166534; }
+        .strategy-btn.guerrilla.active { background: #dcfce7; color: #166534; border-color: #22c55e; box-shadow: 0 2px 6px rgba(34, 197, 94, 0.2); }
+        .strategy-btn.risk { border-color: #94a3b8; color: #475569; }
+        .strategy-btn.risk.active { background: #f1f5f9; color: #475569; border-color: #64748b; }
+        .strategy-btn.veto { border-color: #ef4444; color: #991b1b; }
+        .strategy-btn.veto.active { background: #fee2e2; color: #991b1b; border-color: #ef4444; box-shadow: 0 2px 6px rgba(239, 68, 68, 0.2); }
         .strategy-count {
-            background: rgba(255,255,255,0.2);
+            background: rgba(15, 23, 42, 0.06);
+            color: inherit;
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 11px;
+            font-weight: 700;
         }
+        .strategy-btn.active .strategy-count { background: rgba(255, 255, 255, 0.4); color: inherit; }
 
         /* Row veto styling */
         tr.row-veto {
-            opacity: 0.5;
-            background: rgba(239, 68, 68, 0.05) !important;
-        }
-        tr.row-veto:hover {
-            opacity: 0.8;
+            background: rgba(239, 68, 68, 0.04) !important;
         }
 
         /* Veto tooltip */
@@ -388,8 +425,8 @@
             bottom: 100%;
             left: 50%;
             transform: translateX(-50%);
-            background: #1e293b;
-            color: #ef4444;
+            background: #ffffff;
+            color: #991b1b;
             padding: 6px 10px;
             border-radius: 6px;
             font-size: 11px;
@@ -402,6 +439,7 @@
             max-width: 300px;
             white-space: normal;
             text-align: left;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
         }
         .veto-tooltip:hover::after {
             opacity: 1;
@@ -431,16 +469,16 @@
         .score-medium { background: #f59e0b; }
         .score-low { background: #ef4444; }
 
-        .positive { color: #22c55e; }
-        .negative { color: #ef4444; }
+        .positive { color: #15803d; font-weight: 700; }
+        .negative { color: #b91c1c; font-weight: 700; }
 
         .symbol-cell {
             font-weight: 700;
-            color: #3b82f6;
+            color: #1d4ed8;
         }
         .company-cell {
             font-size: 11px;
-            color: #64748b;
+            color: #475569;
             max-width: 150px;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -470,7 +508,9 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -480,7 +520,7 @@
             display: flex;
         }
         .modal-content {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            background: #ffffff;
             border-radius: 16px;
             max-width: 900px;
             width: 100%;
@@ -488,15 +528,15 @@
             overflow-y: auto;
             padding: 24px;
             position: relative;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(15, 23, 42, 0.05);
         }
         .modal-close {
             position: absolute;
             top: 16px;
             right: 16px;
-            background: #334155;
-            border: none;
-            color: #fff;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            color: #475569;
             width: 32px;
             height: 32px;
             border-radius: 8px;
@@ -506,36 +546,40 @@
             align-items: center;
             justify-content: center;
         }
-        .modal-close:hover { background: #475569; }
+        .modal-close:hover { background: #e2e8f0; color: #0f172a; }
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
             margin-bottom: 20px;
             padding-bottom: 16px;
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid #e2e8f0;
         }
         .modal-title {
             font-size: 28px;
             font-weight: 700;
-            color: #3b82f6;
+            color: #0f172a;
         }
-        .modal-company { font-size: 14px; color: #94a3b8; margin-top: 4px; }
+        .modal-company { font-size: 14px; color: #475569; font-weight: 500; margin-top: 4px; }
         .modal-price {
             text-align: right;
         }
-        .modal-price .price { font-size: 32px; font-weight: 700; color: #fff; }
+        .modal-price .price { font-size: 32px; font-weight: 700; color: #0f172a; }
         .modal-price .change { font-size: 16px; margin-top: 4px; }
+        .positive { color: #15803d; font-weight: 700; }
+        .negative { color: #b91c1c; font-weight: 700; }
         .modal-section {
             margin-bottom: 20px;
         }
         .modal-section h3 {
             font-size: 14px;
-            color: #94a3b8;
+            color: #0f172a;
+            font-weight: 700;
             text-transform: uppercase;
             margin-bottom: 12px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #e2e8f0;
+            letter-spacing: 0.5px;
         }
         .modal-grid {
             display: grid;
@@ -543,15 +587,17 @@
             gap: 12px;
         }
         .modal-item {
-            background: #0f172a;
+            background: #f8fafc;
             padding: 12px;
             border-radius: 8px;
+            border: 1px solid #e2e8f0;
         }
-        .modal-item .label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
-        .modal-item .value { font-size: 18px; font-weight: 600; color: #fff; }
-        .modal-item .value.positive { color: #22c55e; }
-        .modal-item .value.negative { color: #ef4444; }
-        .modal-item .value.neutral { color: #94a3b8; }
+        .modal-item .label { font-size: 11px; color: #475569; font-weight: 600; margin-bottom: 4px; }
+        .modal-item .value { font-size: 18px; font-weight: 700; color: #0f172a; }
+        .modal-item .value.positive { color: #15803d; font-weight: 700; }
+        .modal-item .value.negative { color: #b91c1c; font-weight: 700; }
+        .modal-item .value.neutral { color: #334155; font-weight: 700; }
+        .modal-item .value.slight { color: #b45309; font-weight: 700; }
         .modal-badges {
             display: flex;
             gap: 8px;
@@ -563,7 +609,7 @@
             gap: 12px;
             margin-top: 20px;
             padding-top: 16px;
-            border-top: 1px solid #334155;
+            border-top: 1px solid #e2e8f0;
         }
         .modal-btn {
             padding: 12px 24px;
@@ -571,25 +617,27 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            border: none;
+            border: 1px solid transparent;
             transition: all 0.2s;
         }
         .modal-btn.primary {
-            background: #3b82f6;
+            background: #2563eb;
             color: #fff;
+            border-color: #2563eb;
         }
-        .modal-btn.primary:hover { background: #2563eb; }
+        .modal-btn.primary:hover { background: #1d4ed8; }
         .modal-btn.secondary {
-            background: #334155;
-            color: #fff;
+            background: #ffffff;
+            color: #475569;
+            border-color: #cbd5e1;
         }
-        .modal-btn.secondary:hover { background: #475569; }
+        .modal-btn.secondary:hover { background: #f1f5f9; color: #0f172a; }
 
         /* Score Breakdown Panel */
         .score-breakdown {
             display: none;
-            background: #0f172a;
-            border: 1px solid #334155;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             border-radius: 10px;
             margin-top: 14px;
             padding: 14px;
@@ -597,11 +645,12 @@
         .score-breakdown.active { display: block; }
         .score-breakdown h4 {
             font-size: 12px;
-            color: #94a3b8;
+            color: #0f172a;
+            font-weight: 700;
             margin: 0 0 12px 0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #e2e8f0;
             padding-bottom: 8px;
         }
         .breakdown-row {
@@ -609,12 +658,13 @@
             justify-content: space-between;
             align-items: center;
             padding: 6px 0;
-            border-bottom: 1px solid #1e293b;
+            border-bottom: 1px solid #e2e8f0;
             font-size: 12px;
         }
         .breakdown-row:last-child { border-bottom: none; }
         .breakdown-row .b-label {
-            color: #cbd5e1;
+            color: #1e293b;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -629,71 +679,80 @@
             transition: color 0.2s;
             line-height: 1;
         }
-        .breakdown-row .b-label .hint-btn:hover { color: #38bdf8; }
+        .breakdown-row .b-label .hint-btn:hover { color: #2563eb; }
         .breakdown-row .b-value {
-            font-weight: 600;
-            color: #fff;
+            font-weight: 700;
+            color: #0f172a;
         }
-        .breakdown-row .b-value.pos { color: #22c55e; }
-        .breakdown-row .b-value.neg { color: #ef4444; }
-        .breakdown-row .b-value.neu { color: #94a3b8; }
+        .breakdown-row .b-value.pos { color: #16a34a; }
+        .breakdown-row .b-value.neg { color: #dc2626; }
+        .breakdown-row .b-value.neu { color: #475569; font-weight: 600; }
         .breakdown-row.subtotal {
-            background: #1e293b;
+            background: #ffffff;
             border-radius: 6px;
             padding: 8px 10px;
             margin-top: 4px;
             border-bottom: none;
+            border: 1px solid #e2e8f0;
         }
         .breakdown-row.total {
-            background: #1e3a5f;
+            background: #eff6ff;
             border-radius: 6px;
             padding: 10px 10px;
             margin-top: 6px;
             border-bottom: none;
+            border: 1px solid #bfdbfe;
             font-size: 13px;
         }
-        .breakdown-row.total .b-label { color: #e2e8f0; font-weight: 600; }
-        .breakdown-row.total .b-value { color: #38bdf8; font-size: 16px; }
-        .breakdown-row.modifier .b-label { color: #f59e0b; }
+        .breakdown-row.total .b-label { color: #0f172a; font-weight: 600; }
+        .breakdown-row.total .b-value { color: #2563eb; font-size: 16px; }
+        .breakdown-row.modifier .b-label { color: #b45309; }
         .breakdown-row.modifier .b-value { font-size: 13px; }
 
         /* Tooltip */
         .metric-tooltip {
             position: fixed;
             z-index: 10002;
-            background: #1e293b;
-            border: 1px solid #334155;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 8px;
             padding: 10px 14px;
             max-width: 280px;
             font-size: 12px;
-            color: #e2e8f0;
+            color: #334155;
             line-height: 1.5;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
             pointer-events: none;
         }
-        .metric-tooltip strong { color: #38bdf8; display: block; margin-bottom: 4px; font-size: 13px; }
-        .metric-tooltip .tt-good { color: #22c55e; font-weight: 600; }
-        .metric-tooltip .tt-bad { color: #ef4444; font-weight: 600; }
-        .metric-tooltip .tt-note { color: #f59e0b; font-size: 11px; margin-top: 4px; }
+        .metric-tooltip strong { color: #2563eb; display: block; margin-bottom: 4px; font-size: 13px; }
+        #modalExplanation { color: #334155; font-size: 13px; line-height: 1.8; }
+        #modalExplanation strong { color: #0f172a; font-weight: 700; }
+        #modalExplanation .tt-good { color: #15803d; font-weight: 700; }
+        #modalExplanation .tt-bad { color: #dc2626; font-weight: 700; }
+        #modalExplanation .tt-note { color: #92400e; }
+        .metric-tooltip strong { color: #1e40af; }
+        .metric-tooltip .tt-good { color: #15803d; font-weight: 600; }
+        .metric-tooltip .tt-bad { color: #dc2626; font-weight: 600; }
+        .metric-tooltip .tt-note { color: #b45309; font-size: 11px; margin-top: 4px; }
 
-        /* Industry badges */
+        /* Industry badges (light theme - pastel) */
         .industry-badge {
             display: inline-block;
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 10px;
             font-weight: 600;
-            background: #334155;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
         }
-        .industry-banking { background: #1e3a5f; color: #60a5fa; }
-        .industry-tech { background: #1e3a3f; color: #34d399; }
-        .industry-retail { background: #3f1e5f; color: #a78bfa; }
-        .industry-real-estate { background: #5f3f1e; color: #fbbf24; }
-        .industry-steel { background: #3f3f3f; color: #9ca3af; }
-        .industry-oil { background: #3f1e1e; color: #f87171; }
-        .industry-securities { background: #1e3f1e; color: #4ade80; }
+        .industry-banking { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+        .industry-tech { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+        .industry-retail { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+        .industry-real-estate { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+        .industry-steel { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+        .industry-oil { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+        .industry-securities { background: #dcfce7; color: #166534; border-color: #86efac; }
 
         /* VWAP distance indicator */
         .vwap-distance {
@@ -768,7 +827,7 @@
             <h1>📊 Danh Sách Cổ Phiếu</h1>
             <div class="subtitle">Xem chi tiết tất cả cổ phiếu đã quét</div>
             {% if last_sync %}
-            <div class="subtitle" style="font-size: 11px; color: #64748b;">
+            <div class="subtitle" style="font-size: 11px; color: #475569;">
                 🔄 Cập nhật lần cuối: {{ last_sync }}
             </div>
             {% endif %}
@@ -821,14 +880,17 @@
         </div>
     </div>
 
-    <!-- Filter Toolbar -->
-    <form method="get" class="filter-toolbar">
+    <!-- Filter Toolbar (Unified Form) -->
+    <form method="get" class="filter-toolbar" id="unifiedFilterForm">
+        <!-- Hidden input cho Strategy (sẽ được JS set khi click tab) -->
+        <input type="hidden" name="strategy" id="strategyInput" value="{{ current_strategy|default:'all' }}">
+
         <!-- Row 1: System Controls -->
         <div class="toolbar-row">
             <div class="toolbar-group">
                 <input type="text" name="search" value="{{ search_value }}" placeholder="🔍 Tìm mã cổ phiếu..." class="toolbar-input">
             </div>
-            
+
             <div class="toolbar-group">
                 <select name="market" class="toolbar-select">
                     <option value="all" {% if current_market == 'all' %}selected{% endif %}>🏛️ Tất cả</option>
@@ -840,7 +902,7 @@
 
             <div class="toolbar-group">
                 <select name="industry" class="toolbar-select">
-                    <option value="all">🏭 Tất cả ngành</option>
+                    <option value="all" {% if current_industry == 'all' %}selected{% endif %}>🏭 Tất cả ngành</option>
                     <option value="Banking" {% if current_industry == 'Banking' %}selected{% endif %}>🏦 Ngân hàng</option>
                     <option value="Real Estate" {% if current_industry == 'Real Estate' %}selected{% endif %}>🏠 Bất động sản</option>
                     <option value="Securities" {% if current_industry == 'Securities' %}selected{% endif %}>📈 Chứng khoán</option>
@@ -853,12 +915,12 @@
                     <option value="Other" {% if current_industry == 'Other' %}selected{% endif %}>📦 Khác</option>
                 </select>
             </div>
-            
+
             <div class="toolbar-group">
-                <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100" 
+                <input type="number" name="min_score" value="{{ min_score_value }}" min="0" max="100"
                        placeholder="Score ≥" class="toolbar-input" style="width: 100px;">
             </div>
-            
+
             <div class="toolbar-group">
                 <select name="sort" class="toolbar-select">
                     <option value="master_score" {% if current_sort == 'master_score' %}selected{% endif %}>📊 Score</option>
@@ -869,28 +931,35 @@
                     <option value="change" {% if current_sort == 'change' %}selected{% endif %}>📉 Change%</option>
                 </select>
             </div>
-            
+
+            <div class="toolbar-group">
+                <label class="fv-toggle-label">
+                    <input type="checkbox" name="below_fv" value="1" {% if below_fv_only %}checked{% endif %}>
+                    <span>💰 Giá &lt; FV Daily</span>
+                </label>
+            </div>
+
             <button type="submit" class="toolbar-submit">✓ Áp Dụng</button>
         </div>
-        
-        <!-- Row 2: Strategy Filters -->
+
+        <!-- Row 2: Strategy Filters (click = auto-submit form) -->
         <div class="toolbar-row strategy-row">
             <div class="strategy-filter-container" style="margin: 0; padding: 12px 16px;">
                 <span class="strategy-filter-label">🎯 Lọc Chiến Thuật:</span>
-                <button type="button" class="strategy-btn all active" onclick="filterByStrategy('all')">
-                    Tất cả <span class="strategy-count" id="count-all">0</span>
+                <button type="button" class="strategy-btn all {% if current_strategy == 'all' or not current_strategy %}active{% endif %}" onclick="selectStrategy('all')">
+                    Tất cả <span class="strategy-count">{{ count_all|default:0 }}</span>
                 </button>
-                <button type="button" class="strategy-btn gold" onclick="filterByStrategy('GOLD')">
-                    💎 Vàng Ròng <span class="strategy-count" id="count-gold">0</span>
+                <button type="button" class="strategy-btn gold {% if current_strategy == 'GOLD' %}active{% endif %}" onclick="selectStrategy('GOLD')">
+                    💎 Vàng Ròng <span class="strategy-count">{{ count_gold|default:0 }}</span>
                 </button>
-                <button type="button" class="strategy-btn guerrilla" onclick="filterByStrategy('GUERRILLA')">
-                    🚀 Du Kích <span class="strategy-count" id="count-guerrilla">0</span>
+                <button type="button" class="strategy-btn guerrilla {% if current_strategy == 'GUERRILLA' %}active{% endif %}" onclick="selectStrategy('GUERRILLA')">
+                    🚀 Du Kích <span class="strategy-count">{{ count_guerrilla|default:0 }}</span>
                 </button>
-                <button type="button" class="strategy-btn risk" onclick="filterByStrategy('RISK')">
-                    🔥 Rủi Ro <span class="strategy-count" id="count-risk">0</span>
+                <button type="button" class="strategy-btn risk {% if current_strategy == 'RISK' %}active{% endif %}" onclick="selectStrategy('RISK')">
+                    🔥 Rủi Ro <span class="strategy-count">{{ count_risk|default:0 }}</span>
                 </button>
-                <button type="button" class="strategy-btn veto" onclick="filterByStrategy('VETO')">
-                    🚫 Loại Bỏ <span class="strategy-count" id="count-veto">0</span>
+                <button type="button" class="strategy-btn veto {% if current_strategy == 'VETO' %}active{% endif %}" onclick="selectStrategy('VETO')">
+                    🚫 Loại Bỏ <span class="strategy-count">{{ count_veto|default:0 }}</span>
                 </button>
             </div>
         </div>
@@ -1338,30 +1407,17 @@
             document.getElementById('count-veto').textContent = counts.veto;
         }
         
+        function selectStrategy(group) {
+            const input = document.getElementById('strategyInput');
+            const form = document.getElementById('unifiedFilterForm');
+            if (!input || !form) return;
+            input.value = group;
+            form.submit();
+        }
+
+        // Backward compat: nếu code cũ vẫn gọi filterByStrategy, chuyển sang server-side
         function filterByStrategy(group) {
-            const rows = document.querySelectorAll('table tbody tr[data-symbol]');
-            
-            // Cập nhật active state cho nút
-            document.querySelectorAll('.strategy-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            const activeBtn = document.querySelector(`.strategy-btn.${group.toLowerCase()}`);
-            if (activeBtn) activeBtn.classList.add('active');
-            
-            // Lọc hiển thị
-            rows.forEach(row => {
-                const rowGroup = row.dataset.finalGroup;
-                
-                if (group === 'all') {
-                    row.style.display = '';
-                } else if (rowGroup === group) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-            
-            console.log(`[Filter] Hiển thị nhóm: ${group}`);
+            selectStrategy(group);
         }
         
         // Chạy khi DOM ready
@@ -2491,9 +2547,12 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             if (elSymbol) elSymbol.textContent = stockData.symbol || '';
             if (elCompany) elCompany.textContent = (stockData.company_name || '') + ' | ' + (stockData.industry || stockData.sector || 'Other') + ' | ' + (stockData.market_group || 'MIDCAP');
             if (elPrice) elPrice.textContent = formatNumber(stockData.price, 1);
-            if (elFVDaily) elFVDaily.textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
-
             const price = stockData.price || 0;
+
+            if (elFVDaily) {
+                elFVDaily.textContent = stockData.fv_daily > 0 ? formatNumber(stockData.fv_daily, 0) : 'N/A';
+                elFVDaily.className = 'value ' + (stockData.fv_daily > price ? 'positive' : stockData.fv_daily > 0 ? 'negative' : 'neutral');
+            }
             const fvDaily = stockData.fv_daily || 0;
             let gaugePos = 50;
             if (fvDaily > 0 && price > 0) {
@@ -2586,14 +2645,19 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 elRSI.textContent = (stockData.rsi || 50).toFixed(0);
                 elRSI.className = 'value ' + getRSIClass(stockData.rsi);
             }
-            if (elADX) elADX.textContent = (stockData.adx || 0).toFixed(0);
+            if (elADX) {
+                const adxVal = stockData.adx || 0;
+                elADX.textContent = adxVal.toFixed(0);
+                elADX.className = 'value ' + (adxVal >= 25 ? 'positive' : adxVal >= 15 ? 'slight' : 'neutral');
+            }
             if (elCMF) {
                 elCMF.textContent = (stockData.cmf >= 0 ? '+' : '') + (stockData.cmf || 0).toFixed(3);
                 elCMF.className = 'value ' + ((stockData.cmf || 0) >= 0 ? 'positive' : 'negative');
             }
             if (elMFI) {
-                elMFI.textContent = (stockData.mfi || 50).toFixed(0);
-                elMFI.className = 'value ' + ((stockData.mfi || 50) >= 50 ? 'positive' : 'negative');
+                const mfiVal = stockData.mfi || 50;
+                elMFI.textContent = mfiVal.toFixed(0);
+                elMFI.className = 'value ' + (mfiVal >= 80 ? 'negative' : mfiVal >= 60 ? 'positive' : mfiVal >= 40 ? 'neutral' : 'negative');
             }
 
             if (stockData.vwap > 0) {
@@ -2609,36 +2673,71 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 elIchimoku.textContent = (stockData.ichimoku_status || 'neutral').toUpperCase();
                 elIchimoku.className = 'value ' + (stockData.ichimoku_status === 'bullish' ? 'positive' : stockData.ichimoku_status === 'bearish' ? 'negative' : 'neutral');
             }
-            if (elTenkan) elTenkan.textContent = stockData.ichimoku_tenkan > 0 ? formatNumber(stockData.ichimoku_tenkan, 1) : 'N/A';
-            if (elKijun) elKijun.textContent = stockData.ichimoku_kijun > 0 ? formatNumber(stockData.ichimoku_kijun, 1) : 'N/A';
+            if (elTenkan) {
+                elTenkan.textContent = stockData.ichimoku_tenkan > 0 ? formatNumber(stockData.ichimoku_tenkan, 1) : 'N/A';
+                elTenkan.className = 'value ' + (stockData.ichimoku_tenkan > price ? 'positive' : 'neutral');
+            }
+            if (elKijun) {
+                elKijun.textContent = stockData.ichimoku_kijun > 0 ? formatNumber(stockData.ichimoku_kijun, 1) : 'N/A';
+                elKijun.className = 'value ' + (stockData.ichimoku_kijun > price ? 'positive' : 'neutral');
+            }
 
             if (elST) {
                 elST.textContent = (stockData.supertrend_signal || 'neutral').toUpperCase();
                 elST.className = 'value ' + (stockData.supertrend_signal === 'buy' ? 'positive' : stockData.supertrend_signal === 'sell' ? 'negative' : 'neutral');
             }
-            if (elSTValue) elSTValue.textContent = stockData.supertrend > 0 ? formatNumber(stockData.supertrend, 1) : 'N/A';
+            if (elSTValue) {
+                elSTValue.textContent = stockData.supertrend > 0 ? formatNumber(stockData.supertrend, 1) : 'N/A';
+                const stDist = stockData.supertrend > 0 ? ((price - stockData.supertrend) / price * 100) : 0;
+                elSTValue.className = 'value ' + (stockData.supertrend_signal === 'buy' ? (stDist > 3 ? 'positive' : 'slight') : 'neutral');
+            }
 
-            if (elSMA10) elSMA10.textContent = stockData.sma_10 > 0 ? formatNumber(stockData.sma_10, 1) : 'N/A';
-            if (elSMA20) elSMA20.textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
-            if (elSMA50) elSMA50.textContent = stockData.sma_50 > 0 ? formatNumber(stockData.sma_50, 1) : 'N/A';
+            if (elSMA10) {
+                elSMA10.textContent = stockData.sma_10 > 0 ? formatNumber(stockData.sma_10, 1) : 'N/A';
+                elSMA10.className = 'value ' + (stockData.sma_10 > 0 && price > stockData.sma_10 ? 'positive' : 'negative');
+            }
+            if (elSMA20) {
+                elSMA20.textContent = stockData.sma_20 > 0 ? formatNumber(stockData.sma_20, 1) : 'N/A';
+                elSMA20.className = 'value ' + (stockData.sma_20 > 0 && price > stockData.sma_20 ? 'positive' : 'negative');
+            }
+            if (elSMA50) {
+                elSMA50.textContent = stockData.sma_50 > 0 ? formatNumber(stockData.sma_50, 1) : 'N/A';
+                elSMA50.className = 'value ' + (stockData.sma_50 > 0 && price > stockData.sma_50 ? 'positive' : 'negative');
+            }
 
             if (elBBUpper) elBBUpper.textContent = stockData.bb_upper > 0 ? formatNumber(stockData.bb_upper, 1) : 'N/A';
             if (elBBLower) elBBLower.textContent = stockData.bb_lower > 0 ? formatNumber(stockData.bb_lower, 1) : 'N/A';
-            if (elBBPercent) elBBPercent.textContent = (stockData.bb_percent || 50).toFixed(0) + '%';
+            if (elBBPercent) {
+                const bbPct = stockData.bb_percent || 50;
+                elBBPercent.textContent = bbPct.toFixed(0) + '%';
+                elBBPercent.className = 'value ' + (bbPct >= 80 || bbPct <= 20 ? 'slight' : 'neutral');
+            }
 
             if (elMACD) {
                 elMACD.textContent = (stockData.macd >= 0 ? '+' : '') + (stockData.macd || 0).toFixed(2);
                 elMACD.className = 'value ' + ((stockData.macd || 0) > 0 ? 'positive' : 'negative');
             }
-            if (elMACDSignal) elMACDSignal.textContent = (stockData.macd_signal >= 0 ? '+' : '') + (stockData.macd_signal || 0).toFixed(2);
+            if (elMACDSignal) {
+                elMACDSignal.textContent = (stockData.macd_signal >= 0 ? '+' : '') + (stockData.macd_signal || 0).toFixed(2);
+                elMACDSignal.className = 'value ' + ((stockData.macd_signal || 0) > 0 ? 'positive' : 'negative');
+            }
 
             if (elFScore) {
                 elFScore.textContent = (stockData.f_score || 0) + '/9';
                 elFScore.className = 'value ' + ((stockData.f_score || 0) >= 7 ? 'positive' : (stockData.f_score || 0) >= 4 ? '' : 'negative');
             }
-            if (elROE) elROE.textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
-            if (elPE) elPE.textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
-            if (elPB) elPB.textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+            if (elROE) {
+                elROE.textContent = stockData.roe ? stockData.roe.toFixed(1) + '%' : 'N/A';
+                elROE.className = 'value ' + ((stockData.roe || 0) >= 15 ? 'positive' : (stockData.roe || 0) >= 10 ? 'slight' : 'negative');
+            }
+            if (elPE) {
+                elPE.textContent = stockData.pe ? stockData.pe.toFixed(1) : 'N/A';
+                elPE.className = 'value ' + ((stockData.pe || 0) > 0 && (stockData.pe || 0) <= 15 ? 'positive' : (stockData.pe || 0) > 0 && (stockData.pe || 0) <= 25 ? 'slight' : 'negative');
+            }
+            if (elPB) {
+                elPB.textContent = stockData.pb ? stockData.pb.toFixed(2) : 'N/A';
+                elPB.className = 'value ' + ((stockData.pb || 0) > 0 && (stockData.pb || 0) <= 1.5 ? 'positive' : (stockData.pb || 0) > 0 && (stockData.pb || 0) <= 3 ? 'slight' : 'negative');
+            }
             if (elProfitGrowth) {
                 if (stockData.profit_growth !== null && stockData.profit_growth !== undefined) {
                     const pg = stockData.profit_growth;
@@ -2719,27 +2818,42 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                     const elNIM = getEl('modalNIM');
                     const elNPL = getEl('modalNPL');
                     const elCASA = getEl('modalCASA');
-                    if (elNIM) elNIM.textContent = stockData.nim ? stockData.nim.toFixed(2) + '%' : 'N/A';
+                    if (elNIM) {
+                        elNIM.textContent = stockData.nim ? stockData.nim.toFixed(2) + '%' : 'N/A';
+                        elNIM.className = 'value ' + ((stockData.nim || 0) >= 3 ? 'positive' : (stockData.nim || 0) >= 2 ? 'slight' : 'negative');
+                    }
                     if (elNPL) {
                         elNPL.textContent = stockData.npl ? stockData.npl.toFixed(2) + '%' : 'N/A';
-                        elNPL.className = 'value ' + ((stockData.npl || 0) > 3 ? 'negative' : 'positive');
+                        elNPL.className = 'value ' + ((stockData.npl || 0) > 3 ? 'negative' : (stockData.npl || 0) > 2 ? 'slight' : 'positive');
                     }
-                    if (elCASA) elCASA.textContent = stockData.casa ? stockData.casa.toFixed(1) + '%' : 'N/A';
+                    if (elCASA) {
+                        elCASA.textContent = stockData.casa ? stockData.casa.toFixed(1) + '%' : 'N/A';
+                        elCASA.className = 'value ' + ((stockData.casa || 0) >= 25 ? 'positive' : (stockData.casa || 0) >= 15 ? 'slight' : 'negative');
+                    }
                     
                     // Real Estate metrics
                     const elDE = getEl('modalDE');
                     const elInvDays = getEl('modalInventoryDays');
                     if (elDE) {
                         elDE.textContent = stockData.debt_equity ? stockData.debt_equity.toFixed(2) : 'N/A';
-                        elDE.className = 'value ' + ((stockData.debt_equity || 0) > 1.5 ? 'negative' : 'positive');
+                        elDE.className = 'value ' + ((stockData.debt_equity || 0) > 2 ? 'negative' : (stockData.debt_equity || 0) > 1 ? 'slight' : 'positive');
                     }
-                    if (elInvDays) elInvDays.textContent = stockData.inventory_days ? stockData.inventory_days.toFixed(0) + 'd' : 'N/A';
+                    if (elInvDays) {
+                        elInvDays.textContent = stockData.inventory_days ? stockData.inventory_days.toFixed(0) + 'd' : 'N/A';
+                        elInvDays.className = 'value ' + ((stockData.inventory_days || 0) > 730 ? 'negative' : (stockData.inventory_days || 0) > 365 ? 'slight' : 'positive');
+                    }
                     
                     // Manufacturing metrics
                     const elGM = getEl('modalGrossMargin');
                     const elInvTurn = getEl('modalInvTurnover');
-                    if (elGM) elGM.textContent = stockData.gross_margin ? stockData.gross_margin.toFixed(1) + '%' : 'N/A';
-                    if (elInvTurn) elInvTurn.textContent = stockData.inventory_turnover ? stockData.inventory_turnover.toFixed(1) : 'N/A';
+                    if (elGM) {
+                        elGM.textContent = stockData.gross_margin ? stockData.gross_margin.toFixed(1) + '%' : 'N/A';
+                        elGM.className = 'value ' + ((stockData.gross_margin || 0) >= 25 ? 'positive' : (stockData.gross_margin || 0) >= 15 ? 'slight' : 'negative');
+                    }
+                    if (elInvTurn) {
+                        elInvTurn.textContent = stockData.inventory_turnover ? stockData.inventory_turnover.toFixed(1) : 'N/A';
+                        elInvTurn.className = 'value ' + ((stockData.inventory_turnover || 0) >= 5 ? 'positive' : (stockData.inventory_turnover || 0) >= 3 ? 'slight' : 'negative');
+                    }
                 } else {
                     sectorMetrics.style.display = 'none';
                 }
@@ -2794,7 +2908,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                     f5Trend = 'SLIGHT_DIST';
                 }
                 elForeign5DayTrend.textContent = f5Trend;
-                const f5Class = f5Trend === 'ACCUMULATING' ? 'positive' : f5Trend === 'DISTRIBUTING' ? 'negative' : 'neutral';
+                const f5Class = f5Trend === 'ACCUMULATING' ? 'positive' : f5Trend === 'DISTRIBUTING' ? 'negative' : f5Trend === 'SLIGHT_ACCUM' || f5Trend === 'SLIGHT_DIST' ? 'slight' : 'neutral';
                 elForeign5DayTrend.className = 'value ' + f5Class;
             }
             if (elLatestNetVal) {
@@ -2809,7 +2923,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             }
             if (elAbsorption) {
                 elAbsorption.textContent = absorption.toFixed(1) + '%';
-                elAbsorption.className = 'value ' + (absorption >= 10 ? 'positive' : 'neutral');
+                elAbsorption.className = 'value ' + (absorption >= 10 ? 'positive' : absorption >= 5 ? 'slight' : 'neutral');
             }
             if (elForeignBuyVal) {
                 const buyB = buyVal / 1e9;
@@ -2859,7 +2973,11 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 elForeignNote.textContent = note;
             }
 
-            if (elMarketRSI) elMarketRSI.textContent = (stockData.market_rsi || 50).toFixed(0);
+            if (elMarketRSI) {
+                const mRSI = stockData.market_rsi || 50;
+                elMarketRSI.textContent = mRSI.toFixed(0);
+                elMarketRSI.className = 'value ' + (mRSI >= 70 ? 'negative' : mRSI <= 30 ? 'positive' : 'neutral');
+            }
 
             if (elMarketRisk) {
                 if (stockData.is_market_high_risk) {
@@ -3007,7 +3125,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                     html += '</ul>';
                 }
 
-                html += '<p style="color: #94a3b8; font-size: 12px; background: rgba(239,68,68,0.1); padding: 10px; border-radius: 6px;">';
+                html += '<p style="font-size: 12px; background: rgba(239,68,68,0.08); padding: 10px; border-radius: 6px; color: #991b1b; font-weight: 600;">';
                 html += '💡 <strong>Lời khuyên:</strong> Tốt nhất nên <strong>ĐỨNG NGOÀI</strong>. Rủi ro vượt xa cơ hội trong bối cảnh hiện tại.';
                 html += '</p></div>';
             }
@@ -3020,8 +3138,8 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const rsBonus = data.rs_bonus || 0;
             const indPerf = data.rs_industry_performance || data.industry_performance || 0;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #3b82f6;">';
-            html += '<div style="color: #60a5fa; font-weight: bold; margin-bottom: 8px;">📈 1. SỨC MẠNH TƯƠNG ĐỐI (RS)</div>';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f1f5f9; border-radius: 8px; border-left: 3px solid #3b82f6;">';
+            html += '<div style="color: #1e40af; font-weight: bold; margin-bottom: 8px;">📈 1. SỨC MẠNH TƯƠNG ĐỐI (RS)</div>';
             
             if (rsLabel === 'LEADER') {
                 html += `<p style="color: #22c55e; margin: 0;"><strong>${rsLabel} (+${rsBonus} điểm)</strong> - Cổ phiếu vượt trội hơn ${Math.abs(indPerf).toFixed(1)}% so với VN-Index. Đây là dấu hiệu <strong>Smart Money đang mua gom mạnh</strong>. Top 15% thị trường.</p>`;
@@ -3040,8 +3158,8 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const rsi = data.rsi || 50;
             const mfi = data.mfi || 50;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #8b5cf6;">';
-            html += '<div style="color: #a78bfa; font-weight: bold; margin-bottom: 8px;">⚡ 2. CHỈ BÁO MOMENTUM (RSI & MFI)</div>';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #8b5cf6;">';
+            html += '<div style="color: #6d28d9; font-weight: bold; margin-bottom: 8px;">⚡ 2. CHỈ BÁO MOMENTUM (RSI & MFI)</div>';
             html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">';
             
             // RSI Analysis
@@ -3093,9 +3211,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const supertrendSignal = data.supertrend_signal || 'neutral';
             const trend = data.trend || 'SIDEWAYS';
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #06b6d4;">';
-            html += '<div style="color: #22d3ee; font-weight: bold; margin-bottom: 8px;">📉 3. CHỈ BÁO XU HƯỚNG</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #06b6d4;">';
+            html += '<div style="color: #0891b2; font-weight: bold; margin-bottom: 8px;">📉 3. CHỈ BÁO XU HƯỚNG</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             // ADX
             if (adx >= 25) {
@@ -3130,8 +3248,8 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             // 4. VOLUME INDICATORS (CMF)
             const cmf = data.cmf || 0;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #f59e0b;">';
-            html += '<div style="color: #fbbf24; font-weight: bold; margin-bottom: 8px;">📊 4. CHỈ BÁO KHỐI LƯỢNG (CMF)</div>';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #f59e0b;">';
+            html += '<div style="color: #b45309; font-weight: bold; margin-bottom: 8px;">📊 4. CHỈ BÁO KHỐI LƯỢNG (CMF)</div>';
             
             if (cmf > 0.2) {
                 html += `<p style="color: #22c55e; margin: 0;"><strong>CMF +${cmf.toFixed(3)} - DÒNG TIỀN VÀO RẤT MẠNH</strong>. Khối lượng giao dịch xác nhận xu hướng tăng. "Smart Money" đang mua gom. Đây là tín hiệu <strong>rất tích cực</strong>.</p>`;
@@ -3152,9 +3270,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const sma50 = data.sma_50 || 0;
             const price = data.price || 0;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #ec4899;">';
-            html += '<div style="color: #f472b6; font-weight: bold; margin-bottom: 8px;">📐 5. ĐƯỜNG TRUNG BÌNH ĐỘNG (MA)</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #ec4899;">';
+            html += '<div style="color: #be185d; font-weight: bold; margin-bottom: 8px;">📐 5. ĐƯỜNG TRUNG BÌNH ĐỘNG (MA)</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             if (sma10 > 0 && sma20 > 0 && sma50 > 0) {
                 // Golden Cross / Death Cross check
@@ -3189,9 +3307,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const bbLower = data.bb_lower || 0;
             const bbPercent = data.bb_percent || 50;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #14b8a6;">';
-            html += '<div style="color: #2dd4bf; font-weight: bold; margin-bottom: 8px;">🎯 6. BOLLINGER BANDS</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #14b8a6;">';
+            html += '<div style="color: #0f766e; font-weight: bold; margin-bottom: 8px;">🎯 6. BOLLINGER BANDS</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             if (bbUpper > 0 && bbLower > 0) {
                 const bbWidth = bbUpper - bbLower;
@@ -3218,9 +3336,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const macdSignal = data.macd_signal || 0;
             const histogram = data.histogram || 0;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #a855f7;">';
-            html += '<div style="color: #c084fc; font-weight: bold; margin-bottom: 8px;">📊 7. MACD</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #a855f7;">';
+            html += '<div style="color: #7e22ce; font-weight: bold; margin-bottom: 8px;">📊 7. MACD</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             html += `<li>MACD Line: <strong>${macd >= 0 ? '+' : ''}${macd.toFixed(2)}</strong></li>`;
             html += `<li>Signal Line: <strong>${macdSignal >= 0 ? '+' : ''}${macdSignal.toFixed(2)}</strong></li>`;
@@ -3242,9 +3360,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const kijun = data.ichimoku_kijun || 0;
             const ichimokuStatus = data.ichimoku_status || 'neutral';
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #84cc16;">';
-            html += '<div style="color: #a3e635; font-weight: bold; margin-bottom: 8px;">☁️ 8. ICHIMOKU CLOUD</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #84cc16;">';
+            html += '<div style="color: #65a30d; font-weight: bold; margin-bottom: 8px;">☁️ 8. ICHIMOKU CLOUD</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             html += `<li>Tenkan-sen: <strong>${tenkan > 0 ? tenkan.toFixed(1) : 'N/A'}</strong> (Đường tín hiệu ngắn)</li>`;
             html += `<li>Kijun-sen: <strong>${kijun > 0 ? kijun.toFixed(1) : 'N/A'}</strong> (Đường tín hiệu trung hạn)</li>`;
@@ -3265,8 +3383,8 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const pb = data.pb || 0;
             const profitGrowth = data.profit_growth || 0;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #64748b;">';
-            html += '<div style="color: #94a3b8; font-weight: bold; margin-bottom: 8px;">💼 9. CHỈ SỐ TÀI CHÍNH</div>';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #64748b;">';
+            html += '<div style="color: #334155; font-weight: bold; margin-bottom: 8px;">💼 9. CHỈ SỐ TÀI CHÍNH</div>';
             html += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">';
             
             // F-Score
@@ -3359,9 +3477,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 const nim = data.nim || 0;
                 const casa = data.casa || 0;
                 
-                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #0ea5e9;">';
-                html += '<div style="color: #38bdf8; font-weight: bold; margin-bottom: 8px;">🏦 10. CHỈ SỐ NGÂN HÀNG</div>';
-                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #0ea5e9;">';
+                html += '<div style="color: #1d4ed8; font-weight: bold; margin-bottom: 8px;">🏦 10. CHỈ SỐ NGÂN HÀNG</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
                 
                 let nplColor = npl <= 2 ? '#22c55e' : npl <= 3 ? '#fbbf24' : '#ef4444';
                 html += `<li>NPL: <strong style="color:${nplColor}">${npl > 0 ? npl.toFixed(2) + '%' : 'N/A'}</strong> - ${npl <= 2 ? 'Chất lượng tài sản TỐT' : npl <= 3 ? 'Cần theo dõi' : 'Nợ xấu CAO - RỦI RO!'}</li>`;
@@ -3375,9 +3493,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 const de = data.debt_equity || 0;
                 const invDays = data.inventory_days || 0;
                 
-                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #f97316;">';
-                html += '<div style="color: #fb923c; font-weight: bold; margin-bottom: 8px;">🏗️ 10. CHỈ SỐ BẤT ĐỘNG SẢN</div>';
-                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #f97316;">';
+                html += '<div style="color: #c2410c; font-weight: bold; margin-bottom: 8px;">🏗️ 10. CHỈ SỐ BẤT ĐỘNG SẢN</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
                 
                 let deColor = de <= 1 ? '#22c55e' : de <= 1.5 ? '#fbbf24' : '#ef4444';
                 html += `<li>D/E: <strong style="color:${deColor}">${de > 0 ? de.toFixed(2) : 'N/A'}</strong> - ${de <= 1 ? 'Đòn bẩy AN TOÀN' : de <= 1.5 ? 'Đòn bẩy TRUNG BÌNH' : 'Đòn bẩy CAO - RỦI RO!'}</li>`;
@@ -3389,9 +3507,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                 const gm = data.gross_margin || 0;
                 const invTurn = data.inventory_turnover || 0;
                 
-                html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #eab308;">';
-                html += '<div style="color: #facc15; font-weight: bold; margin-bottom: 8px;">🏭 10. CHỈ SỐ SẢN XUẤT</div>';
-                html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+                html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #eab308;">';
+                html += '<div style="color: #ca8a04; font-weight: bold; margin-bottom: 8px;">🏭 10. CHỈ SỐ SẢN XUẤT</div>';
+                html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
                 
                 let gmColor = gm >= 30 ? '#22c55e' : gm >= 20 ? '#fbbf24' : '#ef4444';
                 html += `<li>Gross Margin: <strong style="color:${gmColor}">${gm > 0 ? gm.toFixed(1) + '%' : 'N/A'}</strong> - ${gm >= 30 ? 'Biên lợi nhuận TỐT' : gm >= 20 ? 'Biên lợi nhuận TRUNG BÌNH' : 'Biên lợi nhuận THẤP'}</li>`;
@@ -3405,9 +3523,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             const marketRSI = data.market_rsi || 50;
             const isMarketHighRisk = data.is_market_high_risk;
             
-            html += '<div style="margin-bottom: 16px; padding: 12px; background: rgba(15,23,42,0.8); border-radius: 8px; border-left: 3px solid #6366f1;">';
-            html += '<div style="color: #818cf8; font-weight: bold; margin-bottom: 8px;">🌐 11. BỐI CẢNH THỊ TRƯỜNG</div>';
-            html += '<ul style="margin: 0; padding-left: 20px; color: #e2e8f0;">';
+            html += '<div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border-left: 3px solid #6366f1;">';
+            html += '<div style="color: #4f46e5; font-weight: bold; margin-bottom: 8px;">🌐 11. BỐI CẢNH THỊ TRƯỜNG</div>';
+            html += '<ul style="margin: 0; padding-left: 20px; color: #334155;">';
             
             if (marketRSI >= 70) {
                 html += `<li>Market RSI: <strong style="color:#ef4444">${marketRSI.toFixed(0)}</strong> - Thị trường <strong>QUÁ MUA</strong>. Khuyến nghị giảm tỷ trọng, chốt lời dần.</li>`;
@@ -3435,9 +3553,9 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
 
             if (isVeto) {
                 html += '<p style="color: #ef4444; font-weight: bold; margin: 0;">🚫 HỆ THỐNG PHỦ QUYẾT: ĐỨNG NGOÀI TUYỆT ĐỐI</p>';
-                html += `<p style="color: #fca5a5; margin-top: 6px; font-size: 13px;">Lý do chặn: ${data.veto_reason}</p>`;
+                html += `<p style="color: #991b1b; margin-top: 6px; font-size: 13px; font-weight: 600;">Lý do chặn: ${data.veto_reason}</p>`;
             } else {
-                html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; line-height: 1.6;">';
+                html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; background: #f1f5f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; line-height: 1.6; border: 1px solid #e2e8f0;">';
                 html += `  <div>• CHIẾN THUẬT: <span style="color:#60a5fa; font-weight:bold;">${data.scan_mode || 'EARLY_TREND'}</span></div>`;
                 html += `  <div>• VÙNG MUA    : <span style="color:#22c55e; font-weight:bold;">${data.entry_quality}</span></div>`;
                 html += `  <div style="grid-column: span 2;">• VỐN GIẢI NGÂN : <span style="color:#fbbf24; font-weight:bold;">${formatNumber(data.optimal_position_size, 0)} VND</span> (Tài khoản cơ sở: 100M)</div>`;
@@ -3699,12 +3817,12 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             </div>
 
             <!-- Explanation Panel (Hidden by default) -->
-            <div id="explanationPanel" style="display: none; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <div id="explanationPanel" style="display: none; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div class="label" style="color: #60a5fa; margin-bottom: 0;">🧠 Phân Tích Chuyên Sâu</div>
-                    <button onclick="document.getElementById('explanationPanel').style.display='none'" style="background:#334155;border:none;color:#94a3b8;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:12px;">✕ Đóng</button>
+                    <div class="label" style="color: #92400e; margin-bottom: 0; font-weight: 700;">🧠 Phân Tích Chuyên Sâu</div>
+                    <button onclick="document.getElementById('explanationPanel').style.display='none'" style="background:#f1f5f9;border:none;color:#475569;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:12px;">✕ Đóng</button>
                 </div>
-                <div id="modalExplanation" style="color: #e2e8f0; font-size: 13px; line-height: 1.8;"></div>
+                <div id="modalExplanation" style="color: #334155; font-size: 13px; line-height: 1.8;"></div>
             </div>
 
             <!-- LÝ DO VETO - Hiện khi bị loại -->
@@ -3718,18 +3836,18 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             <!-- Signal & Score -->
             <div class="modal-section">
                 <!-- Bổ sung khu vực Định Giá trong Modal -->
-<div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-    <h3 style="color: #f8fafc; border: none; margin-bottom: 15px;">🎯 Dự Báo Giá Trị Hợp Lý (Wealth Guard)</h3>
+<div class="modal-section" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+    <h3 style="color: #0f172a; border: none; margin-bottom: 15px;">🎯 Dự Báo Giá Trị Hợp Lý (Wealth Guard)</h3>
     <div class="modal-grid">
         <div class="modal-item" style="border: 1px solid #f59e0b;">
             <div class="label" style="color: #f59e0b;">FV Trong Ngày (Daily) <button class="hint-btn" onclick="showIndicatorInfo('fvdaily')">👁</button></div>
             <div class="value" id="modalFVDaily" style="color: #f59e0b;">--</div>
-            <div style="font-size: 10px; color: #64748b;">Dựa trên VWAP & SMA10</div>
+            <div style="font-size: 10px; color: #475569;">Dựa trên VWAP & SMA10</div>
         </div>
         <div class="modal-item" style="border: 1px solid #3b82f6;">
             <div class="label" style="color: #3b82f6;">FV Trong Tuần (Weekly) <button class="hint-btn" onclick="showIndicatorInfo('fvweekly')">👁</button></div>
             <div class="value" id="modalFVWeekly" style="color: #3b82f6;">--</div>
-            <div style="font-size: 10px; color: #64748b;">Nội tại ngành & Kỹ thuật</div>
+            <div style="font-size: 10px; color: #475569;">Nội tại ngành & Kỹ thuật</div>
         </div>
     </div>
     
@@ -3751,7 +3869,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                     <div class="modal-item">
                         <div class="label">Master Score <button class="hint-btn" onclick="showIndicatorInfo('masterscore')">👁</button></div>
                         <div class="value" id="modalScore">75/100</div>
-                        <div style="font-size: 10px; color: #64748b; margin-top: 2px;" id="modalScoreDetail"></div>
+                        <div style="font-size: 10px; color: #475569; margin-top: 2px;" id="modalScoreDetail"></div>
                     </div>
                     <div class="modal-item">
                         <div class="label">Tech Score <button class="hint-btn" onclick="showIndicatorInfo('techscore')">👁</button></div>
@@ -3798,7 +3916,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                         <div class="value" id="modalStockRisk">Low</div>
                     </div>
                 </div>
-                <div id="modalRiskReason" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; font-size: 12px; color: #94a3b8;"></div>
+                <div id="modalRiskReason" style="margin-top: 12px; padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; color: #334155;"></div>
             </div>
 
             <!-- Criteria List -->
@@ -3838,8 +3956,8 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
             </div>
 
             <!-- Investment Horizon & Progress Bar -->
-            <div class="modal-section" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <h3 style="color: #f8fafc; margin-bottom: 12px;">📊 Investment Horizon</h3>
+            <div class="modal-section" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="color: #0f172a; margin-bottom: 12px;">📊 Investment Horizon</h3>
                 <div class="modal-grid">
                     <div class="modal-item">
                         <div class="label">Khung Thời Gian <button class="hint-btn" onclick="showIndicatorInfo('timeframe')">👁</button></div>
@@ -3865,18 +3983,18 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
                         <span style="color: #f8fafc; font-size: 13px;">🎯 Entry → Take Profit</span>
                         <span id="modalTargetPct" style="color: #22c55e; font-weight: bold;">0%</span>
                     </div>
-                    <div style="background: #0f172a; border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
+                    <div style="background: #f1f5f9; border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
                         <div id="modalProgressBar" style="background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%); height: 100%; width: 0%; transition: width 0.5s ease; border-radius: 8px;"></div>
                         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 11px; font-weight: bold;" id="modalProgressText">Entry → Target</div>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #64748b;">
+                    <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #475569;">
                         <span id="modalEntryPrice">Entry</span>
                         <span id="modalTargetPrice">Target (2ATR)</span>
                     </div>
                 </div>
 
                 <!-- Early Exit Sensor -->
-                <div id="modalEarlyExitSection" style="margin-top: 12px; padding: 10px; background: #0f172a; border-radius: 8px; display: none;">
+                <div id="modalEarlyExitSection" style="margin-top: 12px; padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; display: none;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 16px;">🚨</span>
                         <div>
@@ -3993,7 +4111,7 @@ Lợi nhuận/ngày = Lợi nhuận kỳ vọng / Est. Days<br><br>
 
             <!-- Fundamental -->
             <div class="modal-section">
-                <h3>Sức Khỏe Tài Chính <span id="modalSectorBadge" style="font-size: 11px; color: #64748b; font-weight: normal;"></span></h3>
+                <h3>Sức Khỏe Tài Chính <span id="modalSectorBadge" style="font-size: 11px; color: #475569; font-weight: 500;"></span></h3>
                 <div class="modal-grid">
                     <div class="modal-item">
                         <div class="label">F-Score <button class="hint-btn" onclick="showIndicatorInfo('fscore')">👁</button></div>

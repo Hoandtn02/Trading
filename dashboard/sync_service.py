@@ -1374,7 +1374,9 @@ def calculate_profit_growth(symbol: str) -> dict:
                 return None
             try:
                 v = float(val)
-                return v if v > 0 else None
+                if pd.isna(v):
+                    return None
+                return v
             except:
                 return None
         
@@ -1400,7 +1402,7 @@ def calculate_profit_growth(symbol: str) -> dict:
                 if val is not None:
                     ttm_prev += val
             
-            if ttm_current > 0 and ttm_prev > 0:
+            if abs(ttm_prev) > 0 and ttm_current > 0 and ttm_prev > 0:
                 ttm_growth = ((ttm_current - ttm_prev) / abs(ttm_prev)) * 100
                 result['profit_growth'] = round(ttm_growth, 2)
                 result['profit_growth_note'] = 'TTM'
@@ -1429,7 +1431,7 @@ def calculate_profit_growth(symbol: str) -> dict:
                     same_quarter_last_year = get_profit(row_idx)
                     break
         
-        if same_quarter_last_year is not None:
+        if same_quarter_last_year is not None and abs(same_quarter_last_year) > 0:
             yoy_growth = ((latest_profit - same_quarter_last_year) / abs(same_quarter_last_year)) * 100
             result['profit_growth'] = round(yoy_growth, 2)
             result['profit_growth_note'] = 'YoY'
@@ -3226,73 +3228,6 @@ def compute_core_logic(
     # Recalculate target yield after market-adjusted TP
     target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
 
-    # ========== MARKET WEIGHT (spec: -25..+20) ==========
-    market_weight = 0
-    if market_rsi < 25:
-        market_weight = 20
-    elif market_rsi > 80:
-        market_weight = -20
-    elif market_rsi > 70:
-        market_weight = -10
-
-    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY (spec: -10..+15) ==========
-    rs_bonus = 0
-    rs_label = "NEUTRAL"
-
-    if industry_perf > 5:
-        rs_bonus = 15
-        rs_label = "LEADER"
-    elif industry_perf > 0:
-        rs_bonus = 8
-        rs_label = "OUTPERFORM"
-    elif industry_perf < 0:
-        rs_bonus = -10
-        rs_label = "LAGGARD"
-
-    # ========== FOREIGN FLOW MODIFIER (spec: -25..+30) ==========
-    fmm_latest_net = fund_data.get('latest_net_val', 0.0)
-    fmm_streak = fund_data.get('foreign_buy_streak', 0)
-    absorption = fund_data.get('foreign_absorption_ratio', 0.0)
-    foreign_accumulated_trend = fund_data.get('foreign_accumulated_trend', 'NEUTRAL')
-
-    foreign_master_modifier = 0
-
-    if foreign_accumulated_trend == 'ACCUMULATING':
-        if fmm_latest_net > 0:
-            if absorption > 20:
-                foreign_master_modifier = 25   # Case 1: Gom rực rỡ
-            elif 10 <= absorption <= 20:
-                foreign_master_modifier = 15   # Case 2: Gom bền bỉ
-    elif foreign_accumulated_trend == 'DISTRIBUTING':
-        if fmm_latest_net < 0 and absorption > 20:
-            foreign_master_modifier = -25      # Case 3: Bẫy phân phối
-
-    # Case 4: Streak Bonus — cộng thêm +5 khi streak >= 5 phiên
-    if fmm_streak >= 5:
-        foreign_master_modifier += 5
-
-    # NEUTRAL: streak >= 5 → +8, streak >= 3 → +4, streak=0 + bán ròng → -8
-    if foreign_accumulated_trend == 'NEUTRAL':
-        if fmm_streak >= 5:
-            foreign_master_modifier = 8
-        elif fmm_streak >= 3:
-            foreign_master_modifier = 4
-        elif fmm_streak == 0 and fmm_latest_net < 0:
-            foreign_master_modifier = -8
-
-    foreign_master_modifier = max(-25, min(30, foreign_master_modifier))
-
-    # ========== MASTER SCORE ==========
-    base_master_score = int(round(tech_score * 0.7 + fund_score * 0.3))
-    final_master_score = (
-        base_master_score
-        + market_weight
-        + rs_bonus
-        + plan_penalty
-        + foreign_master_modifier
-    )
-    master_score = max(0, min(100, final_master_score))
-
     rs_info = {
         'bonus': rs_bonus,
         'label': rs_label,
@@ -3364,6 +3299,75 @@ def compute_core_logic(
     if (fv_daily > 0 and price_val > fv_daily * 1.15) or rsi_val > 80:
         signal = "WAIT"
         recommendation_label = "WAIT (OVERVALUED)"
+
+    # ========== MARKET WEIGHT (spec: -25..+20) ==========
+    market_weight = 0
+    if market_rsi < 25:
+        market_weight = 20
+    elif market_rsi > 80:
+        market_weight = -20
+    elif market_rsi > 70:
+        market_weight = -10
+
+    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY (spec: -10..+15) ==========
+    rs_bonus = 0
+    rs_label = "NEUTRAL"
+
+    if industry_perf > 5:
+        rs_bonus = 15
+        rs_label = "LEADER"
+    elif industry_perf > 0:
+        rs_bonus = 8
+        rs_label = "OUTPERFORM"
+    elif industry_perf < 0:
+        rs_bonus = -10
+        rs_label = "LAGGARD"
+
+    # ========== FOREIGN FLOW MODIFIER (spec: -25..+30) ==========
+    fmm_latest_net = fund_data.get('latest_net_val', 0.0)
+    fmm_streak = fund_data.get('foreign_buy_streak', 0)
+    absorption = fund_data.get('foreign_absorption_ratio', 0.0)
+    foreign_accumulated_trend = fund_data.get('foreign_accumulated_trend', 'NEUTRAL')
+
+    foreign_master_modifier = 0
+
+    if foreign_accumulated_trend == 'ACCUMULATING':
+        if fmm_latest_net > 0:
+            if absorption > 20:
+                foreign_master_modifier = 25
+            elif 10 <= absorption <= 20:
+                foreign_master_modifier = 15
+    elif foreign_accumulated_trend == 'DISTRIBUTING':
+        if fmm_latest_net < 0 and absorption > 20:
+            foreign_master_modifier = -25
+
+    if fmm_streak >= 5:
+        foreign_master_modifier += 5
+
+    if foreign_accumulated_trend == 'NEUTRAL':
+        if fmm_streak >= 5:
+            foreign_master_modifier = 8
+        elif fmm_streak >= 3:
+            foreign_master_modifier = 4
+        elif fmm_streak == 0 and fmm_latest_net < 0:
+            foreign_master_modifier = -8
+
+    foreign_master_modifier = max(-25, min(30, foreign_master_modifier))
+
+    # Clamp scores
+    tech_score = max(0, min(100, tech_score))
+    fund_score = max(0, min(100, fund_score))
+
+    # ========== MASTER SCORE ==========
+    base_master_score = int(round(tech_score * 0.7 + fund_score * 0.3))
+    final_master_score = (
+        base_master_score
+        + market_weight
+        + rs_bonus
+        + plan_penalty
+        + foreign_master_modifier
+    )
+    master_score = max(0, min(100, final_master_score))
 
     # ========== RETURN ==========
     return {
@@ -3519,10 +3523,6 @@ def compute_core_logic(
     "entry_quality": entry_quality,
     "entry_quality_reason": entry_quality_reason,
 }
-
-    tech_score = max(0, min(100, tech_score))
-    final_master_score = int(tech_score * 0.7 + fund_score * 0.3) + market_weight + rs_info['bonus'] + plan_penalty + foreign_master_modifier
-    master_score = max(0, min(100, final_master_score))
 
 
 def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
