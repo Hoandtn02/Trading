@@ -593,7 +593,7 @@ FUNCTION_REGISTRY = [
         "group": {
             "name": "Phân tích đầu tư",
             "slug": "analysis",
-            "description": "Phân tích kỹ thuật và cơ bản toàn diện cho cổ phiếu với chỉ báo chuyên sâu (vnstock_ta + vnstock_data)."
+            "description": "Phân tích kỹ thuật và cơ bản toàn diện cho cổ phiếu với chỉ báo chuyên sâu (TradingView + vnstock_data)."
         },
         "functions": [
             {

@@ -2,7 +2,7 @@
 Dashboard Analyzers - Technical & Fundamental Analysis Modules
 
 This module provides comprehensive analysis for various asset types:
-- Stock Analysis: vnstock_ta + vnstock_data Fundamental
+- Stock Analysis: TradingView API + vnstock_data Fundamental
 - Index Analysis: Market Breadth, ADX
 - Commodity Analysis: Gold, Precious Metals
 - Futures Analysis: VN30F

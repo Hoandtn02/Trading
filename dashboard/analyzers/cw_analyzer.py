@@ -121,11 +121,12 @@ class CWAnalyzer:
     def _get_warrant_data(self, data: CWData):
         """Get warrant OHLCV data"""
         try:
-            from vnstock_data import Market
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            mkt = Market()
-            df = mkt.warrant(data.symbol).ohlcv(
-                interval="1D",
+            df = get_ohlcv_with_fallback(
+                symbol=data.symbol,
+                exchange="HOSE",
+                timeframe="1D",
                 length=self.period_ta + 1
             )
             
@@ -133,19 +134,21 @@ class CWAnalyzer:
                 last = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                data.current_price = float(last.get('close', 0)) * 1000
-                data.open_price = float(last.get('open', 0)) * 1000
-                data.high = float(last.get('high', 0)) * 1000
-                data.low = float(last.get('low', 0)) * 1000
+                # Check multiplier (warrant prices are typically in thousands like 1.25 = 1250)
+                current_raw = float(last.get('close', 0))
+                multiplier = 1000 if current_raw < 100 else 1
+                
+                data.current_price = current_raw * multiplier
+                data.open_price = float(last.get('open', 0)) * multiplier
+                data.high = float(last.get('high', 0)) * multiplier
+                data.low = float(last.get('low', 0)) * multiplier
                 data.volume = int(last.get('volume', 0)) if pd.notna(last.get('volume')) else 0
                 
-                prev_close = float(prev.get('close', 0)) * 1000
+                prev_close = float(prev.get('close', 0)) * multiplier
                 if prev_close > 0:
                     data.change_value = data.current_price - prev_close
                     data.change_percent = round(data.change_value / prev_close * 100, 2)
                     
-        except ImportError:
-            self._get_warrant_data_fallback(data)
         except Exception as e:
             print(f"[CWAnalyzer] Error: {e}")
             self._get_warrant_data_fallback(data)
@@ -197,19 +200,23 @@ class CWAnalyzer:
     def _get_underlying_data_fallback(self, data: CWData):
         """Fallback for underlying data"""
         try:
-            from vnstock.explorer.vci.quote import Quote
+            from dashboard.tv_client import get_ohlcv_with_fallback
             import pandas as pd
             
-            q = Quote(symbol=data.underlying, show_log=False)
-            end = pd.Timestamp.today().strftime('%Y-%m-%d')
-            start = (pd.Timestamp.today() - pd.DateOffset(days=5)).strftime('%Y-%m-%d')
-            df = q.history(start=start, end=end, interval='1D')
+            df = get_ohlcv_with_fallback(
+                symbol=data.underlying,
+                exchange="HOSE",
+                timeframe="1D",
+                length=5
+            )
             
             if df is not None and len(df) > 0:
                 last = df.iloc[-1]
                 for col in df.columns:
                     if 'close' in str(col).lower():
-                        data.underlying_price = float(last[col]) * 1000
+                        current_raw = float(last[col])
+                        multiplier = 1000 if current_raw < 1000 else 1
+                        data.underlying_price = current_raw * multiplier
                         break
         except Exception as e:
             print(f"[CWAnalyzer] Underlying fallback error: {e}")
@@ -278,33 +285,36 @@ class CWAnalyzer:
     def _get_underlying_technical(self, data: CWData):
         """Get underlying stock technical analysis"""
         try:
-            from vnstock_ta import Indicator
+            from dashboard.tv_client import get_multiple_indicators
             
-            from vnstock.explorer.vci.quote import Quote
-            import pandas as pd
+            # Request indicators for underlying from TradingView
+            req_indicators = ["STD;RSI", "STD;DMI"]
+            results = get_multiple_indicators(data.underlying, "HOSE", req_indicators)
             
-            q = Quote(symbol=data.underlying, show_log=False)
-            end = pd.Timestamp.today().strftime('%Y-%m-%d')
-            start = (pd.Timestamp.today() - pd.DateOffset(days=90)).strftime('%Y-%m-%d')
-            df = q.history(start=start, end=end, interval='1D')
-            
-            if df is not None and len(df) > 20:
-                indicator = Indicator(close=df['close'])
+            if not results:
+                print(f"[CWAnalyzer] No indicator data returned for {data.underlying}")
+                return
                 
-                rsi = indicator.rsi(period=14)
-                if hasattr(rsi, 'iloc'):
-                    data.underlying_rsi = float(rsi.iloc[-1])
+            # Process results
+            for result in results:
+                ind_name = result.get('indicator')
+                ind_data = result.get('data', [])
+                if not ind_data:
+                    continue
+                    
+                latest = ind_data[-1]
                 
-                adx = indicator.adx(period=14)
-                if hasattr(adx, 'iloc'):
-                    data.underlying_adx = float(adx.iloc[-1])
-                
-                if data.underlying_rsi > 50 and data.underlying_adx > 20:
-                    data.underlying_trend = "BULLISH"
-                elif data.underlying_rsi < 50 and data.underlying_adx > 20:
-                    data.underlying_trend = "BEARISH"
-                else:
-                    data.underlying_trend = "NEUTRAL"
+                if ind_name == "STD;RSI":
+                    data.underlying_rsi = float(latest.get('RSI', data.underlying_rsi))
+                elif ind_name == "STD;DMI":
+                    data.underlying_adx = float(latest.get('ADX', data.underlying_adx))
+                    
+            if data.underlying_rsi > 50 and data.underlying_adx > 20:
+                data.underlying_trend = "BULLISH"
+            elif data.underlying_rsi < 50 and data.underlying_adx > 20:
+                data.underlying_trend = "BEARISH"
+            else:
+                data.underlying_trend = "NEUTRAL"
                             
         except Exception as e:
             print(f"[CWAnalyzer] Technical error: {e}")

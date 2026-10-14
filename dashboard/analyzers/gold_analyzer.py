@@ -191,22 +191,21 @@ class GoldAnalyzer:
         return data
     
     def _get_xau_price(self, data: WorldGoldData):
-        """Get XAU/USD price via yfinance"""
+        """Get XAU/USD price via TradingView API"""
         try:
-            import yfinance as yf
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            gold = yf.Ticker("GC=F")
-            hist = gold.history(period="10d")
+            hist = get_ohlcv_with_fallback('XAUUSD', exchange='OANDA', timeframe='1D', count=10)
             
             if hist is not None and len(hist) > 0:
                 last = hist.iloc[-1]
                 prev = hist.iloc[-2] if len(hist) > 1 else last
                 
-                data.current_price = float(last['Close'])
-                data.high = float(last['High'])
-                data.low = float(last['Low'])
+                data.current_price = float(last['close'])
+                data.high = float(last['high'])
+                data.low = float(last['low'])
                 
-                prev_close = float(prev['Close'])
+                prev_close = float(prev['close'])
                 if prev_close > 0:
                     data.change = data.current_price - prev_close
                     data.change_pct = round(data.change / prev_close * 100, 2)
@@ -214,25 +213,23 @@ class GoldAnalyzer:
             print(f"[GoldAnalyzer] XAU price error: {e}")
     
     def _get_intermarket(self, data: WorldGoldData):
-        """Get DXY and US10Y Yield"""
+        """Get DXY and US10Y Yield via TradingView API"""
         try:
-            import yfinance as yf
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
             # DXY
             try:
-                dxy = yf.Ticker("DX-Y.NYB")
-                hist = dxy.history(period="5d")
+                hist = get_ohlcv_with_fallback('DXY', exchange='CAPITALCOM', timeframe='1D', count=5)
                 if hist is not None and len(hist) > 0:
-                    data.dxy = float(hist['Close'].iloc[-1])
+                    data.dxy = float(hist['close'].iloc[-1])
             except:
                 pass
             
             # US10Y
             try:
-                us10y = yf.Ticker("^TNX")
-                hist = us10y.history(period="5d")
+                hist = get_ohlcv_with_fallback('US10Y', exchange='TVC', timeframe='1D', count=5)
                 if hist is not None and len(hist) > 0:
-                    data.us10y_yield = float(hist['Close'].iloc[-1])
+                    data.us10y_yield = float(hist['close'].iloc[-1])
             except:
                 pass
         except Exception as e:
@@ -241,17 +238,17 @@ class GoldAnalyzer:
     def _calculate_technical(self, data: WorldGoldData):
         """Calculate technical indicators for XAU/USD"""
         try:
-            import yfinance as yf
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            gold = yf.Ticker("GC=F")
-            df = gold.history(period=f"{max(100, self.period_ta)}d")
+            count = max(100, self.period_ta)
+            df = get_ohlcv_with_fallback('XAUUSD', exchange='OANDA', timeframe='1D', count=count)
             
             if df is None or len(df) < 20:
                 return
             
-            close = df['Close']
-            high = df['High']
-            low = df['Low']
+            close = df['close']
+            high = df['high']
+            low = df['low']
             
             # SMA
             if len(close) >= 20:
@@ -485,17 +482,18 @@ class GoldAnalyzer:
             print(f"[GoldAnalyzer] SJC price error: {e}")
     
     def _get_exchange_rate(self, data: SjcGoldData):
-        """Get USD/VND exchange rate"""
+        """Get USD/VND exchange rate using vnstock_data"""
         try:
-            import yfinance as yf
+            from vnstock_data import Finance
+            finance = Finance()
+            df = finance.foreign_exchange_rate("vcb")
             
-            usd_vnd = yf.Ticker("USDVND=X")
-            hist = usd_vnd.history(period="5d")
-            
-            if hist is not None and len(hist) > 0:
-                data.vnd_usd = float(hist['Close'].iloc[-1])
-        except:
-            pass
+            if df is not None and len(df) > 0:
+                usd_data = df[df['currency'] == 'USD']
+                if not usd_data.empty:
+                    data.vnd_usd = float(usd_data.iloc[0]['sell'])
+        except Exception as e:
+            print(f"[GoldAnalyzer] USD/VND exchange rate error: {e}")
     
     def _calculate_premium(self, data: SjcGoldData):
         """Calculate SJC premium vs world gold"""

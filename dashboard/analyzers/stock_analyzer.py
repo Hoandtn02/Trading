@@ -2,8 +2,9 @@
 Stock Analyzer Module - Technical & Fundamental Analysis
 
 Comprehensive stock analysis using:
-- vnstock_ta for technical indicators (RSI, MACD, ADX, SuperTrend, Bollinger, CMF, MFI, SMA)
-- vnstock_data for OHLCV, Fundamental data, F-Score
+- TradingView API for accurate and scalable OHLCV + Basic Indicators.
+- Manual Pandas Fallbacks for complex technical indicators (SuperTrend, Bollinger, CMF, MFI)
+- vnstock_data for Fundamental data, F-Score
 
 Output format matches ARCHITECTURE_ROADMAP.md specification.
 """
@@ -157,7 +158,7 @@ class StockAnalysis:
 
 class StockAnalyzer:
     """
-    Comprehensive stock analyzer using vnstock_ta and vnstock_data.
+    Comprehensive stock analyzer using TradingView API and vnstock_data.
     
     Usage:
         analyzer = StockAnalyzer()
@@ -220,70 +221,17 @@ class StockAnalyzer:
         return result
     
     def _get_ohlcv(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch OHLCV data from vnstock_data with vnstock fallback"""
-        # Try vnstock_data first
-        try:
-            from vnstock_data import Market
-            mkt = Market()
-            end = pd.Timestamp.today().strftime("%Y-%m-%d")
-            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta)).strftime("%Y-%m-%d")
-            
-            df = mkt.equity(symbol).ohlcv(start=start, end=end, interval="1D")
-            
-            if df is not None and len(df) > 0:
-                # Ensure numeric columns
-                for col in ['open', 'high', 'low', 'close', 'volume']:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-                # API returns prices divided by 1000 - multiply back to actual price
-                price_cols = ['open', 'high', 'low', 'close']
-                for col in price_cols:
-                    if col in df.columns:
-                        df[col] = df[col] * 1000
-                
-                # Set time index if present
-                if 'time' in df.columns:
-                    df.set_index('time', inplace=True)
-                
-                return df
-            
-            return None
-        except (ImportError, Exception) as e:
-            # Fallback to vnstock
-            return self._get_ohlcv_fallback(symbol)
-    
-    def _get_ohlcv_fallback(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Fallback: Get OHLCV from vnstock free library"""
-        try:
-            from vnstock.explorer.vci.quote import Quote
-            
-            q = Quote(symbol=symbol, show_log=False)
-            end = pd.Timestamp.today().strftime("%Y-%m-%d")
-            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta)).strftime("%Y-%m-%d")
-            
-            df = q.history(start=start, end=end, interval='1D')
-            
-            if df is not None and len(df) > 0:
-                # Ensure numeric columns
-                for col in ['open', 'high', 'low', 'close', 'volume']:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-                # vnstock returns prices in thousands (26.40 = 26,400 VND)
-                price_cols = ['open', 'high', 'low', 'close']
-                for col in price_cols:
-                    if col in df.columns:
-                        df[col] = df[col] * 1000
-                
-                return df
-            
-            return None
-        except Exception:
-            return None
+        """Fetch OHLCV data from TradingView API (via microservice)"""
+        from dashboard.tv_client import get_ohlcv_with_fallback
+        df = get_ohlcv_with_fallback(symbol, exchange='HOSE', count=self.period_ta)
+        if df is None:
+             print(f"[StockAnalyzer] Failed to get OHLCV data for {symbol}")
+        else:
+             df.attrs["symbol"] = symbol
+        return df
     
     def _calculate_technical(self, df: pd.DataFrame) -> TechnicalIndicators:
-        """Calculate all technical indicators using vnstock_ta Indicator class"""
+        """Calculate technical indicators utilizing TradingView API and manual Pandas fallbacks"""
         tech = TechnicalIndicators()
         
         if df is None or len(df) < 20:
@@ -304,150 +252,98 @@ class StockAnalyzer:
                 if 'volume' in df.columns:
                     tech.volume = int(df['volume'].iloc[-1]) if pd.notna(df['volume'].iloc[-1]) else 0
         
-        # Calculate indicators using vnstock_ta Indicator class (v0.2.0+)
-        try:
-            from vnstock_ta import Indicator
-            
-            # Initialize indicator with dataframe
-            indicator = Indicator(data=df)
-            
-            # RSI - returns pd.Series named "RSI_14"
-            rsi_series = indicator.rsi(length=14)
-            if rsi_series is not None and len(rsi_series) > 0:
-                tech.rsi = round(float(rsi_series.iloc[-1]), 2)
-            tech.rsi_status = self._get_rsi_status(tech.rsi)
-            
-            # MACD - returns pd.DataFrame with columns: MACD_12_26_9, MACDh_12_26_9, MACDs_12_26_9
-            macd_df = indicator.macd(fast=12, slow=26, signal=9)
-            if macd_df is not None and len(macd_df) > 0 and hasattr(macd_df, 'columns'):
-                # Find MACD line column (the first column without 'h' or 's' suffix)
-                for col in macd_df.columns:
-                    if 'MACD' in col.upper() and 'h' not in col.lower()[-1] and 's' not in col.lower()[-1]:
-                        tech.macd = round(float(macd_df[col].iloc[-1]), 2)
-                        break
-                # Fallback to first column if specific format not found
-                if tech.macd == 0 and len(macd_df.columns) > 0:
-                    tech.macd = round(float(macd_df.iloc[:, 0].iloc[-1]), 2)
-            tech.macd_signal = self._get_macd_status(tech.macd)
-            
-            # ADX - returns pd.DataFrame with columns: ADX_14, DMP_14, DMN_14
-            adx_df = indicator.adx(length=14)
-            if adx_df is not None and len(adx_df) > 0 and hasattr(adx_df, 'columns'):
-                for col in adx_df.columns:
-                    if col.startswith('ADX'):
-                        tech.adx = round(float(adx_df[col].iloc[-1]), 2)
-                        break
-                # Fallback
-                if tech.adx == 0 and len(adx_df.columns) > 0:
-                    tech.adx = round(float(adx_df.iloc[:, 0].iloc[-1]), 2)
-            tech.adx_status = self._get_adx_status(tech.adx)
-            
-            # SMA - returns pd.Series named "SMA_20", "SMA_50"
-            sma_20_series = indicator.sma(length=20)
-            if sma_20_series is not None and len(sma_20_series) > 0 and len(df) >= 20:
-                tech.sma_20 = round(float(sma_20_series.iloc[-1]), 2)
-            
-            sma_50_series = indicator.sma(length=50)
-            if sma_50_series is not None and len(sma_50_series) > 0 and len(df) >= 50:
-                tech.sma_50 = round(float(sma_50_series.iloc[-1]), 2)
+        # Dùng TradingView API cho các chỉ báo cơ bản
+        symbol_name = df.attrs.get("symbol")
+        if symbol_name:
+            try:
+                from dashboard.tv_client import get_multiple_indicators
+                tv_inds = get_multiple_indicators(
+                    symbol=symbol_name,
+                    indicators=["STD;RSI", "STD;MACD", "STD;DMI", "STD;Supertrend", "STD;VWAP"]
+                )
+                if tv_inds:
+                    for item in tv_inds:
+                        ind_name = item.get("indicator")
+                        data = item.get("data")
+                        if not data or len(data) == 0:
+                            continue
+                        last_val = data[-1]
+                        
+                        if ind_name == "STD;RSI" and "RSI" in last_val:
+                            tech.rsi = round(float(last_val["RSI"]), 2)
+                            
+                        elif ind_name == "STD;MACD" and "MACD" in last_val:
+                            tech.macd = round(float(last_val["MACD"]), 2)
+                            
+                        elif ind_name == "STD;DMI" and "ADX" in last_val:
+                            tech.adx = round(float(last_val["ADX"]), 2)
+                            
+                        elif ind_name == "STD;Supertrend" and "Trend_Change" in last_val:
+                            if last_val.get("Up_Trend") and last_val["Up_Trend"] < 1e50:
+                                tech.supertrend_stop = round(float(last_val["Up_Trend"]), 2)
+                                tech.supertrend_signal = "buy"
+                            elif last_val.get("Down_Trend") and last_val["Down_Trend"] < 1e50:
+                                tech.supertrend_stop = round(float(last_val["Down_Trend"]), 2)
+                                tech.supertrend_signal = "sell"
+                                
+                        elif ind_name == "STD;VWAP" and "VWAP" in last_val:
+                            tech.vwap = round(float(last_val["VWAP"]), 2)
+                            
+            except Exception as e:
+                print(f"[StockAnalyzer] TV API Fallback error: {e}")
+
+        # Tính toán SMA qua Pandas
+        if 'close' in df.columns:
+            close = df['close']
+            if len(close) >= 20:
+                tech.sma_20 = round(float(close.rolling(20).mean().iloc[-1]), 2)
+            if len(close) >= 50:
+                tech.sma_50 = round(float(close.rolling(50).mean().iloc[-1]), 2)
             elif tech.sma_20 > 0:
                 tech.sma_50 = tech.sma_20
-            
-            # Trend status
-            tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
-            # FIX: If ADX < 20, trend is SIDEWAY regardless of price position
-            if tech.adx and tech.adx < 20:
-                tech.trend_status = "sideways"
-            
-            # SuperTrend - returns pd.DataFrame with columns: SUPERT_10_3.0, SUPERTd_10_3.0, SUPERTl_10_3.0, SUPERTs_10_3.0
-            st_df = indicator.supertrend(length=10, multiplier=3)
-            if st_df is not None and len(st_df) > 0 and hasattr(st_df, 'columns'):
-                for col in st_df.columns:
-                    if col.startswith('SUPERT') and 'd' not in col and 'l' not in col and 's' not in col:
-                        tech.supertrend_stop = round(float(st_df[col].iloc[-1]), 2)
-                        break
-                    elif col.startswith('SUPERT'):
-                        # Get direction column for signal
-                        pass
-                # Get direction from SUPERTd column
-                for col in st_df.columns:
-                    if 'SUPERTd' in col:
-                        direction = float(st_df[col].iloc[-1])
-                        tech.supertrend_signal = "buy" if direction > 0 else "sell"
-                        break
-                # Fallback: use SUPERT column
-                if tech.supertrend_stop == 0 and len(st_df.columns) > 0:
-                    tech.supertrend_stop = round(float(st_df.iloc[:, 0].iloc[-1]), 2)
-            else:
-                tech.supertrend_signal = "neutral"
-            
-            # VWAP - returns pd.Series named "VWAP_D"
-            vwap_series = indicator.vwap(anchor='D')
-            if vwap_series is not None and len(vwap_series) > 0:
-                tech.vwap = round(float(vwap_series.iloc[-1]), 2)
-            else:
-                # Fallback: calculate VWAP manually
-                if 'high' in df.columns and 'low' in df.columns:
-                    typical = (df['high'] + df['low'] + df['close']) / 3
-                    typical_vol = typical * df['volume']
-                    tech.vwap = round(float((typical_vol.sum() / df['volume'].sum())), 2) if df['volume'].sum() > 0 else tech.current_price
-            tech.vwap_status = "above" if tech.current_price > tech.vwap else "below"
-            
-            # ATR - returns pd.Series named "ATRr_14"
-            atr_series = indicator.atr(length=14)
-            if atr_series is not None and len(atr_series) > 0:
-                tech.atr = round(float(atr_series.iloc[-1]), 2)
-            tech.atr_status = self._get_atr_status(tech.atr, tech.current_price)
-            
-            # Bollinger Bands - returns pd.DataFrame with columns: BBL_14_2.0, BBM_14_2.0, BBU_14_2.0, BBB_14_2.0, BBP_14_2.0
-            bb_df = indicator.bbands(length=20, std=2)
-            if bb_df is not None and hasattr(bb_df, 'columns') and len(bb_df) > 0:
-                bb_cols = list(bb_df.columns)
-                # Find bands by prefix
-                for col in bb_cols:
-                    col_upper = col.upper()
-                    if 'BBL' in col_upper:
-                        tech.bollinger_lower = round(float(bb_df[col].iloc[-1]), 2)
-                    elif 'BBM' in col_upper:
-                        tech.bollinger_middle = round(float(bb_df[col].iloc[-1]), 2)
-                    elif 'BBU' in col_upper:
-                        tech.bollinger_upper = round(float(bb_df[col].iloc[-1]), 2)
                 
-                # If not found by name, use first 3 columns in order: lower, middle, upper
-                if tech.bollinger_upper == 0 and len(bb_cols) >= 3:
-                    tech.bollinger_lower = round(float(bb_df[bb_cols[0]].iloc[-1]), 2)
-                    tech.bollinger_middle = round(float(bb_df[bb_cols[1]].iloc[-1]), 2)
-                    tech.bollinger_upper = round(float(bb_df[bb_cols[2]].iloc[-1]), 2)
+        tech.rsi_status = self._get_rsi_status(tech.rsi)
+        tech.macd_signal = self._get_macd_status(tech.macd)
+        tech.adx_status = self._get_adx_status(tech.adx)
+        tech.trend_status = self._get_trend_status(tech.current_price, tech.sma_20, tech.sma_50)
+        
+        if tech.adx and tech.adx < 20:
+            tech.trend_status = "sideways"
             
-            # Bollinger position (Percent B)
-            if tech.bollinger_upper > tech.bollinger_lower:
-                tech.bollinger_position = round(
-                    (tech.current_price - tech.bollinger_lower) / (tech.bollinger_upper - tech.bollinger_lower), 2
-                )
+        tech.vwap_status = "above" if tech.current_price > tech.vwap else "below"
             
-            # CMF - calculate manually since not in vnstock_ta
-            tech.cmf = self._calculate_cmf(df, period=20)
-            tech.cmf_status = "inflow" if tech.cmf > 0 else "outflow"
-            
-            # MFI - calculate manually since not in vnstock_ta
-            tech.mfi = self._calculate_mfi(df, period=14)
-            tech.mfi_status = self._get_mfi_status(tech.mfi)
-            
-            # Ichimoku Cloud - reliable for VN stock market
-            ichimoku_values = self._calculate_ichimoku(df)
-            tech.ichimoku_tenkan, tech.ichimoku_kijun, tech.ichimoku_span_a, tech.ichimoku_span_b, tech.ichimoku_status = ichimoku_values
-            
-        except ImportError as e:
-            # Fallback if vnstock_ta not available
-            tech = self._calculate_technical_fallback(df)
-        except Exception as e:
-            # Fallback: calculate basic indicators manually
-            tech = self._calculate_technical_fallback(df)
+        # ATR - manual calculation
+        tech.atr = self._calculate_atr(df['high'], df['low'], df['close'])
+        tech.atr_status = self._get_atr_status(tech.atr, tech.current_price)
+        
+        # Bollinger Bands - manual calculation
+        bb_vals = self._calculate_bollinger(df['close'])
+        tech.bollinger_upper = round(bb_vals['upper'], 2)
+        tech.bollinger_middle = round(bb_vals['middle'], 2)
+        tech.bollinger_lower = round(bb_vals['lower'], 2)
+        
+        # Bollinger position (Percent B)
+        if tech.bollinger_upper > tech.bollinger_lower:
+            tech.bollinger_position = round(
+                (tech.current_price - tech.bollinger_lower) / (tech.bollinger_upper - tech.bollinger_lower), 2
+            )
+        
+        # CMF - calculate manually
+        tech.cmf = self._calculate_cmf(df, period=20)
+        tech.cmf_status = "inflow" if tech.cmf > 0 else "outflow"
+        
+        # MFI - calculate manually
+        tech.mfi = self._calculate_mfi(df, period=14)
+        tech.mfi_status = self._get_mfi_status(tech.mfi)
+        
+        # Ichimoku Cloud - reliable for VN stock market
+        ichimoku_values = self._calculate_ichimoku(df)
+        tech.ichimoku_tenkan, tech.ichimoku_kijun, tech.ichimoku_span_a, tech.ichimoku_span_b, tech.ichimoku_status = ichimoku_values
         
         return tech
     
     def _calculate_technical_fallback(self, df: pd.DataFrame) -> TechnicalIndicators:
-        """Fallback technical calculation without vnstock_ta - calculates ALL indicators manually"""
+        """Fallback technical calculation - calculates ALL indicators manually via Pandas"""
         tech = TechnicalIndicators()
         
         close = df['close'].dropna()
@@ -751,19 +647,8 @@ class StockAnalyzer:
             return 0, 0, 0, 0, "neutral"
     
     def _calculate_supertrend(self, df: pd.DataFrame) -> tuple[str, float]:
-        """Calculate SuperTrend (simplified)"""
-        try:
-            from vnstock_ta import SuperTrend
-            st = SuperTrend(df)
-            result = st.get_supertrend()
-            if result is not None and len(result) > 0:
-                signal = "BUY" if result.iloc[-1] < df['close'].iloc[-1] else "SELL"
-                stop = float(result.iloc[-1])
-                return signal, stop
-        except Exception:
-            pass
-        
-        # Fallback
+        """Calculate SuperTrend (simplified) manually without vnstock_ta"""
+        # Fallback calculation
         if 'close' in df.columns and len(df) >= 14:
             high = df['high']
             low = df['low']
@@ -786,9 +671,42 @@ class StockAnalyzer:
         return "neutral", 0.0
     
     def _get_fundamental(self, symbol: str) -> FundamentalData:
-        """Get fundamental data from vnstock_data"""
+        """Get fundamental data from DB first, then fallback to vnstock_data"""
         fund = FundamentalData()
-        
+
+        # 1. Thử lấy từ DB (StockData & QuarterlyFinancial)
+        try:
+            from dashboard.models import StockData, QuarterlyFinancial
+            stk = StockData.objects.filter(symbol=symbol.upper()).first()
+            if stk:
+                if stk.pe is not None:
+                    fund.pe = float(stk.pe)
+                if stk.pb is not None:
+                    fund.pb = float(stk.pb)
+                if stk.roe is not None:
+                    fund.roe = float(stk.roe)
+                if stk.f_score is not None:
+                    fund.f_score = int(stk.f_score)
+                    fund.f_score_grade = self._get_f_score_grade(fund.f_score)
+
+            qf = QuarterlyFinancial.objects.filter(symbol=symbol.upper()).order_by('-year', '-quarter').first()
+            if qf:
+                if fund.pe == 0 and qf.pe is not None:
+                    fund.pe = float(qf.pe)
+                if fund.pb == 0 and qf.pb is not None:
+                    fund.pb = float(qf.pb)
+                if fund.roe == 0 and qf.roe is not None:
+                    fund.roe = float(qf.roe)
+                if fund.f_score == 0 and qf.f_score is not None:
+                    fund.f_score = int(qf.f_score)
+                    fund.f_score_grade = self._get_f_score_grade(fund.f_score)
+
+            # Nếu đã có đủ thông số cơ bản từ DB, trả về luôn để tránh gọi vnstock
+            if fund.pe > 0 or fund.pb > 0 or fund.roe > 0 or fund.f_score > 0:
+                return fund
+        except Exception:
+            pass
+
         try:
             from vnstock_data import Fundamental
             import warnings
@@ -1131,7 +1049,15 @@ class StockAnalyzer:
         return sentiment
     
     def _get_company_name(self, symbol: str) -> str:
-        """Get company name from listing"""
+        """Get company name from DB first, then listing fallback"""
+        try:
+            from dashboard.models import StockData
+            stk = StockData.objects.filter(symbol=symbol.upper()).first()
+            if stk and stk.company_name:
+                return stk.company_name
+        except Exception:
+            pass
+
         try:
             from vnstock_data import Reference
             ref = Reference()
@@ -1537,7 +1463,7 @@ class StockAnalyzer:
         lines.append("├" + "─" * 72 + "┤")
         
         # Technical Analysis Section
-        lines.append("│  1. PHÂN TÍCH KỸ THUẬT (vnstock_ta)".ljust(70) + "│")
+        lines.append("│  1. PHÂN TÍCH KỸ THUẬT (TradingView)".ljust(70) + "│")
         lines.append("│  ─" + "─" * 69 + "┤")
         
         # RSI

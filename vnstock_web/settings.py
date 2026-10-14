@@ -1,4 +1,14 @@
+import os
+import sys
 from pathlib import Path
+
+# Add ~/.venv site-packages for sponsored vnstock libraries (AGENTS.md)
+for _venv_candidate in [
+    os.path.expanduser('~/.venv/Lib/site-packages'),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.venv', 'Lib', 'site-packages')),
+]:
+    if os.path.exists(_venv_candidate) and _venv_candidate not in sys.path:
+        sys.path.insert(0, _venv_candidate)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 

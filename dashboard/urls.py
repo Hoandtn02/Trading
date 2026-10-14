@@ -1,12 +1,24 @@
 from django.urls import path  # pyright: ignore[reportMissingImports]
 
-from .views import history, home, run_function, save_preset, load_presets, market_overview, backtest, top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv, strategy_lab, api_simulate, api_backtest, api_get_stock_data, api_get_all_symbols, wealth_guard_backtest, api_wealth_guard_data, fetch_quarterly_financial
+from .views import (
+    history, home, run_function, save_preset, load_presets, market_overview, backtest,
+    top_picks, scan_vn30_api, stock_list, export_stocks_csv, export_stock_detail_csv,
+    strategy_lab, api_simulate, api_backtest, api_get_stock_data, api_get_all_symbols,
+    wealth_guard_backtest, api_wealth_guard_data, fetch_quarterly_financial, foreign_ranking,
+    sync_foreign_ranking_api, sync_foreign_ranking_progress, sync_deep_fundamentals_api,
+    sync_deep_progress_api
+)
 
 urlpatterns = [
     path("", home, name="home"),
     path("overview/", market_overview, name="market_overview"),
     path("top-picks/", top_picks, name="top_picks"),
     path("stocks/", stock_list, name="stock_list"),
+    path("foreign-ranking/", foreign_ranking, name="foreign_ranking"),
+    path("api/sync-foreign-ranking/", sync_foreign_ranking_api, name="sync_foreign_ranking_api"),
+    path("api/sync-foreign-ranking/progress/", sync_foreign_ranking_progress, name="sync_foreign_ranking_progress"),
+    path("api/sync-deep-fundamentals/", sync_deep_fundamentals_api, name="sync_deep_fundamentals_api"),
+    path("api/sync-deep-progress/", sync_deep_progress_api, name="sync_deep_progress_api"),
     path("stocks/export/", export_stocks_csv, name="export_stocks_csv"),
     path("stocks/<str:symbol>/export/", export_stock_detail_csv, name="export_stock_detail_csv"),
     path("api/scan/vn30/", scan_vn30_api, name="scan_vn30_api"),

@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xếp Hạng Khối Ngoại - Trading Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #f8fafc;
+            color: #334155;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .header {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .nav-links { display: flex; gap: 12px; }
+        .nav-links a {
+            padding: 10px 18px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            color: #475569;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover { background: #f1f5f9; color: #0f172a; }
+        .nav-links a.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+
+        .sponsor-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: #78350f;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 12px;
+        }
+
+        .sync-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+        .sync-btn {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .sync-btn:hover { background: #2563eb; }
+        .sync-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .sync-hint { color: #64748b; font-size: 13px; }
+        .sync-hint code {
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .sync-progress { flex: 1; }
+        .progress-bar { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa); width: 0%; transition: width 0.3s; }
+        .progress-text { font-size: 13px; color: #64748b; }
+        .progress-log { font-size: 11px; color: #94a3b8; margin-top: 4px; max-height: 60px; overflow-y: auto; font-family: monospace; }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .stat-value.buy { color: #059669; }
+        .stat-value.sell { color: #dc2626; }
+
+        .table-container {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .table-scroll { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            background: #f8fafc;
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+        }
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
+        }
+        tr:hover { background: #f8fafc; }
+        tr:last-child td { border-bottom: none; }
+
+        .rank {
+            font-weight: 700;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+        .rank.top3 { color: #f59e0b; font-size: 16px; }
+
+        .ticker {
+            font-weight: 700;
+            color: #3b82f6;
+            font-size: 15px;
+        }
+        .amount {
+            font-family: 'SF Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .amount.buy { color: #059669; }
+        .amount.sell { color: #dc2626; }
+        .date { color: #64748b; font-size: 13px; }
+
+        .streak {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .streak.high { background: #dcfce7; color: #166534; }
+        .streak.medium { background: #fef9c3; color: #854d0e; }
+        .streak.low { background: #f1f5f9; color: #475569; }
+
+        .ownership {
+            font-weight: 600;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .ownership.high { color: #dc2626; }
+        .ownership.medium { color: #f59e0b; }
+
+        .buy-row { background: #f0fdf4; }
+        .sell-row { background: #fef2f2; }
+        .buy-row:hover { background: #dcfce7; }
+        .sell-row:hover { background: #fee2e2; }
+        .section-header { background: #f3f4f6; padding: 8px 12px; text-align: center; font-weight: 700; }
+        .section-header.buy { background: #dcfce7; color: #166534; }
+        .section-header.sell { background: #fee2e2; color: #991b1b; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+        .tab-btn { padding: 10px 20px; border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; cursor: pointer; font-weight: 500; color: #64748b; transition: all 0.2s; }
+        .tab-btn:hover { background: #f1f5f9; }
+        .tab-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab:hover { background: #f1f5f9; }
+        .tab.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .no-data {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+        .no-data-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .no-data h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #334155;
+        }
+        .no-data p {
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        .upgrade-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: #78350f;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        .upgrade-btn:hover { transform: scale(1.02); }
+
+        .table-toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            padding: 10px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        .table-toolbar input, .table-toolbar select {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .table-toolbar input { flex: 1; max-width: 200px; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { background: #e2e8f0; }
+        .sort-icon { font-size: 11px; opacity: 0.5; }
+        th.sort-asc .sort-icon::after { content: ' ↑'; opacity: 1; }
+        th.sort-desc .sort-icon::after { content: ' ↓'; opacity: 1; }
+    </style>
+</head>
+<body>
+    <script>
+    function showTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('.tab-btn[onclick*="' + tab + '"]').classList.add('active');
+        document.getElementById('tab-' + tab).classList.add('active');
+    }
+
+    // Sort state
+    const sortState = { buy: { col: null, dir: 'asc' }, sell: { col: null, dir: 'asc' } };
+
+    function sortTable(tab, colIndex) {
+        const state = sortState[tab];
+        const tbody = document.getElementById('tbody' + tab.charAt(0).toUpperCase() + tab.slice(1));
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        // Toggle direction
+        if (state.col === colIndex) {
+            state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            state.col = colIndex;
+            state.dir = 'asc';
+        }
+
+        // Update header icons
+        document.querySelectorAll('#table' + tab.charAt(0).toUpperCase() + tab.slice(1) + ' th').forEach((th, i) => {
+            th.classList.remove('sort-asc', 'sort-desc');
+            if (i === colIndex) th.classList.add(state.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+        });
+
+        // Sort rows
+        rows.sort((a, b) => {
+            let aVal = a.cells[colIndex].textContent.trim();
+            let bVal = b.cells[colIndex].textContent.trim();
+            
+            // For numeric columns (col 2, 3, 4)
+            if ([2, 3, 4].includes(colIndex)) {
+                aVal = parseFloat(a.cells[colIndex].querySelector('[data-val]')?.dataset.val || aVal.replace(/[^0-9.-]/g, '')) || 0;
+                bVal = parseFloat(b.cells[colIndex].querySelector('[data-val]')?.dataset.val || bVal.replace(/[^0-9.-]/g, '')) || 0;
+            }
+            
+            if (aVal < bVal) return state.dir === 'asc' ? -1 : 1;
+            if (aVal > bVal) return state.dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        // Re-append sorted rows
+        rows.forEach(row => tbody.appendChild(row));
+
+        // Update # column
+        rows.forEach((row, i) => { row.cells[0].querySelector('span').textContent = '#' + (i + 1); });
+    }
+
+    function filterTable(tab) {
+        const searchVal = document.getElementById('search' + tab.charAt(0).toUpperCase() + tab.slice(1)).value.toLowerCase();
+        const streakVal = document.getElementById('streakFilter' + tab.charAt(0).toUpperCase() + tab.slice(1)).value;
+        const tbody = document.getElementById('tbody' + tab.charAt(0).toUpperCase() + tab.slice(1));
+        const rows = tbody.querySelectorAll('tr');
+
+        rows.forEach((row, i) => {
+            const ticker = row.cells[1].textContent.toLowerCase();
+            const streak = row.cells[3].querySelector('.streak')?.dataset.streak || '';
+            
+            const matchSearch = ticker.includes(searchVal);
+            const matchStreak = !streakVal || streak === streakVal;
+            
+            row.style.display = matchSearch && matchStreak ? '' : 'none';
+        });
+
+        // Update # column only for visible rows
+        let visibleIndex = 0;
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                row.cells[0].querySelector('span').textContent = '#' + (++visibleIndex);
+            }
+        });
+    }
+    </script>
+    <div class="header">
+        <nav class="nav-links">
+            <a href="{% url 'home' %}">Trang Chủ</a>
+            <a href="{% url 'market_overview' %}">Tổng Quan</a>
+            <a href="{% url 'top_picks' %}">Top Picks</a>
+            <a href="{% url 'stock_list' %}">Danh Sách</a>
+            <a href="{% url 'foreign_ranking' %}" class="active">Khối Ngoại</a>
+        </nav>
+    </div>
+
+    <h1 class="page-title">
+        Xếp Hạng Khối Ngoại
+        {% if sponsor_active %}
+        <span class="sponsor-badge">🎯 vnstock_data Insights</span>
+        {% endif %}
+    </h1>
+    <p class="page-subtitle">Top cổ phiếu được khối ngoại mua ròng nhiều nhất - Dữ liệu real-time từ Sở Giao Dịch</p>
+
+    {% if error %}
+    <div class="no-data">
+        <div class="no-data-icon">⚠️</div>
+        <h3>Đã xảy ra lỗi</h3>
+        <p>{{ error }}</p>
+    </div>
+    {% elif not sponsor_active %}
+    <div class="no-data">
+        <div class="no-data-icon">🔒</div>
+        <h3>Cần tài khoản Sponsor</h3>
+        <p>Tính năng xếp hạng khối ngoại yêu cầu <strong>vnstock_data</strong> (gói Sponsor)</p>
+        <a href="https://vnstocks.com/insiders-program#tiers" target="_blank" class="upgrade-btn">
+            Nâng cấp ngay
+        </a>
+    </div>
+    {% endif %}
+
+    {% if sponsor_active and has_data %}
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-label">Tổng Mã Mua Ròng</div>
+            <div class="stat-value buy">{{ buy_count|default:0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Tổng Mã Bán Ròng</div>
+            <div class="stat-value sell">{{ sell_count|default:0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Ngày Dữ Liệu</div>
+            <div class="stat-value">{{ data_date|default:"N/A" }}</div>
+        </div>
+    </div>
+
+    <div class="sync-bar">
+        <button class="sync-btn" id="syncBtn" onclick="syncForeignRanking()">
+            🔄 Sync Dữ Liệu
+        </button>
+        <div class="sync-progress" id="syncProgress" style="display:none;">
+            <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+            <span class="progress-text" id="progressText"></span>
+            <div class="progress-log" id="progressLog"></div>
+        </div>
+        <span class="sync-hint" id="syncStatus">Click để sync dữ liệu mới</span>
+    </div>
+
+    <script>
+    async function syncForeignRanking() {
+        const btn = document.getElementById('syncBtn');
+        const status = document.getElementById('syncStatus');
+        const progressDiv = document.getElementById('syncProgress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const progressLog = document.getElementById('progressLog');
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ Đang sync...';
+        status.style.display = 'none';
+        progressDiv.style.display = 'block';
+        progressLog.innerHTML = '';
+        progressLog.innerHTML = '🔌 Đang kết nối server...<br>';
+        
+        try {
+            // Start sync with timeout
+            progressLog.innerHTML += '📡 Gửi request...<br>';
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+            
+            const response = await fetch('/api/sync-foreign-ranking/', {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            progressLog.innerHTML += '📡 Request hoàn thành<br>';
+            
+            const data = await response.json();
+            progressLog.innerHTML += '✅ Server response nhận<br>';
+            progressLog.innerHTML += `📋 ${JSON.stringify(data)}<br>`;
+            progressLog.scrollTop = progressLog.scrollHeight;
+            
+            if (data.success) {
+                // Poll for progress updates (more reliable than SSE)
+                progressLog.innerHTML += '🔄 Bắt đầu poll progress...<br>';
+                
+                async function pollProgress() {
+                    try {
+                        const resp = await fetch('/api/sync-foreign-ranking/progress/');
+                        const info = await resp.json();
+                        
+                        progressLog.innerHTML += `📊 ${info.message || info.status}<br>`;
+                        progressLog.scrollTop = progressLog.scrollHeight;
+                        
+                        if (info.progress >= 0) {
+                            progressFill.style.width = info.progress + '%';
+                            progressText.textContent = info.progress + '%';
+                        }
+                        
+                        if (info.status === 'done') {
+                            progressFill.style.width = '100%';
+                            progressText.textContent = '✅ Hoàn thành!';
+                            btn.disabled = false;
+                            btn.textContent = '🔄 Sync lại';
+                            progressLog.innerHTML += '✅ Sync hoàn tất!<br>';
+                        } else if (info.status === 'error') {
+                            progressText.textContent = '❌ Lỗi: ' + info.message;
+                            btn.disabled = false;
+                            btn.textContent = '🔄 Thử lại';
+                        } else {
+                            // Continue polling
+                            setTimeout(pollProgress, 500);
+                        }
+                    } catch (err) {
+                        progressLog.innerHTML += '❌ Poll error: ' + err.message + '<br>';
+                        setTimeout(pollProgress, 1000); // Retry
+                    }
+                }
+                
+                pollProgress();
+            } else {
+                throw new Error(data.error || 'Unknown error');
+            }
+        } catch (err) {
+            progressLog.innerHTML += '❌ Catch Error: ' + err.message + '<br>';
+            progressText.textContent = '❌ Lỗi: ' + err.message;
+            btn.disabled = false;
+            btn.textContent = '🔄 Thử lại';
+            status.style.display = 'inline';
+        }
+    }
+    </script>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('buy')">📈 Mua Ròng</button>
+        <button class="tab-btn" onclick="showTab('sell')">📉 Bán Ròng</button>
+    </div>
+
+    <div id="tab-buy" class="tab-content active">
+        <div class="table-toolbar">
+            <input type="text" id="searchBuy" placeholder="🔍 Tìm mã..." onkeyup="filterTable('buy')">
+            <select id="streakFilterBuy" onchange="filterTable('buy')">
+                <option value="">Tất cả Streak</option>
+                <option value="high">🔥 >= 5 ngày</option>
+                <option value="medium">⭐ 3-4 ngày</option>
+                <option value="low">Dưới 3 ngày</option>
+            </select>
+        </div>
+        <div class="table-scroll">
+            <table id="tableBuy">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortTable('buy', 0)"># <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('buy', 1)">Mã CK <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('buy', 2)">Net Mua Ròng <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('buy', 3)">Chuỗi <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('buy', 4)">Tỉ Trọng <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('buy', 5)">Tính từ ngày <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyBuy">
+                    {% for r in buy_list %}
+                    <tr class="buy-row">
+                        <td><span class="rank">#{{ forloop.counter }}</span></td>
+                        <td><span class="ticker">{{ r.ticker }}</span></td>
+                        <td><span class="amount buy" data-val="{{ r.net_val }}">+{{ r.net_val|floatformat:2 }} Tỷ</span></td>
+                        <td>
+                            {% if r.streak >= 5 %}
+                                <span class="streak high" data-streak="high">{{ r.streak }} 🔥</span>
+                            {% elif r.streak >= 3 %}
+                                <span class="streak medium" data-streak="medium">{{ r.streak }} ⭐</span>
+                            {% else %}
+                                <span class="streak low" data-streak="low">{{ r.streak }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.trading_share %}
+                                <span data-val="{{ r.trading_share }}">{{ r.trading_share|floatformat:2 }}%</span>
+                            {% else %}
+                                <span data-val="0">--</span>
+                            {% endif %}
+                        </td>
+                        <td class="date" title="Tính từ ngày này">{{ r.streak_start|default:"-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="tab-sell" class="tab-content">
+        <div class="table-toolbar">
+            <input type="text" id="searchSell" placeholder="🔍 Tìm mã..." onkeyup="filterTable('sell')">
+            <select id="streakFilterSell" onchange="filterTable('sell')">
+                <option value="">Tất cả Streak</option>
+                <option value="high">🔥 >= 5 ngày</option>
+                <option value="medium">⭐ 3-4 ngày</option>
+                <option value="low">Dưới 3 ngày</option>
+            </select>
+        </div>
+        <div class="table-scroll">
+            <table id="tableSell">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortTable('sell', 0)"># <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('sell', 1)">Mã CK <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('sell', 2)">Net Bán Ròng <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('sell', 3)">Chuỗi Bán <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('sell', 4)">Tỉ Trọng <span class="sort-icon">↕</span></th>
+                        <th class="sortable" onclick="sortTable('sell', 5)">Tính từ ngày <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody id="tbodySell">
+                    {% for r in sell_list %}
+                    <tr class="sell-row">
+                        <td><span class="rank">#{{ forloop.counter }}</span></td>
+                        <td><span class="ticker">{{ r.ticker }}</span></td>
+                        <td><span class="amount sell" data-val="{{ r.net_val }}">-{{ r.net_val|floatformat:2 }} Tỷ</span></td>
+                        <td>
+                            {% if r.streak >= 5 %}
+                                <span class="streak high" data-streak="high">{{ r.streak }} 🔥</span>
+                            {% elif r.streak >= 3 %}
+                                <span class="streak medium" data-streak="medium">{{ r.streak }} ⭐</span>
+                            {% elif r.streak > 0 %}
+                                <span class="streak low" data-streak="low">{{ r.streak }}</span>
+                            {% else %}
+                                <span class="streak sell" data-streak="none">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.trading_share %}
+                                <span data-val="{{ r.trading_share }}">{{ r.trading_share|floatformat:2 }}%</span>
+                            {% else %}
+                                <span data-val="0">--</span>
+                            {% endif %}
+                        </td>
+                        <td class="date" title="Tính từ ngày này">{{ r.streak_start|default:"-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="no-data">
+        <div class="no-data-icon">📊</div>
+        <h3>Không có dữ liệu</h3>
+        <p>Chưa có dữ liệu xếp hạng khối ngoại cho hôm nay</p>
+    </div>
+    {% endif %}
+</body>
+</html>

@@ -84,11 +84,12 @@ class FundAnalyzer:
     def _get_etf_data(self, data: FundData):
         """Get ETF price data"""
         try:
-            from vnstock_data import Market
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            mkt = Market()
-            df = mkt.etf(data.symbol).ohlcv(
-                interval="1D",
+            df = get_ohlcv_with_fallback(
+                symbol=data.symbol,
+                exchange="HOSE",
+                timeframe="1D",
                 length=self.period_ta + 1
             )
             
@@ -96,8 +97,13 @@ class FundAnalyzer:
                 last = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                current_price = float(last.get('close', 0)) * 1000
-                prev_price = float(prev.get('close', 0)) * 1000
+                # TradingView data may already be in true scale or /1000 scale, usually true scale
+                # We check if it needs *1000 by seeing if it's < 1000
+                current_raw = float(last.get('close', 0))
+                multiplier = 1000 if current_raw < 1000 else 1
+                
+                current_price = current_raw * multiplier
+                prev_price = float(prev.get('close', 0)) * multiplier
                 
                 change = current_price - prev_price
                 change_pct = round(change / prev_price * 100, 2) if prev_price > 0 else 0
@@ -108,8 +114,6 @@ class FundAnalyzer:
                 data.current_price = current_price
                 data.volume = int(last.get('volume', 0)) if pd.notna(last.get('volume')) else 0
                 
-        except ImportError:
-            self._get_etf_data_fallback(data)
         except Exception as e:
             print(f"[FundAnalyzer] ETF error: {e}")
             self._get_etf_data_fallback(data)
@@ -134,14 +138,18 @@ class FundAnalyzer:
     def _get_performance(self, data: FundData):
         """Get performance metrics"""
         try:
-            from vnstock_data import Market
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            mkt = Market()
-            df = mkt.etf(data.symbol).ohlcv(interval="1D", length=365)
+            df = get_ohlcv_with_fallback(
+                symbol=data.symbol,
+                exchange="HOSE",
+                timeframe="1D",
+                length=365
+            )
             
             if df is not None and len(df) > 0:
                 close_col = 'close'
-                prices = df[close_col].dropna() * 1000
+                prices = df[close_col].dropna()
                 
                 if len(prices) > 1:
                     current = prices.iloc[-1]
@@ -166,17 +174,19 @@ class FundAnalyzer:
     def _get_52w_range(self, data: FundData):
         """Get 52-week high/low"""
         try:
-            from vnstock_data import Market
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            mkt = Market()
-            df = mkt.etf(data.symbol).ohlcv(
-                start="2025-04-01",
-                end=pd.Timestamp.today().strftime("%Y-%m-%d")
+            df = get_ohlcv_with_fallback(
+                symbol=data.symbol,
+                exchange="HOSE",
+                timeframe="1D",
+                length=252  # ~252 trading days in a year
             )
             
             if df is not None and len(df) > 0:
                 close_col = 'close'
-                prices = df[close_col].dropna() * 1000
+                multiplier = 1000 if df[close_col].iloc[-1] < 1000 else 1
+                prices = df[close_col].dropna() * multiplier
                 
                 if len(prices) > 0:
                     data.high_52w = float(prices.max())
@@ -188,43 +198,49 @@ class FundAnalyzer:
     def _calculate_technical(self, data: FundData):
         """Calculate technical indicators"""
         try:
-            from vnstock_ta import Indicator
+            from dashboard.tv_client import get_multiple_indicators
             
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.etf(data.symbol).ohlcv(interval="1D", length=self.period_ta + 30)
+            # Request all required indicators via TV Service
+            req_indicators = ["STD;RSI", "STD;MACD", "STD;SMA", "STD;DMI"]
+            results = get_multiple_indicators(data.symbol, "HOSE", req_indicators)
             
-            if df is not None and len(df) > 50:
-                close_col = 'close'
-                prices = df[close_col].dropna()
+            if not results:
+                print(f"[FundAnalyzer] No indicator data returned for {data.symbol}")
+                return
                 
-                if len(prices) > 20:
-                    indicator = Indicator(close=prices)
+            # Process results
+            for result in results:
+                ind_name = result.get('indicator')
+                ind_data = result.get('data', [])
+                if not ind_data:
+                    continue
                     
-                    # RSI
-                    data.rsi = indicator.rsi(period=14)
-                    if hasattr(data.rsi, 'iloc'):
-                        data.rsi = float(data.rsi.iloc[-1])
-                    
-                    # MACD
-                    macd_data = indicator.macd()
-                    if macd_data is not None and hasattr(macd_data, 'iloc'):
-                        data.macd = float(macd_data.iloc[-1])
-                    
-                    # SMA
-                    sma_data = indicator.sma(period=20)
-                    if sma_data is not None and hasattr(sma_data, 'iloc'):
-                        data.sma_20 = float(sma_data.iloc[-1]) * 1000
-                    
-                    sma50_data = indicator.sma(period=50)
-                    if sma50_data is not None and hasattr(sma50_data, 'iloc'):
-                        data.sma_50 = float(sma50_data.iloc[-1]) * 1000
-                    
-                    # ADX
-                    adx_data = indicator.adx(period=14)
-                    if adx_data is not None and hasattr(adx_data, 'iloc'):
-                        data.adx = float(adx_data.iloc[-1])
-                        
+                latest = ind_data[-1]
+                
+                if ind_name == "STD;RSI":
+                    data.rsi = float(latest.get('RSI', data.rsi))
+                elif ind_name == "STD;MACD":
+                    data.macd = float(latest.get('MACD', data.macd))
+                elif ind_name == "STD;SMA":
+                    sma = float(latest.get('MA', data.sma_20))
+                    # Check scale multiplier for SMA
+                    multiplier = 1000 if sma > 0 and sma < 1000 else 1
+                    # Since TV only returns one SMA (usually 9 by default without config),
+                    # We map it to sma_20 and approximate sma_50 if we don't have exact
+                    data.sma_20 = sma * multiplier
+                    data.sma_50 = sma * multiplier * 0.98 # Fallback estimation if no separate SMA50
+                elif ind_name == "STD;DMI":
+                    data.adx = float(latest.get('ADX', data.adx))
+            
+            # If SMA is not precise due to TV default, fallback to Pandas for exact 20/50 SMA
+            from dashboard.tv_client import get_ohlcv_with_fallback
+            df = get_ohlcv_with_fallback(data.symbol, "HOSE", timeframe="1D", length=self.period_ta + 30)
+            if df is not None and len(df) > 50:
+                close = df['close']
+                multiplier = 1000 if close.iloc[-1] < 1000 else 1
+                data.sma_20 = float(close.rolling(20).mean().iloc[-1]) * multiplier
+                data.sma_50 = float(close.rolling(50).mean().iloc[-1]) * multiplier
+                
         except Exception as e:
             print(f"[FundAnalyzer] Technical error: {e}")
     
@@ -366,7 +382,7 @@ class FundAnalyzer:
 │  ────────────────────────────────────────────────────────────    │
 │  1D: {change_emoji}{data.return_1d:+.1f}% │ 1W: {data.return_1w:+.1f}% │ 1M: {data.return_1m:+.1f}% │ YTD: {data.return_ytd:+.1f}%        │
 ├──────────────────────────────────────────────────────────────────┤
-│  📊 PHÂN TÍCH KỸ THUẬT NAV (vnstock_ta)                       │
+│  📊 PHÂN TÍCH KỸ THUẬT NAV (TradingView)                      │
 │  ────────────────────────────────────────────────────────────    │
 │  📈 ĐỘNG LƯỢNG                                                  │
 │     RSI(14) NAV: {data.rsi:.0f} {rsi_bar} Zone: {rsi_zone}        │

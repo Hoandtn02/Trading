@@ -182,8 +182,8 @@ class ValuationService:
             ValuationResult với đầy đủ thông tin định giá
         """
         if price <= 0:
-        return ValuationResult(
-            fv_daily=0, intrinsic_value=0,
+            return ValuationResult(
+                fv_daily=0, intrinsic_value=0,
                 target_pe=0, valuation_type='PE',
                 valuation_source='error', sector_median_pe=0,
                 sector_median_pb=0, cap_applied=False, valuation_status='RISK'

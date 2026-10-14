@@ -149,63 +149,28 @@ class FuturesAnalyzer:
         """Get futures OHLCV data - Get 100+ periods for valid indicators"""
         df = None
         
-        # Try vnstock_data first
-        try:
-            from vnstock_data import Market
-            mkt = Market()
-            
-            for contract in ["VN30F1M", "VN30F", "VN30F2506", "VN30F2606", "VN30F2706"]:
-                try:
-                    # Get 100+ days for valid indicators
-                    df = mkt.futures(contract).ohlcv(
-                        interval="1D",
-                        length=self.period_ta + 50
-                    )
-                    if df is not None and len(df) > 50:
-                        data.symbol = contract
-                        self._extract_data(data, df)
-                        self._set_expiry_info(data, contract)
-                        return
-                except Exception as e:
-                    continue
-        except ImportError:
-            pass
-        except Exception as e:
-            print(f"[FuturesAnalyzer] vnstock_data error: {e}")
+        from dashboard.tv_client import get_ohlcv_with_fallback
         
-        # Fallback to vnstock
-        self._get_futures_data_fallback(data)
-    
-    def _get_futures_data_fallback(self, data: FuturesData):
-        """Fallback using vnstock"""
-        try:
-            from vnstock.explorer.kbs.quote import Quote
-            import pandas as pd
-            
-            q = Quote(symbol="VN30F", show_log=False)
-            end = pd.Timestamp.today().strftime('%Y-%m-%d')
-            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta + 30)).strftime('%Y-%m-%d')
-            df = q.history(start=start, end=end, interval='1D')
-            
-            if df is not None and len(df) > 50:
-                self._extract_data(data, df)
-                self._set_expiry_info(data, "VN30F1M")
-                
-        except Exception as e:
-            print(f"[FuturesAnalyzer] Fallback error: {e}")
-            # Last resort: use spot index data
-            self._get_spot_as_futures(data)
+        # TV Client will handle fallback to vnstock if TradingView doesn't support the futures symbol
+        for contract in ["VN30F1M", "VN30F"]:
+            try:
+                df = get_ohlcv_with_fallback(contract, "HNX", timeframe="1D", length=self.period_ta + 50)
+                if df is not None and len(df) > 50:
+                    data.symbol = contract
+                    self._extract_data(data, df)
+                    self._set_expiry_info(data, contract)
+                    return
+            except Exception as e:
+                continue
+        
+        print("[FuturesAnalyzer] Futures data failed, using spot index as proxy")
+        self._get_spot_as_futures(data)
     
     def _get_spot_as_futures(self, data: FuturesData):
         """Use VN30 spot as proxy if futures data unavailable"""
         try:
-            from vnstock_data import Market
-            mkt = Market()
-            
-            end = pd.Timestamp.today().strftime('%Y-%m-%d')
-            start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta + 30)).strftime('%Y-%m-%d')
-            
-            df = mkt.index("VN30").ohlcv(start=start, end=end, interval="1D")
+            from dashboard.tv_client import get_ohlcv_with_fallback
+            df = get_ohlcv_with_fallback("VN30", "HOSE", timeframe="1D", length=self.period_ta + 30)
             
             if df is not None and len(df) > 50:
                 data.symbol = "VN30 (Spot Proxy)"
@@ -266,9 +231,8 @@ class FuturesAnalyzer:
     def _get_spot_index(self, data: FuturesData):
         """Get underlying VN30 index data"""
         try:
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.index("VN30").ohlcv(interval="1D", length=5)
+            from dashboard.tv_client import get_ohlcv_with_fallback
+            df = get_ohlcv_with_fallback("VN30", "HOSE", timeframe="1D", length=5)
             
             if df is not None and len(df) > 0:
                 for col in ['close', 'Close']:
@@ -294,18 +258,13 @@ class FuturesAnalyzer:
         BACKWARDATION: F1M > F2M > F1Q > F2Q -> Bearish (prices falling over time)
         """
         import pandas as pd
+        from dashboard.tv_client import get_ohlcv_with_fallback
         
-        end = pd.Timestamp.today().strftime('%Y-%m-%d')
-        start = (pd.Timestamp.today() - pd.DateOffset(days=5)).strftime('%Y-%m-%d')
-        
-        # Get all contracts using vnstock legacy API
+        # Get all contracts using TV Client fallback
         try:
-            from vnstock.explorer.kbs.quote import Quote
-            
             # F2M - Next month
             try:
-                q2 = Quote(symbol="VN30F2M", show_log=False)
-                df2 = q2.history(start=start, end=end, interval='1D')
+                df2 = get_ohlcv_with_fallback("VN30F2M", "HNX", timeframe="1D", length=5)
                 if df2 is not None and len(df2) > 0:
                     data.futures_m2 = float(df2['close'].iloc[-1])
             except Exception:
@@ -313,8 +272,7 @@ class FuturesAnalyzer:
             
             # F1Q - Next quarter (Sep 2026 = 2609)
             try:
-                q_q1 = Quote(symbol="VN30F2609", show_log=False)
-                df_q1 = q_q1.history(start=start, end=end, interval='1D')
+                df_q1 = get_ohlcv_with_fallback("VN30F1Q", "HNX", timeframe="1D", length=5)
                 if df_q1 is not None and len(df_q1) > 0:
                     data.futures_f1q = float(df_q1['close'].iloc[-1])
             except Exception:
@@ -322,13 +280,12 @@ class FuturesAnalyzer:
             
             # F2Q - Quarter after (Dec 2026 = 2612)
             try:
-                q_q2 = Quote(symbol="VN30F2612", show_log=False)
-                df_q2 = q_q2.history(start=start, end=end, interval='1D')
+                df_q2 = get_ohlcv_with_fallback("VN30F2Q", "HNX", timeframe="1D", length=5)
                 if df_q2 is not None and len(df_q2) > 0:
                     data.futures_f2q = float(df_q2['close'].iloc[-1])
             except Exception:
                 pass
-        except ImportError:
+        except Exception:
             pass
         
         # Calculate term structure
@@ -417,34 +374,19 @@ class FuturesAnalyzer:
         """Calculate technical indicators with manual fallbacks"""
         df = None
         
-        # Get OHLCV data
-        try:
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.futures(data.symbol).ohlcv(
-                interval="1D",
-                length=self.period_ta + 50
-            )
-        except:
-            try:
-                from vnstock.explorer.kbs.quote import Quote
-                q = Quote(symbol="VN30F", show_log=False)
-                end = pd.Timestamp.today().strftime('%Y-%m-%d')
-                start = (pd.Timestamp.today() - pd.DateOffset(days=self.period_ta + 30)).strftime('%Y-%m-%d')
-                df = q.history(start=start, end=end, interval='1D')
-            except:
-                pass
+        from dashboard.tv_client import get_ohlcv_with_fallback
         
+        # Get OHLCV data for manual calculation (TV does not support TA for invalid symbols)
+        try:
+            df = get_ohlcv_with_fallback(data.symbol, "HNX", timeframe="1D", length=self.period_ta + 50)
+        except Exception:
+            pass
+            
         if df is None or len(df) < 20:
             # Try spot as proxy
             try:
-                from vnstock_data import Market
-                mkt = Market()
-                df = mkt.index("VN30").ohlcv(
-                    interval="1D",
-                    length=self.period_ta + 30
-                )
-            except:
+                df = get_ohlcv_with_fallback("VN30", "HOSE", timeframe="1D", length=self.period_ta + 30)
+            except Exception:
                 pass
         
         if df is not None and len(df) > 20:
@@ -831,7 +773,7 @@ class FuturesAnalyzer:
 │  Ngày đáo hạn: {data.expiry_date} (còn {data.days_to_expiry} ngày)                       │
 │  Hợp đồng gần nhất: {data.symbol}                                  │
 ├──────────────────────────────────────────────────────────────────┤
-│  📊 PHÂN TÍCH KỸ THUẬT (vnstock_ta)                          │
+│  📊 PHÂN TÍCH KỸ THUẬT (TradingView)                         │
 │  ────────────────────────────────────────────────────────────    │
 │  📐 BIẾN ĐỘNG                                                   │
 │     ATR(14): {data.atr:.1f} điểm - BIẾN ĐỘNG {data.atr_status}                  │

@@ -109,14 +109,16 @@ class IndexAnalyzer:
     def _get_index_ohlcv(self, symbol: str) -> Optional[pd.DataFrame]:
         """Fetch index OHLCV data"""
         try:
-            from vnstock_data import Market
-            mkt = Market()
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            end = pd.Timestamp.today().strftime("%Y-%m-%d")
+            exchange = "HOSE"
+            if "HNX" in symbol.upper():
+                exchange = "HNX"
+            elif "UPCOM" in symbol.upper():
+                exchange = "UPCOM"
+            
             # Need ~70 trading days for SMA50, get 90 calendar days to be safe
-            start = (pd.Timestamp.today() - pd.DateOffset(days=90)).strftime("%Y-%m-%d")
-            
-            df = mkt.index(symbol).ohlcv(start=start, end=end)
+            df = get_ohlcv_with_fallback(symbol, exchange, timeframe="1D", length=90)
             
             if df is not None and len(df) > 0:
                 for col in ['open', 'high', 'low', 'close', 'volume']:

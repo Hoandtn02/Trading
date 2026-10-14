@@ -71,6 +71,14 @@
         .sync-btn:hover { opacity: 0.9; }
         .sync-btn.data { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
         .sync-btn.analyze { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+        .sync-btn.deep {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+            border: 1px solid #a78bfa;
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.35);
+        }
+        .sync-btn.deep:hover {
+            box-shadow: 0 0 15px rgba(167, 139, 250, 0.7);
+        }
         .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Banners */
@@ -513,8 +521,11 @@
             <a href="{% url 'stock_list' %}">📊 Danh Sách</a>
             <a href="/strategy-lab/" class="lab">🧪 Strategy Lab</a>
             <div class="sync-buttons">
-                <button class="sync-btn" onclick="triggerSync('full')" id="syncFullBtn" title="Lấy dữ liệu mới + Phân tích lại">
-                    ⚡ Full Sync
+                <button class="sync-btn" onclick="triggerSync('full')" id="syncFullBtn" title="Giai đoạn 1: Quét nhanh kỹ thuật & thanh khoản toàn thị trường (TradingView)">
+                    ⚡ Fast Sync
+                </button>
+                <button class="sync-btn deep" onclick="triggerDeepSync()" id="syncDeepBtn" title="Giai đoạn 2: Tải BCTC 4 quý, tính Piotroski F-Score & kiểm định VETO chuyên sâu cho Top 30 (vnstock)">
+                    💎 Deep Sync Top 30
                 </button>
                 <button class="sync-btn data" onclick="triggerSync('data_only')" id="syncDataBtn" title="Chỉ lấy dữ liệu giá mới">
                     📥 Data Only
@@ -1035,25 +1046,42 @@
 
                     // Poll để kiểm tra tiến trình
                     let attempts = 0;
+                    let hasStarted = false;
                     const maxAttempts = 300; // 300 * 2s = 10 phút max (Full sync cần nhiều thời gian)
 
                     while (attempts < maxAttempts) {
                         await new Promise(r => setTimeout(r, 2000));
 
-                        const statusResponse = await fetch('/api/scan/vn30/');
-                        const statusData = await statusResponse.json();
+                        try {
+                            const statusResponse = await fetch('/api/scan/vn30/');
+                            const statusData = await statusResponse.json();
 
-                        if (statusData.is_syncing) {
-                            progressFill.style.width = statusData.sync_progress + '%';
-                            progressText.textContent = `${modeLabels[mode]}: ${statusData.sync_progress}% (${statusData.fast_count} picks)`;
-                        } else {
-                            // Sync xong
-                            progressFill.style.width = '100%';
-                            progressText.textContent = '✅ Hoàn tất!';
-                            setTimeout(() => {
-                                location.reload();
-                            }, 500);
-                            return;
+                            if (statusData.is_syncing) {
+                                hasStarted = true;
+                                progressFill.style.width = statusData.sync_progress + '%';
+                                progressText.textContent = `${modeLabels[mode]}: ${statusData.sync_progress}% (${statusData.fast_count} picks)`;
+                            } else if (hasStarted) {
+                                // Sync đã bắt đầu và giờ đã hoàn thành
+                                progressFill.style.width = '100%';
+                                progressText.textContent = '✅ Hoàn tất! Đang tải lại dữ liệu...';
+                                setTimeout(() => {
+                                    location.reload();
+                                }, 1000);
+                                return;
+                            } else if (attempts < 5) {
+                                // Trong 10 giây đầu, nếu server chưa kịp set running thì tiếp tục chờ
+                                progressText.textContent = `Đang chuẩn bị tiến trình ${modeLabels[mode]}... (${attempts + 1})`;
+                            } else {
+                                // Sau 5 lần thử mà vẫn chưa thấy running
+                                progressFill.style.width = '100%';
+                                progressText.textContent = '✅ Hoàn tất!';
+                                setTimeout(() => {
+                                    location.reload();
+                                }, 1000);
+                                return;
+                            }
+                        } catch (err) {
+                            console.warn("Lỗi poll status:", err);
                         }
 
                         attempts++;
@@ -1069,6 +1097,84 @@
 
             // Reset buttons
             Object.values(buttons).forEach(btn => btn.disabled = false);
+        }
+
+
+        async function triggerDeepSync() {
+            const syncDeepBtn = document.getElementById('syncDeepBtn');
+            const syncFullBtn = document.getElementById('syncFullBtn');
+            const syncDataBtn = document.getElementById('syncDataBtn');
+            const syncAnalyzeBtn = document.getElementById('syncAnalyzeBtn');
+            const allButtons = [syncDeepBtn, syncFullBtn, syncDataBtn, syncAnalyzeBtn].filter(Boolean);
+
+            const progressBar = document.getElementById('syncProgressBar');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+
+            allButtons.forEach(btn => btn.disabled = true);
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressFill.style.background = 'linear-gradient(90deg, #8b5cf6, #c084fc)';
+            progressText.textContent = '🚀 Đang khởi động tiến trình Deep Sync BCTC Top 30...';
+
+            try {
+                const csrfToken = getCsrfToken();
+                const response = await fetch('/api/sync-deep-fundamentals/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'started' || data.status === 'success') {
+                    let attempts = 0;
+                    let hasStarted = false;
+                    const maxAttempts = 240; // 240 * 1.5s = 6 phút
+
+                    while (attempts < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 1500));
+
+                        try {
+                            const progRes = await fetch('/api/sync-deep-progress/');
+                            const progData = await progRes.json();
+
+                            if (progData.status === 'running') {
+                                hasStarted = true;
+                                const pct = progData.progress || 0;
+                                progressFill.style.width = pct + '%';
+                                progressText.innerHTML = `<strong>💎 Deep Sync (${pct}%):</strong> ${progData.message || ''} ${progData.current_symbol ? `[${progData.current_symbol}]` : ''}`;
+                            } else if (progData.status === 'completed' || (hasStarted && progData.progress >= 100)) {
+                                progressFill.style.width = '100%';
+                                progressText.innerHTML = '✅ <strong>Hoàn tất Deep Sync BCTC Top 30!</strong> Đang làm mới trang...';
+                                setTimeout(() => {
+                                    location.reload();
+                                }, 1200);
+                                return;
+                            } else if (progData.status === 'error') {
+                                progressText.textContent = '❌ Lỗi Deep Sync: ' + (progData.message || 'Thất bại');
+                                allButtons.forEach(btn => btn.disabled = false);
+                                return;
+                            }
+                        } catch (err) {
+                            console.warn("Lỗi poll deep sync status:", err);
+                        }
+
+                        attempts++;
+                    }
+
+                    progressText.textContent = '⚠️ Hết thời gian chờ phản hồi, vui lòng F5 trang.';
+                } else {
+                    progressText.textContent = '❌ Không thể bắt đầu: ' + (data.message || 'Lỗi server');
+                }
+            } catch (err) {
+                progressText.textContent = '❌ Lỗi kết nối: ' + err.message;
+            }
+
+            allButtons.forEach(btn => btn.disabled = false);
         }
 
     </script>

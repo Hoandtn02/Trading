@@ -6,17 +6,29 @@ Sync Engine v9 - Database-First Architecture (FULL SYNC)
 - Adds F-Score
 - Applies consistent veto rules across all stocks
 """
+import math
+import os
+import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, date
 from time import sleep
 from typing import List, Optional, Dict, Any
 import numpy as np
 import pandas as pd
 
+# Standard vnstock venv resolution (AGENTS.md)
+for _venv_candidate in [
+    os.path.expanduser('~/.venv/Lib/site-packages'),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.venv', 'Lib', 'site-packages')),
+]:
+    if os.path.exists(_venv_candidate) and _venv_candidate not in sys.path:
+        sys.path.insert(0, _venv_candidate)
+
 from django.utils import timezone
 from dashboard.models import StockData, StockAnalysis, SyncStatus, IndustryValuation, VN30_SYMBOLS
 
+MAX_WORKERS = 3
 
 # ============== INDUSTRY CONFIG (SHARED - Fallback) ==============
 # Dùng chung cho cả Live scan và Backtest (chỉ là fallback khi không có Dynamic data)
@@ -315,7 +327,7 @@ def get_target_valuation(industry_name: str) -> Dict:
 
 
 # ============== CONSTANTS ==============
-MAX_WORKERS = 8
+MAX_WORKERS = 3
 UNIVERSE_SIZE = 100
 MIN_LIQUIDITY_BILLION = 15  # Giá trị giao dịch TB phải > 15 tỷ/phiên
 MIN_PRICE = 10000
@@ -345,10 +357,10 @@ def _get_top_100_by_liquidity() -> List[str]:
         "OCB", "EIB", "MSB", "NAB", "KLB", "BAB", "PGB", "VBB", "ABB", "BVH",
         # Midcap - Bất động sản
         "NVL", "DIG", "DXG", "KDH", "HDG", "IDJ", "SJS", "DPG", "CRE", "NLG",
-        "ASM", "IJC", "KAC", "DPR", "VPH", "PDR", "HII", "SRA", "VIG", "NRC",
+        "ASM", "IJC", "DPR", "VPH", "PDR", "HII", "SRA", "VIG", "NRC",
         # Midcap - Chứng khoán
         "VND", "HCM", "CTS", "VCI", "SHS", "VDS", "BVS", "TVS", "VIX", "APG",
-        "BSI", "CSI", "EVS", "FTS", "HBS", "IVS", "KBS", "MBS", "PHS", "SGB",
+        "BSI", "CSI", "EVS", "FTS", "HBS", "IVS", "MBS", "PHS", "SGB",
         # Midcap - Sản xuất & Vật liệu
         "DGC", "GMD", "SBT", "DGW", "CMG", "IMP", "VHC", "REE", "NT2", "DRC",
         "AAA", "ALT", "AMC", "BMC", "CSV", "DCL", "DHC", "DPM", "DVP", "HAP",
@@ -361,96 +373,24 @@ def _get_top_100_by_liquidity() -> List[str]:
         "VGC", "HHV", "LHG", "PVT", "GEX", "TTE", "SZC", "HLD", "NKG", "KHC",
     ]
     
-    # Loại bỏ trùng lặp
-    FALLBACK_SYMBOLS = list(dict.fromkeys(FALLBACK_SYMBOLS))
+    # Loại bỏ trùng lặp và lấy universe tiêu chuẩn (VN30 + Top Midcaps thanh khoản lớn)
+    symbols = list(dict.fromkeys(FALLBACK_SYMBOLS))
     
     try:
-        from vnstock_data import Reference, Market
-        
-        # Bước 1: Lấy danh sách mã HOSE từ vnstock_data
-        print("[Sync] Đang lấy danh sách mã HOSE...")
-        try:
-            import json  # For catching JSON decode errors
-            
-            ref = Reference()
-            all_stocks = ref.equity.list()
-            
-            if all_stocks is not None and len(all_stocks) > 0:
-                # Lọc chỉ HOSE
-                if 'exchange' in all_stocks.columns:
-                    hose_stocks = all_stocks[all_stocks['exchange'] == 'HOSE']
-                    hose_symbols = hose_stocks['symbol'].str.upper().tolist()[:500]
-                else:
-                    hose_symbols = all_stocks['symbol'].str.upper().tolist()[:500]
-                
-                print(f"[Sync] Tìm thấy {len(hose_symbols)} mã HOSE")
-            else:
-                hose_symbols = FALLBACK_SYMBOLS
-                print("[Sync] Không lấy được danh sách HOSE, dùng fallback")
-        except (json.JSONDecodeError, ConnectionError, Exception) as e:
-            print(f"[Sync Info] API nghẽn kết nối, tự động chuyển sang danh sách Bluechips dự phòng.")
-            hose_symbols = FALLBACK_SYMBOLS
-        
-        # Bước 2: Tính thanh khoản cho từng mã
-        print("[Sync] Đang tính thanh khoản cho từng mã...")
-        liquidity_data = []
-        mkt = Market()
-        
-        for symbol in hose_symbols:
-            try:
-                import json  # For catching JSON decode errors
-                
-                # Dùng Market layer thay vì Quote
-                df = mkt.equity(symbol).ohlcv(
-                    start=(datetime.now() - pd.Timedelta(days=30)).strftime("%Y-%m-%d"),
-                    end=datetime.now().strftime("%Y-%m-%d")
-                )
-                
-                if df is not None and len(df) >= 10:
-                    # Tính avg_volume (20 ngày) và avg_close (5 ngày)
-                    # vnstock_data trả giá đã chia 1000 → nhân lại
-                    avg_volume = df['volume'].tail(20).mean()
-                    avg_close = df['close'].tail(5).mean() * 1000  # Nhân 1000 vì vnstock_data trả giá chia 1000
-                    avg_value = avg_volume * avg_close  # Giá trị giao dịch TB (VND)
-                    avg_value_billion = avg_value / 1e9  # Chuyển sang tỷ VND
-                    
-                    # Lọc điều kiện
-                    if avg_close > MIN_PRICE and avg_value_billion > MIN_LIQUIDITY_BILLION:
-                        liquidity_data.append((symbol, avg_value_billion, avg_close))
-                        
-            except (json.JSONDecodeError, ConnectionError, TimeoutError) as e:
-                # Bỏ qua mã lỗi kết nối, tiếp tục ngay với mã tiếp theo
-                continue
-            except Exception:
-                # Bỏ qua các lỗi khác và tiếp tục
-                continue
-        
-        # Bước 3: Sắp xếp và lấy Top 100
-        liquidity_data.sort(key=lambda x: x[1], reverse=True)
-        top_100 = [s[0] for s in liquidity_data[:UNIVERSE_SIZE]]
-        
-        print(f"[Sync] Đã tìm thấy {len(top_100)} mã đủ điều kiện (price > 10k, avg_value > 15B)")
-        
-        # Nếu không đủ 100 mã, bổ sung từ fallback
-        if len(top_100) < UNIVERSE_SIZE:
-            print(f"[Sync] Chỉ có {len(top_100)} mã đạt điều kiện, bổ sung từ fallback...")
-            for sym in FALLBACK_SYMBOLS:
-                if sym not in top_100:
-                    top_100.append(sym)
-                    if len(top_100) >= UNIVERSE_SIZE:
-                        break
-        
-        # Debug: In top 10
-        print("[Sync] Top 10 mã thanh khoản cao nhất:")
-        for i, (sym, val, price) in enumerate(liquidity_data[:10]):
-            print(f"  {i+1}. {sym}: {val:.1f}B VND/phiên @ {price:,.0f} VND")
-        
-        return top_100[:UNIVERSE_SIZE]
-        
-    except Exception as e:
-        print(f"[Sync] Lỗi nghiêm trọng khi lấy danh sách động: {e}")
-        print("[Sync] Sử dụng danh sách fallback...")
-        return FALLBACK_SYMBOLS[:UNIVERSE_SIZE]
+        from dashboard.models import StockData
+        db_symbols = list(StockData.objects.values_list('symbol', flat=True))
+        for sym in db_symbols:
+            sym_clean = str(sym).strip().upper()
+            if sym_clean and sym_clean not in symbols:
+                symbols.append(sym_clean)
+            if len(symbols) >= UNIVERSE_SIZE:
+                break
+    except Exception:
+        pass
+
+    target_symbols = symbols[:UNIVERSE_SIZE]
+    print(f"[Sync] Universe phân tích gồm {len(target_symbols)} mã (VN30 + Top Midcaps thanh khoản cao sàn HOSE)", flush=True)
+    return target_symbols
 
 
 def get_top_symbols_by_liquidity() -> List[str]:
@@ -459,15 +399,11 @@ def get_top_symbols_by_liquidity() -> List[str]:
 
 
 def get_market_rsi() -> float:
-    """Lấy RSI của VNIndex"""
+    """Lấy RSI của VNIndex trực tiếp từ TradingView (tv_service)"""
     try:
-        from vnstock_data import Market
-        mkt = Market()
-        df = mkt.index("VNINDEX").ohlcv(
-            start=(datetime.now() - pd.Timedelta(days=60)).strftime("%Y-%m-%d"),
-            end=datetime.now().strftime("%Y-%m-%d")
-        )
-        if df is not None and len(df) >= 15:
+        from dashboard.tv_client import get_ohlcv
+        df = get_ohlcv("VNINDEX", count=60)
+        if df is not None and len(df) >= 15 and 'close' in df.columns:
             close = df['close']
             delta = close.diff()
             gain = delta.where(delta > 0, 0).rolling(14).mean()
@@ -475,7 +411,7 @@ def get_market_rsi() -> float:
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             return float(rsi.iloc[-1])
-    except:
+    except Exception:
         pass
     return 50.0
 
@@ -483,148 +419,77 @@ def get_market_rsi() -> float:
 def _get_market_regime_from_etf_flow(default_regime: str = "NORMAL") -> str:
     """
     Macro/ETF foreign-flow sentiment hook.
-    Dùng dữ liệu foreign_flow của ETF lớn để xác định xu hướng rút/gom tổng thể của nước ngoài.
+    Ưu tiên đọc từ DB StockAnalysis của E1VFVN30 để tránh gọi API mạng.
 
     Returns:
         "NORMAL", "DEFENSE", hoặc "FREEZE"
     """
     try:
-        from vnstock_data import Market
-        mkt = Market()
-        etf_symbols = ["E1VFVN30"]
-        foreign_rows = []
-
-        for sym in etf_symbols:
-            try:
-                df = mkt.equity(sym).foreign_flow()
-                if df is None or df.empty:
-                    continue
-                date_col = 'trading_date' if 'trading_date' in df.columns else 'time'
-                if date_col not in df.columns:
-                    continue
-                df = df.sort_values(date_col, ascending=False).head(5)
-                net_vals = []
-                for _, row in df.iterrows():
-                    net_val = float(row.get('net_val', 0) or row.get('fr_net_value_total', 0) or 0)
-                    net_vals.append(net_val)
-                if net_vals:
-                    foreign_rows.append(sum(net_vals))
-            except Exception:
-                continue
-
-        if not foreign_rows:
-            return default_regime
-
-        total_net = sum(foreign_rows)
-        if total_net < 0:
-            return "DEFENSE"
-        return default_regime
+        from .models import StockAnalysis
+        etf_analysis = StockAnalysis.objects.filter(symbol__symbol="E1VFVN30").first()
+        if etf_analysis and etf_analysis.latest_net_val is not None:
+            if etf_analysis.latest_net_val < 0 or etf_analysis.foreign_accumulated_trend == "DISTRIBUTING":
+                return "DEFENSE"
     except Exception:
-        return default_regime
-
+        pass
+    return default_regime
 
 def get_company_name(symbol: str) -> str:
-    """Lấy tên công ty từ vnstock"""
+    """Lấy tên công ty từ DB StockData, không gọi vnstock để tránh rate-limit"""
     try:
-        from vnstock import Company
-        company = Company(symbol=symbol, source="vci")
-        info = company.overview()
-        if info is not None and not info.empty:
-            if 'company_name' in info.columns:
-                return str(info['company_name'].iloc[0])
-            elif 'name' in info.columns:
-                return str(info['name'].iloc[0])
-    except:
+        from dashboard.models import StockData
+        stock = StockData.objects.filter(symbol=symbol.upper()).first()
+        if stock and stock.company_name and stock.company_name.strip():
+            return stock.company_name.strip()
+    except Exception:
         pass
     return symbol
 
 
 def get_industry(symbol: str) -> str:
-    """Lấy ngành từ nhiều nguồn, ưu tiên vnstock_data rồi vnstock rồi fallback cục bộ."""
+    """Lấy ngành từ DB StockData hoặc mapping tĩnh, không gọi mạng khi sync."""
     try:
-        # 1) vnstock_data Insights screener với nhiều tên cột phổ biến
-        try:
-            from vnstock_data import Insights
-            cache = getattr(get_industry, '_screener_cache', None)
-            if cache is None:
-                try:
-                    ins = Insights()
-                    cache = ins.screener().filter()
-                except Exception:
-                    cache = None
-                get_industry._screener_cache = cache
-
-            if cache is not None and hasattr(cache, 'columns') and 'symbol' in cache.columns:
-                match = cache[cache['symbol'].astype(str).str.upper() == symbol.upper()]
-                if not match.empty:
-                    row = match.iloc[0]
-                    for col in ['vi_sector', 'industry_en', 'industry', 'sector', 'ngành']:
-                        val = row.get(col) if hasattr(row, 'get') else (row[col] if col in row.index else None)
-                        if val is not None and not (isinstance(val, float) and val != val) and str(val).strip():
-                            return str(val).strip()
-        except Exception:
-            pass
-
-        # 2) vnstock free fallback
-        try:
-            from vnstock import Company
-            company = Company(symbol=symbol, source="vci")
-            info = company.overview()
-            if info is not None and not info.empty:
-                for col in ['industry', 'ngành', 'sector', 'vi_sector', 'industry_en']:
-                    if col in info.columns:
-                        val = info[col].iloc[0]
-                        if val is not None and not (isinstance(val, float) and val != val) and str(val).strip():
-                            return str(val).strip()
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-    # 3) Fallback cục bộ theo bảng mã tĩnh
-    try:
-        from dashboard.models import INDUSTRY_MAP
+        from dashboard.models import StockData, INDUSTRY_MAP
+        stock = StockData.objects.filter(symbol=symbol.upper()).first()
+        if stock and stock.industry and stock.industry.strip() and stock.industry.strip() != "Default":
+            return stock.industry.strip()
         mapped = INDUSTRY_MAP.get(symbol.upper())
         if mapped:
             return mapped
     except Exception:
         pass
-
     return "Other"
 
 
-def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None) -> Dict[str, Any]:
+def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None, df=None) -> Dict[str, Any]:
     """
-    Lấy dữ liệu cơ bản từ vnstock_data (Unified API) hoặc vnstock fallback
-    fast_mode: True = chỉ lấy ratio (nhanh), False = lấy đầy đủ (chậm hơn)
-    vnindex_df: DataFrame VNINDEX đã prefetch sẵn (tránh cache congestion)
-    Returns: {roe, pe, pb, f_score, f_score_grade, profit_growth, profit_growth_note, is_new_listing}
+    Lấy dữ liệu cơ bản với ưu tiên Database-First để tránh rate-limit vnstock:
+    1. Đọc từ StockData và QuarterlyFinancial trong DB
+    2. Chỉ gọi vnstock_data nếu DB thiếu dữ liệu
     """
     result = {
-        "roe": None,
-        "pe": None,
-        "pb": None,
-        "pe_industry_avg": None,  # P/E trung bình ngành
-        "f_score": 0,
-        "f_score_grade": "N/A",
-        "profit_growth": None,  # Tăng trưởng LN (%)
-        "profit_growth_note": "N/A",  # Phương pháp tính: YoY, QoQ_adj, TTM, NEW_LISTING
-        "is_new_listing": False,  # Cổ phiếu mới (< 2 quý)
-        "foreign_buy_streak": 0,
-        "latest_net_val": 0.0,
-        "foreign_absorption_ratio": 0.0,
-        "latest_net_val_2": 0.0,
-        "foreign_buy_val": 0.0,
-        "foreign_sell_val": 0.0,
-        "foreign_trading_share": 0.0,
-        "foreign_accumulated_trend": "NEUTRAL",
-        "foreign_accumulated_slope": 0.0,
-        "industry_performance": 0,
-        "is_industry_leader": True,
+        'roe': None,
+        'pe': None,
+        'pb': None,
+        'f_score': 0,
+        'f_score_grade': 'F',
+        'profit_growth': None,
+        'profit_growth_note': 'N/A',
+        'is_new_listing': False,
+        'industry_performance': 0.0,
+        'is_industry_leader': False,
+        'foreign_buy_streak': 0,
+        'latest_net_val': 0.0,
+        'foreign_absorption_ratio': 0.0,
+        'latest_net_val_2': 0.0,
+        'foreign_buy_val': 0.0,
+        'foreign_sell_val': 0.0,
+        'foreign_trading_share': 0.0,
+        'foreign_accumulated_trend': 'NEUTRAL',
+        'foreign_accumulated_slope': 0.0,
     }
 
     def safe_float(val):
-        """Convert value to float safely"""
         if val is None or pd.isna(val):
             return None
         try:
@@ -632,163 +497,80 @@ def get_fundamental_data(symbol: str, fast_mode: bool = False, vnindex_df=None) 
         except (ValueError, TypeError):
             return None
 
-    # Try vnstock_data first (Silver+)
+    # 1. Đọc từ Database (StockData & QuarterlyFinancial) trước
     try:
-        from vnstock_data import Fundamental
-        import warnings as w
-        w.filterwarnings('ignore')
+        from dashboard.models import StockData, QuarterlyFinancial
+        stock_db = StockData.objects.filter(symbol=symbol.upper()).first()
+        if stock_db:
+            if stock_db.pe is not None and stock_db.pe > 0:
+                result['pe'] = stock_db.pe
+            if stock_db.pb is not None and stock_db.pb > 0:
+                result['pb'] = stock_db.pb
+            if stock_db.roe is not None:
+                result['roe'] = stock_db.roe
+            if stock_db.f_score and stock_db.f_score > 0:
+                result['f_score'] = stock_db.f_score
+                result['f_score_grade'] = get_f_score_grade(stock_db.f_score)
+            if stock_db.profit_growth is not None:
+                result['profit_growth'] = stock_db.profit_growth
+                result['profit_growth_note'] = stock_db.profit_growth_note or 'DB'
+                result['is_new_listing'] = stock_db.is_new_listing
 
-        fun = Fundamental()
-
-        # Get financial ratios - try year first, then quarter
-        ratios = None
-        for period in ["year", "quarter"]:
-            try:
-                ratios = fun.equity(symbol).ratio(period=period)
-                if ratios is not None and len(ratios) > 0:
-                    break
-            except:
-                continue
-
-        if ratios is not None and len(ratios) > 0:
-            # IMPORTANT: Index 0 = newest data, Index -1 = oldest data
-            # Get the latest row (index 0)
-            if hasattr(ratios, 'iloc'):
-                latest = ratios.iloc[0]  # Use index 0 for newest data
-            else:
-                latest = ratios
-
-            # Try multiple possible column names for PE
-            for col_name in ['pe', 'PE', 'P/E', 'price_to_earnings', 'pe_ratio']:
-                if col_name in ratios.columns:
-                    val = safe_float(latest.get(col_name))
-                    if val is not None and 0 < val < 1000:
-                        result['pe'] = val
-                        break
-
-            # Try multiple possible column names for PB
-            for col_name in ['pb', 'PB', 'P/B', 'price_to_book', 'pb_ratio', 'book_value_per_share']:
-                if col_name in ratios.columns:
-                    val = safe_float(latest.get(col_name))
-                    if val is not None and 0 < val < 100:
-                        # book_value_per_share might need different handling
-                        if col_name == 'book_value_per_share':
-                            continue  # Skip, we'll calculate PB differently
-                        result['pb'] = val
-                        break
-
-            # Try to find ROE or calculate from available data
-            for col_name in ['roe', 'ROE', 'return_on_equity', 'roe_ratio']:
-                if col_name in ratios.columns:
-                    val = safe_float(latest.get(col_name))
-                    if val is not None:
-                        # ROE might be in decimal (0.15) or percentage (15)
-                        if abs(val) < 1:  # Likely decimal form
-                            val *= 100
-                        result['roe'] = round(val, 2)
-                        break
-
-            # Calculate ROE from PE/PB if not found
-            if result['roe'] is None and result['pe'] and result['pb'] and result['pe'] > 0:
-                result['roe'] = round((result['pb'] / result['pe']) * 100, 2)
-
-            # Fast mode: chỉ tính F-Score đơn giản từ ratio
-            if fast_mode:
-                # Simplified F-Score từ ratio (chỉ 3 điểm tối đa)
-                simple_score = 0
-                if result.get('roe') and result['roe'] > 10:
-                    simple_score += 1
-                if result.get('pe') and 5 < result['pe'] < 25:
-                    simple_score += 1
-                if result.get('pb') and result['pb'] < 3:
-                    simple_score += 1
-                result['f_score'] = simple_score * 3  # Scale lên 9
-                result['f_score_grade'] = get_f_score_grade(result['f_score'])
-            else:
-                # Full mode: tính F-Score đầy đủ
-                profit_growth_result = calculate_profit_growth(symbol)
-                result['profit_growth'] = profit_growth_result.get('profit_growth')
-                result['profit_growth_note'] = profit_growth_result.get('profit_growth_note', 'N/A')
-                result['is_new_listing'] = profit_growth_result.get('is_new_listing', False)
-                result['pe_industry_avg'] = get_industry_pe_average(symbol)
-                result['industry_performance'] = get_industry_performance(symbol, None, vnindex_df=vnindex_df)
-                result['is_industry_leader'] = result['industry_performance'] >= 0
-                # Exact foreign metrics (foreign_flow API)
-                foreign_metrics = get_exact_foreign_metrics(symbol)
-                result['foreign_buy_streak'] = foreign_metrics.get('foreign_streak', 0)
-                result['latest_net_val'] = foreign_metrics.get('latest_net_val', 0.0)
-                result['foreign_absorption_ratio'] = foreign_metrics.get('foreign_absorption_ratio', 0.0)
-                result['latest_net_val_2'] = foreign_metrics.get('latest_net_val_2', 0.0)
-                result['foreign_buy_val'] = foreign_metrics.get('foreign_buy_val', 0.0)
-                result['foreign_sell_val'] = foreign_metrics.get('foreign_sell_val', 0.0)
-                result['foreign_trading_share'] = foreign_metrics.get('foreign_trading_share', 0.0)
-                result['foreign_accumulated_trend'] = foreign_metrics.get('foreign_accumulated_trend', 'NEUTRAL')
-                result['foreign_accumulated_slope'] = foreign_metrics.get('foreign_accumulated_slope', 0.0)
-                result['f_score'] = calculate_f_score(symbol, result)
-                result['f_score_grade'] = get_f_score_grade(result['f_score'])
-
-        return result
-
-    except Exception as e:
+        qf = QuarterlyFinancial.objects.filter(symbol=symbol.upper()).order_by('-year', '-quarter').first()
+        if qf:
+            if result['roe'] is None and qf.roe is not None:
+                result['roe'] = qf.roe
+            if result['f_score'] == 0 and qf.f_score is not None and qf.f_score > 0:
+                result['f_score'] = qf.f_score
+                result['f_score_grade'] = get_f_score_grade(qf.f_score)
+    except Exception:
         pass
 
-    # Fallback: try vnstock
-    if result['pe'] is None or result['pb'] is None or result['roe'] is None:
-        try:
-            from vnstock import Finance
-            fin = Finance(symbol=symbol, source="vci")
-
-            # Try to get ratios
-            ratios = fin.ratio(period="quarter")
-            if ratios is not None and not ratios.empty:
-                # Get first row (newest data)
-                for col in ratios.columns:
-                    col_lower = str(col).lower()
-
-                    # ROE
-                    if ('roe' in col_lower or 'return on equity' in col_lower) and result['roe'] is None:
-                        val = ratios[col].iloc[0] if hasattr(ratios[col], 'iloc') else ratios[col]
-                        val = safe_float(val)
-                        if val is not None:
-                            if abs(val) < 1:  # Decimal form
-                                val *= 100
-                            result['roe'] = round(val, 2)
-
-                    # PE
-                    if ('pe' in col_lower or 'p/e' in col_lower) and result['pe'] is None:
-                        val = ratios[col].iloc[0] if hasattr(ratios[col], 'iloc') else ratios[col]
-                        val = safe_float(val)
-                        if val is not None and 0 < val < 1000:
-                            result['pe'] = val
-
-                    # PB
-                    if ('pb' in col_lower or 'p/b' in col_lower or 'book' in col_lower) and result['pb'] is None:
-                        val = ratios[col].iloc[0] if hasattr(ratios[col], 'iloc') else ratios[col]
-                        val = safe_float(val)
-                        if val is not None and 0 < val < 100:
-                            result['pb'] = val
-
-        except Exception as e:
-            pass
-
-    # Calculate ROE from PE/PB if still missing
+    # 2. Nếu thiếu PE/PB/ROE, sử dụng cấu hình mặc định ngành, không gọi vnstock để tránh rate-limit
+    industry = result.get('industry') or get_industry(symbol)
+    ind_cfg = INDUSTRY_CONFIG.get(industry, INDUSTRY_CONFIG.get('Default', {}))
+    if result['pe'] is None and ind_cfg.get('type') == 'PE':
+        result['pe'] = ind_cfg.get('target', 12.0)
+    if result['pb'] is None and ind_cfg.get('type') == 'PB':
+        result['pb'] = ind_cfg.get('target', 1.8)
     if result['roe'] is None and result['pe'] and result['pb'] and result['pe'] > 0:
         result['roe'] = round((result['pb'] / result['pe']) * 100, 2)
 
-    # Simplified F-Score if still 0
-    if result['f_score'] == 0:
-        simple_score = 0
-        if result.get('roe') and result['roe'] > 15:
-            simple_score += 3
-        if result.get('pe') and 5 < result['pe'] < 25:
-            simple_score += 3
-        if result.get('pb') and result['pb'] < 3:
-            simple_score += 3
-        result['f_score'] = simple_score
-        result['f_score_grade'] = get_f_score_grade(result['f_score'])
+    # 3. Luôn đọc dữ liệu giao dịch khối ngoại từ DB (tốc độ cao, không gọi mạng)
+    try:
+        foreign_metrics = get_exact_foreign_metrics(symbol)
+        result['foreign_buy_streak'] = foreign_metrics.get('foreign_streak', 0)
+        result['latest_net_val'] = foreign_metrics.get('latest_net_val', 0.0)
+        result['foreign_absorption_ratio'] = foreign_metrics.get('foreign_absorption_ratio', 0.0)
+        result['latest_net_val_2'] = foreign_metrics.get('latest_net_val_2', 0.0)
+        result['foreign_buy_val'] = foreign_metrics.get('foreign_buy_val', 0.0)
+        result['foreign_sell_val'] = foreign_metrics.get('foreign_sell_val', 0.0)
+        result['foreign_trading_share'] = foreign_metrics.get('foreign_trading_share', 0.0)
+        result['foreign_accumulated_trend'] = foreign_metrics.get('foreign_accumulated_trend', 'NEUTRAL')
+        result['foreign_accumulated_slope'] = foreign_metrics.get('foreign_accumulated_slope', 0.0)
+    except Exception:
+        pass
+
+    # 4. Luôn tính toán Relative Strength (RS so với VNINDEX) - Chỉ báo kỹ thuật cần tính trong mọi chế độ
+    try:
+        result['industry_performance'] = get_industry_performance(symbol, df=df, vnindex_df=vnindex_df)
+        result['is_industry_leader'] = result['industry_performance'] >= 0
+    except Exception:
+        pass
+
+    # 5. Tính toán F-Score & Profit growth nếu chưa có
+    if not fast_mode:
+        if result['profit_growth'] is None:
+            growth_info = calculate_profit_growth(symbol)
+            result['profit_growth'] = growth_info.get('profit_growth')
+            result['profit_growth_note'] = growth_info.get('profit_growth_note', 'N/A')
+            result['is_new_listing'] = growth_info.get('is_new_listing', False)
+
+        if result['f_score'] == 0:
+            result['f_score'] = calculate_f_score(symbol, result)
+            result['f_score_grade'] = get_f_score_grade(result['f_score'])
 
     return result
-
 
 def get_industry_pe_average(symbol: str) -> Optional[float]:
     """
@@ -820,17 +602,7 @@ def get_industry_pe_average(symbol: str) -> Optional[float]:
                 except:
                     pass
         
-        # Fallback: P/E thị trường VNINDEX
-        try:
-            from vnstock_data import Market
-            mkt = Market()
-            pe_data = mkt.pe(duration="1Y")
-            if pe_data is not None and len(pe_data) > 0:
-                for col in pe_data.columns:
-                    if 'pe' in col.lower():
-                        return round(float(pe_data[col].iloc[-1]), 2)
-        except:
-            pass
+        # Fallback P/E thị trường: dùng cấu hình mặc định ngành, không gọi vnstock
         
         # Final fallback: sử dụng INDUSTRY_CONFIG
         if industry:
@@ -1065,17 +837,17 @@ def build_veto_response(
 
 def get_exact_foreign_metrics(symbol: str) -> dict:
     """
-    Lấy chỉ số khối ngoại chuẩn xác từ vnstock_data foreign_flow().
+    Lấy chỉ số khối ngoại ưu tiên từ DB StockAnalysis để tránh rate-limit vnstock.
     Trả về:
-        foreign_streak: Số phiên liên tiếp mua ròng (tính đến phiên trước hôm nay)
+        foreign_streak: Số phiên liên tiếp mua ròng
         latest_net_val: Giá trị mua ròng phiên gần nhất (VND)
         foreign_absorption_ratio: % khối ngoại mua ròng / tổng thanh khoản phiên
-        latest_net_val_2: Giá trị mua ròng phiên trước (để so sánh 2 phiên gần nhất)
+        latest_net_val_2: Giá trị mua ròng phiên trước
         foreign_buy_val: Giá trị mua phiên gần nhất (VND)
         foreign_sell_val: Giá trị bán phiên gần nhất (VND)
         foreign_trading_share: % giá trị giao dịch khối ngoại / tổng thanh khoản phiên
-        foreign_accumulated_trend: 'ACCUMULATING'/'DISTRIBUTING'/'NEUTRAL' dựa trên độ dốc chuỗi 30 phiên
-        foreign_accumulated_slope: độ dốc của đường lũy kế net_val 30 phiên
+        foreign_accumulated_trend: 'ACCUMULATING'/'DISTRIBUTING'/'NEUTRAL'
+        foreign_accumulated_slope: độ dốc của đường lũy kế net_val
     """
     default = {
         "foreign_streak": 0,
@@ -1087,226 +859,200 @@ def get_exact_foreign_metrics(symbol: str) -> dict:
         "foreign_trading_share": 0.0,
         "foreign_accumulated_trend": "NEUTRAL",
         "foreign_accumulated_slope": 0.0,
+        "foreign_sell_streak": 0,
+        "streak_start_date": None,
+        "net_val_latest": 0.0,
+        "ranking_date": None,
     }
     try:
-        from vnstock_data import Market
-        mkt = Market()
-        df = mkt.equity(symbol).foreign_flow()
-
-        if df is None or df.empty:
+        from .models import StockAnalysis
+        existing = StockAnalysis.objects.filter(symbol__symbol=symbol).first()
+        if existing:
+            default["foreign_streak"] = getattr(existing, 'foreign_buy_streak', 0) or 0
+            default["latest_net_val"] = getattr(existing, 'latest_net_val', 0.0) or 0.0
+            default["foreign_absorption_ratio"] = getattr(existing, 'foreign_absorption_ratio', 0.0) or 0.0
+            default["latest_net_val_2"] = getattr(existing, 'latest_net_val_2', 0.0) or 0.0
+            default["foreign_buy_val"] = getattr(existing, 'foreign_buy_val', 0.0) or 0.0
+            default["foreign_sell_val"] = getattr(existing, 'foreign_sell_val', 0.0) or 0.0
+            default["foreign_trading_share"] = getattr(existing, 'foreign_trading_share', 0.0) or 0.0
+            default["foreign_accumulated_trend"] = getattr(existing, 'foreign_accumulated_trend', "NEUTRAL") or "NEUTRAL"
+            default["foreign_accumulated_slope"] = getattr(existing, 'foreign_accumulated_slope', 0.0) or 0.0
+            default["foreign_sell_streak"] = getattr(existing, 'foreign_sell_streak', 0) or 0
+            default["streak_start_date"] = getattr(existing, 'streak_start_date', None)
+            default["net_val_latest"] = getattr(existing, 'latest_net_val', 0.0) or 0.0
+            default["ranking_date"] = getattr(existing, 'ranking_date', None)
             return default
+    except Exception:
+        pass
 
-        # API mới dùng 'trading_date', API cũ dùng 'time'
-        date_col = 'trading_date' if 'trading_date' in df.columns else 'time'
-        if date_col not in df.columns:
-            return default
-        df = df.sort_values(date_col, ascending=False).reset_index(drop=True)
+    return default
 
-        # Helper lấy net_val từ nhiều tên cột có thể có
-        def _net(row):
-            return float(row.get('net_val', 0) or row.get('fr_net_value_total', 0) or 0)
 
-        # 1. Tính streak: đếm các phiên liên tiếp có net_val > 0
-        streak = 0
-        for _, row in df.iterrows():
-            net_val = _net(row)
-            if net_val > 0:
-                streak += 1
-            else:
-                break
-        default["foreign_streak"] = streak
-
-        # 2. latest_net_val / buy/sell / prev net
-        row0 = df.iloc[0]
-        row1 = df.iloc[1] if len(df) > 1 else None
-        default["latest_net_val"] = _net(row0)
-        if row1 is not None:
-            default["latest_net_val_2"] = _net(row1)
-
-        # buy/sell value từ foreign_flow nếu có
-        buy_val = 0.0
-        sell_val = 0.0
-        for col in ['buy_val', 'fr_buy_value_matched', 'buy_value']:
-            if col in row0.index:
-                buy_val = float(row0.get(col) or 0)
-                if buy_val:
-                    break
-        for col in ['sell_val', 'fr_sell_value_matched', 'sell_value']:
-            if col in row0.index:
-                sell_val = float(row0.get(col) or 0)
-                if sell_val:
-                    break
-        default["foreign_buy_val"] = buy_val
-        default["foreign_sell_val"] = sell_val
-
-        # 3. absorption ratio: |net_val| / total_trade_value
-        # 4. foreign trading share: (buy_val + sell_val) / total_trade_value
-        total_val = 0.0
-        try:
-            latest_date = row0['trading_date']
-            ohlcv = mkt.equity(symbol).ohlcv(
-                start=(pd.Timestamp(latest_date) - pd.Timedelta(days=3)).strftime("%Y-%m-%d"),
-                end=(pd.Timestamp(latest_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-            )
-            if ohlcv is not None and not ohlcv.empty:
-                date_col_ohlcv = 'time' if 'time' in ohlcv.columns else 'trading_date'
-                ohlcv2 = ohlcv.sort_values(date_col_ohlcv, ascending=False).reset_index(drop=True)
-                for _, row in ohlcv2.iterrows():
-                    row_date = pd.Timestamp(row[date_col_ohlcv]).normalize()
-                    if row_date == pd.Timestamp(latest_date).normalize():
-                        vol = float(row.get('volume', 0))
-                        close_k = float(row.get('close', 0) or 0)
-                        if close_k > 0 and vol > 0:
-                            close_vnd = close_k * 1000  # convert K VND -> VND
-                            total_val = close_vnd * vol
-                        break
-        except Exception:
-            pass
-
-        if total_val > 0:
-            default["foreign_absorption_ratio"] = round(abs(default["latest_net_val"]) / total_val * 100, 2)
-            trading_share = (buy_val + sell_val) / total_val * 100 if buy_val or sell_val else abs(default["latest_net_val"]) / total_val * 100
-            default["foreign_trading_share"] = round(trading_share, 2)
-        else:
-            default["foreign_absorption_ratio"] = 0.0
-            default["foreign_trading_share"] = 0.0
-
-        # 5. Chuỗi 30 phiên: tính TỔNG net_val → xác định xu hướng dài hạn
-        # Theo spec: ACCUMULATING nếu tổng 30 phiên > 0, DISTRIBUTING nếu tổng < 0
-        try:
-            work_df = df.head(min(30, len(df))).copy()
-            work_df['_net'] = work_df.apply(lambda r: _net(r), axis=1)
-            total_net_30 = work_df['_net'].sum()
-            if total_net_30 > 0:
-                default["foreign_accumulated_trend"] = "ACCUMULATING"
-            elif total_net_30 < 0:
-                default["foreign_accumulated_trend"] = "DISTRIBUTING"
-            else:
-                default["foreign_accumulated_trend"] = "NEUTRAL"
-            # Slope chỉ dùng để tham chiếu, không còn làm trend determinant
-            work_sorted = work_df.sort_values(date_col, ascending=True).reset_index(drop=True)
-            cum_net = work_sorted['_net'].cumsum()
-            if len(cum_net) >= 5:
-                x = np.arange(len(cum_net))
-                slope = np.polyfit(x, cum_net.values, 1)[0] if len(cum_net) > 1 else 0.0
-                default["foreign_accumulated_slope"] = round(float(slope), 2)
-            else:
-                default["foreign_accumulated_slope"] = 0.0
-        except Exception:
-            default["foreign_accumulated_trend"] = "NEUTRAL"
-            default["foreign_accumulated_slope"] = 0.0
-
-        return default
-
+def sync_foreign_flow_from_vci(symbols: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Đồng bộ dữ liệu giao dịch khối ngoại từ bảng giá VCI (hoàn toàn miễn phí, không tốn hạn ngạch vnstock).
+    Cập nhật trực tiếp vào StockAnalysis:
+    - latest_net_val
+    - foreign_buy_val
+    - foreign_sell_val
+    - foreign_absorption_ratio
+    - foreign_trading_share
+    - foreign_accumulated_trend
+    - foreign_buy_streak / foreign_sell_streak
+    """
+    from .models import StockData, StockAnalysis
+    
+    if not symbols:
+        symbols = list(StockData.objects.values_list('symbol', flat=True))
+    if not symbols:
+        return {}
+        
+    results = {}
+    chunk_size = 40
+    
+    try:
+        from vnstock.explorer.vci.trading import Trading
+        t = Trading(show_log=False)
     except Exception as e:
-        print(f"[Foreign Error] {symbol}: {e}")
-        return default
+        print(f"[Foreign Flow] Không thể khởi tạo VCI Trading: {e}")
+        return {}
+
+    for i in range(0, len(symbols), chunk_size):
+        chunk = [str(s).strip().upper() for s in symbols[i:i+chunk_size] if s]
+        if not chunk:
+            continue
+        try:
+            df = t.price_board(chunk)
+            if df is None or df.empty:
+                continue
+                
+            for _, r in df.iterrows():
+                try:
+                    sym = str(r[('listing', 'symbol')]).strip().upper()
+                    buy_val = float(r[('match', 'foreign_buy_value')] or 0.0)
+                    sell_val = float(r[('match', 'foreign_sell_value')] or 0.0)
+                    net_val = buy_val - sell_val
+                    tot_val = float(r[('match', 'accumulated_value')] or 0.0) * 1e6
+                    abs_pct = round(abs(net_val) / tot_val * 100, 2) if tot_val > 0 else 0.0
+                    share_pct = round((buy_val + sell_val) / tot_val * 100, 2) if tot_val > 0 else 0.0
+                    
+                    stock = StockData.objects.filter(symbol=sym).first()
+                    if not stock:
+                        continue
+                    
+                    analysis, _ = StockAnalysis.objects.get_or_create(symbol=stock)
+                    prev_net = analysis.latest_net_val or 0.0
+                    prev_buy_streak = analysis.foreign_buy_streak or 0
+                    prev_sell_streak = analysis.foreign_sell_streak or 0
+                    
+                    # Cập nhật chuỗi mua / bán
+                    if net_val > 0:
+                        new_buy_streak = (prev_buy_streak + 1) if prev_net > 0 else 1
+                        new_sell_streak = 0
+                        trend = "ACCUMULATING"
+                    elif net_val < 0:
+                        new_sell_streak = (prev_sell_streak + 1) if prev_net < 0 else 1
+                        new_buy_streak = 0
+                        trend = "DISTRIBUTING"
+                    else:
+                        new_buy_streak = 0
+                        new_sell_streak = 0
+                        trend = "NEUTRAL"
+                    
+                    analysis.latest_net_val_2 = prev_net
+                    analysis.latest_net_val = net_val
+                    analysis.foreign_buy_val = buy_val
+                    analysis.foreign_sell_val = sell_val
+                    analysis.foreign_absorption_ratio = abs_pct
+                    analysis.foreign_trading_share = share_pct
+                    analysis.foreign_accumulated_trend = trend
+                    analysis.foreign_buy_streak = new_buy_streak
+                    analysis.foreign_sell_streak = new_sell_streak
+                    analysis.save()
+                    
+                    results[sym] = {
+                        "net_val": net_val,
+                        "buy_val": buy_val,
+                        "sell_val": sell_val,
+                        "absorption": abs_pct,
+                        "trend": trend,
+                        "streak": new_buy_streak,
+                    }
+                except Exception:
+                    continue
+        except Exception as chunk_err:
+            print(f"[Foreign Flow] Lỗi chunk {chunk[:3]}: {chunk_err}")
+            
+    return results
 
 
 def get_industry_performance(symbol: str, df: pd.DataFrame = None, lookback: int = 5, vnindex_df=None) -> float:
     """
-    Lấy RS (Relative Strength) của mã so với VNIndex
-    vnindex_df: DataFrame VNINDEX đã prefetch sẵn (tránh cache congestion giữa 8 threads)
-    Returns: % chênh lệch so với VNIndex (dương = mạnh hơn thị trường)
+    Lấy RS (Relative Strength) của mã so với VNIndex.
+    Hoàn toàn sử dụng dữ liệu nến OHLCV từ TradingView hoặc DataFrame đã truyền vào,
+    không gọi bất kỳ API vnstock nào để tránh rate-limit.
     """
     try:
-        from vnstock_data import Quote, Insights
-        import warnings
-        warnings.filterwarnings('ignore')
-
         lookback = min(lookback, 20)
 
-        # Thử 1: Insights screener
+        # 1. Lấy dữ liệu VNINDEX
+        vn_df = vnindex_df
+        if vn_df is None or len(vn_df) < lookback:
+            from django.core.cache import cache
+            vn_df = cache.get('vnindex_history')
+        if vn_df is None or len(vn_df) < lookback:
+            from dashboard.tv_client import get_ohlcv
+            vn_df = get_ohlcv('VNINDEX', count=max(lookback + 10, 60))
+            if vn_df is not None and len(vn_df) >= lookback:
+                try:
+                    from django.core.cache import cache
+                    cache.set('vnindex_history', vn_df, 300)
+                except Exception:
+                    pass
+
+        # 2. Lấy dữ liệu mã cổ phiếu
+        stock_df = df
+        if stock_df is None or len(stock_df) < lookback:
+            from dashboard.tv_client import get_ohlcv
+            stock_df = get_ohlcv(symbol, count=max(lookback + 10, 60))
+
+        # 3. Tính toán Relative Strength
+        if (stock_df is not None and vn_df is not None and
+            len(stock_df) >= lookback and len(vn_df) >= lookback and
+            'close' in stock_df.columns and 'close' in vn_df.columns):
+
+            s_close = stock_df['close'].dropna()
+            v_close = vn_df['close'].dropna()
+
+            if len(s_close) >= lookback and len(v_close) >= lookback:
+                s_base = float(s_close.iloc[-lookback])
+                s_last = float(s_close.iloc[-1])
+                v_base = float(v_close.iloc[-lookback])
+                v_last = float(v_close.iloc[-1])
+
+                if s_base > 0 and v_base > 0:
+                    stock_return = ((s_last - s_base) / s_base) * 100
+                    vn_return = ((v_last - v_base) / v_base) * 100
+                    rs = round(stock_return - vn_return, 2)
+                    return rs
+
+        # Fallback từ DB nếu có
         try:
-            ins = Insights()
-            screener_df = ins.screener().filter(2000)
+            from dashboard.models import StockData
+            stk = StockData.objects.filter(symbol=symbol).first()
+            if stk and stk.rs_rating:
+                return round(float(stk.rs_rating), 2)
+        except Exception:
+            pass
 
-            if screener_df is not None and len(screener_df) > 0:
-                ticker_col = 'symbol' if 'symbol' in screener_df.columns else 'ticker'
-                stock_row = screener_df[screener_df[ticker_col] == symbol.upper()]
-
-                if len(stock_row) > 0:
-                    for col in ['outperforms_index_3m', 'rs_3m']:
-                        if col in stock_row.columns:
-                            rs_value = stock_row[col].iloc[0]
-                            if rs_value is not None and pd.notna(rs_value):
-                                value = round(float(rs_value), 2)
-                                print(f"[RS][{symbol}] source=screener col={col} value={value}")
-                                return value
-        except Exception as e:
-            print(f"[RS][{symbol}] screener_error={e}")
-
-        # Thử 2: df + VNINDEX (ưu tiên dùng vnindex_df đã prefetch)
-        if df is not None and len(df) >= lookback:
-            try:
-                stock_return = ((df['close'].iloc[-1] - df['close'].iloc[-lookback]) / df['close'].iloc[-lookback]) * 100
-
-                vn_df = vnindex_df  # Dùng đã prefetch, không gọi API trong thread
-                if vn_df is not None and len(vn_df) >= lookback:
-                    vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
-                    value = round(stock_return - vn_return, 2)
-                    print(f"[RS][{symbol}] source=prefetched_vnindex value={value}")
-                    return value
-
-                # Fallback: thử cache nếu prefetch không có
-                from django.core.cache import cache
-                vn_cached = cache.get('vnindex_history')
-                if vn_cached is not None and len(vn_cached) >= lookback:
-                    vn_return = ((vn_cached['close'].iloc[-1] - vn_cached['close'].iloc[-lookback]) / vn_cached['close'].iloc[-lookback]) * 100
-                    value = round(stock_return - vn_return, 2)
-                    print(f"[RS][{symbol}] source=cached_vnindex value={value}")
-                    return value
-
-                # Cache miss: gọi API (đây là fallback cuối cùng, không phải hot path)
-                quote_vn = Quote(symbol='VNINDEX')
-                vn_from_api = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
-                if vn_from_api is not None and len(vn_from_api) >= lookback:
-                    cache.set('vnindex_history', vn_from_api, 300)
-                    vn_return = ((vn_from_api['close'].iloc[-1] - vn_from_api['close'].iloc[-lookback]) / vn_from_api['close'].iloc[-lookback]) * 100
-                    value = round(stock_return - vn_return, 2)
-                    print(f"[RS][{symbol}] source=manual_vnindex value={value}")
-                    return value
-            except Exception as e:
-                print(f"[RS][{symbol}] manual_vnindex_error={e}")
-
-        # Thử 3: Quote trực tiếp
-        try:
-            quote_vn = Quote(symbol='VNINDEX')
-            vn_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
-
-            quote_stk = Quote(symbol=symbol)
-            stock_df = quote_stk.history(symbol=symbol, length='30D', interval='1D')
-
-            if (vn_df is not None and stock_df is not None and
-                len(vn_df) >= lookback and len(stock_df) >= lookback):
-                stock_return = ((stock_df['close'].iloc[-1] - stock_df['close'].iloc[-lookback]) / stock_df['close'].iloc[-lookback]) * 100
-                vn_return = ((vn_df['close'].iloc[-1] - vn_df['close'].iloc[-lookback]) / vn_df['close'].iloc[-lookback]) * 100
-                value = round(stock_return - vn_return, 2)
-                print(f"[RS][{symbol}] source=direct_quote value={value}")
-                return value
-            else:
-                print(f"[RS][{symbol}] direct_quote_insufficient_data vn={None if vn_df is None else len(vn_df)} stock={None if stock_df is None else len(stock_df)}")
-        except Exception as e:
-            print(f"[RS][{symbol}] direct_quote_error={e}")
-
-        print(f"[RS][{symbol}] fallback=0")
-        return 0
+        return 0.0
     except Exception as e:
-        print(f"[RS][{symbol}] fatal_error={e}")
-        return 0
-
+        print(f"[RS][{symbol}] error={e}")
+        return 0.0
 
 def calculate_profit_growth(symbol: str) -> dict:
     """
-    Calculate profit growth với ưu tiên: TTM > YoY > QoQ
-    
-    Returns dict:
-    {
-        'profit_growth': float (growth percentage),
-        'profit_growth_note': str (method used: 'YoY', 'QoQ', 'TTM', 'NEW_LISTING'),
-        'is_new_listing': bool
-    }
-    
+    Calculate profit growth với ưu tiên: DB > TTM > YoY > QoQ
     Priority:
     1. TTM (Trailing Twelve Months) - ổn định nhất
     2. YoY (Year-over-Year) - chính xác nhất
@@ -1318,339 +1064,53 @@ def calculate_profit_growth(symbol: str) -> dict:
         'profit_growth_note': 'N/A',
         'is_new_listing': False
     }
-    
     try:
-        from vnstock_data import Fundamental
-        import warnings as w
-        w.filterwarnings('ignore')
-
-        fun = Fundamental()
-        income = fun.equity(symbol).income_statement(limit=8)
-
-        if income is None or len(income) == 0:
-            return result
-        
-        # Find net profit column - ưu tiên LN của cổ đông công ty mẹ
-        net_profit_col = None
-        preferred_cols = [
-            'profit_after_tax_for_shareholders_of_parent_company',
-            'net_profit_after_tax',
-            'profit_before_tax'
-        ]
-        for col in preferred_cols:
-            if col in income.columns:
-                net_profit_col = col
-                break
-        
-        # Fallback: tìm bất kỳ cột nào có profit
-        if net_profit_col is None:
-            for col in income.columns:
-                col_lower = str(col).lower()
-                if ('net' in col_lower and 'profit' in col_lower) or 'lnst' in col_lower:
-                    net_profit_col = col
-                    break
-
-        if net_profit_col is None:
-            return result
-        
-        # Đếm số quý có dữ liệu hợp lệ
-        valid_quarters = 0
-        for idx in income.index:
-            val = income.loc[idx, net_profit_col]
-            if val is not None and not pd.isna(val) and float(val) > 0:
-                valid_quarters += 1
-        
-        # NEW_LISTING: < 2 quý dữ liệu
-        if valid_quarters < 2:
-            result['profit_growth'] = 0.001  # Không âm, không None
-            result['profit_growth_note'] = 'NEW_LISTING'
-            result['is_new_listing'] = True
-            return result
-        
-        # Hàm helper lấy giá trị
-        def get_profit(idx):
-            val = income.loc[idx, net_profit_col]
-            if val is None or pd.isna(val):
-                return None
-            try:
-                v = float(val)
-                if pd.isna(v):
-                    return None
-                return v
-            except:
-                return None
-        
-        latest_idx = income.index[0]
-        latest_profit = get_profit(latest_idx)
-        
-        if latest_profit is None:
-            return result
-        
-        # ========== METHOD 1: TTM (Trailing Twelve Months) ==========
-        # Chỉ tính TTM khi có đủ dữ liệu 8 quý liên tiếp để tránh bất đối xứng
-        if len(income) >= 8:
-            ttm_current = 0
-            ttm_prev = 0
-            for i in range(4):
-                if i < len(income.index):
-                    val = get_profit(income.index[i])
-                    if val is not None:
-                        ttm_current += val
-            
-            for i in range(4, min(8, len(income))):
-                val = get_profit(income.index[i])
-                if val is not None:
-                    ttm_prev += val
-            
-            if abs(ttm_prev) > 0 and ttm_current > 0 and ttm_prev > 0:
-                ttm_growth = ((ttm_current - ttm_prev) / abs(ttm_prev)) * 100
-                result['profit_growth'] = round(ttm_growth, 2)
-                result['profit_growth_note'] = 'TTM'
-                return result
-        elif valid_quarters >= 4:
-            result['profit_growth_note'] = 'YoY'
-        
-        # ========== METHOD 2: YoY (Year-over-Year) ==========
-        # Tìm cùng kỳ năm trước (cách 4 quý)
-        if isinstance(latest_idx, str):
-            latest_dt = pd.to_datetime(latest_idx)
-        else:
-            latest_dt = latest_idx
-        
-        same_quarter_last_year = None
-        for i in range(1, min(5, len(income))):
-            row_idx = income.index[i]
-            if isinstance(row_idx, str):
-                row_dt = pd.to_datetime(row_idx)
-            else:
-                row_dt = row_idx
-            
-            # Same quarter: cùng tháng trong quý
-            if (latest_dt.month - 1) // 3 == (row_dt.month - 1) // 3:
-                if latest_dt.year == row_dt.year + 1:
-                    same_quarter_last_year = get_profit(row_idx)
-                    break
-        
-        if same_quarter_last_year is not None and abs(same_quarter_last_year) > 0:
-            yoy_growth = ((latest_profit - same_quarter_last_year) / abs(same_quarter_last_year)) * 100
-            result['profit_growth'] = round(yoy_growth, 2)
-            result['profit_growth_note'] = 'YoY'
-            return result
-        
-        # ========== METHOD 3: QoQ với hệ số 0.8 ==========
-        # Chỉ dùng khi không có YoY
-        if valid_quarters >= 2:
-            prev_idx = income.index[1]
-            prev_profit = get_profit(prev_idx)
-            
-            if prev_profit is not None and prev_profit != 0:
-                qoq_growth = ((latest_profit - prev_profit) / abs(prev_profit)) * 100
-                # Áp dụng hệ số 0.8 để tránh sai số mùa vụ
-                adjusted_growth = qoq_growth * 0.8
-                result['profit_growth'] = round(adjusted_growth, 2)
-                result['profit_growth_note'] = 'QoQ_adj'
-                return result
-        
-        # Fallback: không tính được
-        return result
-
-    except Exception as e:
+        from dashboard.models import StockData
+        stk = StockData.objects.filter(symbol=symbol.upper()).first()
+        if stk and stk.profit_growth is not None:
+            return {
+                'profit_growth': stk.profit_growth,
+                'profit_growth_note': stk.profit_growth_note or 'DB',
+                'is_new_listing': stk.is_new_listing
+            }
+    except Exception:
         pass
     
+    # Không gọi mạng vnstock_data - chỉ dùng dữ liệu từ DB
     return result
 
 
-def calculate_f_score(symbol: str, fund_data: dict = None) -> int:  # pyright: ignore[reportArgumentType]
+def calculate_f_score(symbol: str, fund_data: dict = None) -> int:
     """
     Calculate Piotroski F-Score (0-9)
-    Pure accounting-based financial health score using income statement,
-    balance sheet, and cash flow only. No market valuation inputs.
+    Ưu tiên: fund_data -> DB (QuarterlyFinancial/StockData) -> vnstock_data (fallback).
     """
-    score = 0
+    # 1. Từ fund_data nếu có
+    if fund_data and isinstance(fund_data, dict):
+        f = fund_data.get('f_score')
+        if f is not None and isinstance(f, (int, float)) and f > 0:
+            return int(f)
 
+    # 2. Từ DB QuarterlyFinancial
     try:
-        from vnstock_data import Fundamental
-        import warnings as w
-        w.filterwarnings('ignore')
-
-        fun = Fundamental()
-
-        income = fun.equity(symbol).income_statement(limit=8)
-        balance = fun.equity(symbol).balance_sheet(limit=8)
-        cf = fun.equity(symbol).cash_flow(limit=8)
-
-        if income is None or len(income.columns) < 2:
-            return 0
-
-        # Get latest period
-        latest_row = income.index[0]
-        prev_row = income.index[1] if len(income.index) > 1 else None
-
-        # Helper
-        def get_val(df, row, col):
-            try:
-                if col in df.columns:
-                    return df.loc[row, col]
-            except:
-                pass
-            return None
-
-        # 1. ROA > 0
-        ni_col = 'net_profit_after_tax' if 'net_profit_after_tax' in income.columns else None
-        ta_col = 'total_assets' if 'total_assets' in balance.columns else None
-        if ni_col and ta_col:
-            ni = get_val(income, latest_row, ni_col)
-            ta = get_val(balance, latest_row, ta_col)
-            if ni and ta and float(ta) != 0:
-                roa = float(ni) / float(ta)
-                if roa > 0:
-                    score += 1
-
-        # 2. OCF > 0
-        ocf_col = None
-        for col in cf.columns:
-            if 'operating' in col.lower() and 'cash' in col.lower():
-                ocf_col = col
-                break
-        if ocf_col:
-            ocf = get_val(cf, latest_row, ocf_col)
-            if ocf and float(ocf) > 0:
-                score += 1
-
-        # 3. ROA increase YoY
-        if ni_col and ta_col:
-            ni_prev = get_val(income, prev_row, ni_col) if prev_row else None
-            ta_prev = get_val(balance, prev_row, ta_col) if prev_row else None
-            if ni and ta and ni_prev and ta_prev and float(ta) != 0 and float(ta_prev) != 0:
-                roa_current = float(ni) / float(ta)
-                roa_prev = float(ni_prev) / float(ta_prev)
-                if roa_current > roa_prev:
-                    score += 1
-
-        # 4. CFO > Net Income
-        if ocf_col and ni_col:
-            ocf_val = get_val(cf, latest_row, ocf_col)
-            ni_val = get_val(income, latest_row, ni_col)
-            if ocf_val and ni_val and float(ocf_val) > float(ni_val):
-                score += 1
-
-        # 5. Leverage decrease: ưu tiên Total Debt / Total Equity, fallback sang Total Debt / Total Assets
-        leverage_current = None
-        leverage_prev = None
-
-        debt_cols = [
-            'total_liabilities',
-            'total_debt',
-            'short_term_borrowings',
-            'long_term_borrowings',
-            'total_loans',
-        ]
-        equity_col = 'total_equity' if 'total_equity' in balance.columns else None
-        assets_col = 'total_assets' if 'total_assets' in balance.columns else None
-
-        current_debt = 0.0
-        prev_debt = 0.0
-        for col in debt_cols:
-            if col in balance.columns:
-                current_debt += float(get_val(balance, latest_row, col) or 0)
-                if prev_row:
-                    prev_debt += float(get_val(balance, prev_row, col) or 0)
-
-        if equity_col:
-            current_equity = float(get_val(balance, latest_row, equity_col) or 0)
-            prev_equity = float(get_val(balance, prev_row, equity_col) or 0) if prev_row else 0
-            if current_equity > 0:
-                leverage_current = current_debt / current_equity
-            if prev_equity > 0:
-                leverage_prev = prev_debt / prev_equity
-        elif assets_col:
-            current_assets = float(get_val(balance, latest_row, assets_col) or 0)
-            prev_assets = float(get_val(balance, prev_row, assets_col) or 0) if prev_row else 0
-            if current_assets > 0:
-                leverage_current = current_debt / current_assets
-            if prev_assets > 0:
-                leverage_prev = prev_debt / prev_assets
-
-        if leverage_current is not None and leverage_prev is not None and leverage_current < leverage_prev:
-            score += 1
-
-        # 6. Current ratio increase
-        current_assets_col = 'total_current_assets' if 'total_current_assets' in balance.columns else None
-        ca = get_val(balance, latest_row, current_assets_col) if current_assets_col else None
-        if current_assets_col and 'total_current_liabilities' in balance.columns:
-            cl = get_val(balance, latest_row, 'total_current_liabilities')
-            if ca and cl and float(cl) > 0:
-                cr = float(ca) / float(cl)
-                if prev_row:
-                    cl_prev = get_val(balance, prev_row, 'total_current_liabilities')
-                    ca_prev = get_val(balance, prev_row, current_assets_col)
-                    if ca_prev and cl_prev and float(cl_prev) > 0:
-                        cr_prev = float(ca_prev) / float(cl_prev)
-                        if cr > cr_prev:
-                            score += 1
-
-        # 7-9. Financial statement improvements (margin, asset turnover, leverage quality)
-        revenue_col = None
-        for col in ['revenue', 'total_revenue', 'net_revenue', 'doanh_thu_thuần', 'doanh_thu']:
-            if col in income.columns:
-                revenue_col = col
-                break
-
-        gross_profit_col = None
-        for col in ['gross_profit', 'lợi_nhuận_gộp']:
-            if col in income.columns:
-                gross_profit_col = col
-                break
-
-        # 7. Gross margin improvement
-        if revenue_col and gross_profit_col:
-            try:
-                gp = get_val(income, latest_row, gross_profit_col)
-                rev = get_val(income, latest_row, revenue_col)
-                if gp is not None and rev is not None and float(rev) > 0:
-                    gm_current = float(gp) / float(rev)
-                    if prev_row:
-                        gp_prev = get_val(income, prev_row, gross_profit_col)
-                        rev_prev = get_val(income, prev_row, revenue_col)
-                        if gp_prev is not None and rev_prev is not None and float(rev_prev) > 0:
-                            gm_prev = float(gp_prev) / float(rev_prev)
-                            if gm_current > gm_prev:
-                                score += 1
-            except Exception:
-                pass
-
-        # 8. Asset turnover improvement = Revenue / Total Assets
-        if revenue_col and assets_col:
-            try:
-                rev = get_val(income, latest_row, revenue_col)
-                ta = get_val(balance, latest_row, assets_col)
-                if rev is not None and ta is not None and float(ta) > 0:
-                    at_current = float(rev) / float(ta)
-                    if prev_row:
-                        rev_prev = get_val(income, prev_row, revenue_col)
-                        ta_prev = get_val(balance, prev_row, assets_col)
-                        if rev_prev is not None and ta_prev is not None and float(ta_prev) > 0:
-                            at_prev = float(rev_prev) / float(ta_prev)
-                            if at_current > at_prev:
-                                score += 1
-            except Exception:
-                pass
-
-        # 9. Operating efficiency proxy: OCF improvement when available
-        if ocf_col and prev_row:
-            try:
-                ocf = get_val(cf, latest_row, ocf_col)
-                ocf_prev = get_val(cf, prev_row, ocf_col)
-                if ocf is not None and ocf_prev is not None:
-                    if float(ocf) > float(ocf_prev):
-                        score += 1
-            except Exception:
-                pass
-
-    except:
+        from dashboard.models import QuarterlyFinancial
+        qf = QuarterlyFinancial.objects.filter(symbol=symbol).order_by('-year', '-quarter').first()
+        if qf and qf.f_score is not None and qf.f_score > 0:
+            return int(qf.f_score)
+    except Exception:
         pass
 
-    return min(score, 9)
+    # 3. Từ DB StockData
+    try:
+        from dashboard.models import StockData
+        stk = StockData.objects.filter(symbol=symbol).first()
+        if stk and stk.f_score is not None and stk.f_score > 0:
+            return int(stk.f_score)
+    except Exception:
+        pass
+
+    # Không gọi mạng vnstock_data - chỉ dùng dữ liệu từ DB
+    return 0
 
 
 def get_f_score_grade(score: int) -> str:
@@ -2398,8 +1858,16 @@ def check_health_veto(
     if tech.get('cmf', 0) < 0:
         veto_reasons.append(f"VETO_1: CMF < 0 ({tech.get('cmf', 0):.2f})")
     # VETO_2: Volume TB 20 phiên < 15 tỷ
-    if avg_volume_value < 15:
+    if avg_volume_value > 0 and avg_volume_value < 15:
         veto_reasons.append(f"VETO_2: VolTB20 < 15B ({avg_volume_value:.1f}B)")
+    elif avg_volume_value == 0:
+        # Nếu thiếu df, ước tính từ volume trong tech
+        actual_price = price_val * 1000 if (0 < price_val < 1000) else price_val
+        tech_vol = tech.get('volume', 0)
+        if tech_vol > 0 and actual_price > 0:
+            est_val = (actual_price * tech_vol) / 1e9
+            if est_val < 15:
+                veto_reasons.append(f"VETO_2: VolTB20 < 15B (~{est_val:.1f}B)")
     # VETO_3: Volume_Ratio < 0.5 - chỉ áp dụng cho EARLY_TREND; BOTTOM_FISHING cho phép volume cạn kiệt
     if scan_mode != "BOTTOM_FISHING" and volume_ratio_val < 0.5:
         veto_reasons.append(f"VETO_3: VolRatio < 0.5 ({volume_ratio_val:.2f})")
@@ -2468,8 +1936,11 @@ def check_health_veto(
             veto_reasons.append(f"VETO_9: ROE < {threshold_note} ({roe_val:.1f}%)")
 
     # Luật 3: Ép kiểm tra F-Score độc lập cho TẤT CẢ các ngành
-    if fund_data.get('f_score', 0) < 5:
-        veto_reasons.append(f"VETO_10: F-Score < 5 ({fund_data.get('f_score', 0)}/9)")
+    # Chỉ VETO khi F-Score đã được tính toán thực tế (> 0) và < 5
+    # Nếu f_score == 0 do thiếu BCTC lịch sử, KHÔNG kích hoạt VETO_10 cứng
+    f_score_val = fund_data.get('f_score')
+    if f_score_val is not None and 0 < f_score_val < 5:
+        veto_reasons.append(f"VETO_10: F-Score < 5 ({f_score_val}/9)")
 
     # Luật 4: Ép kiểm tra Tăng trưởng lợi nhuận độc lập
     if not fund_data.get('is_new_listing', False):
@@ -2477,8 +1948,11 @@ def check_health_veto(
         if pg is not None and pg < 0:
             veto_reasons.append(f"VETO_11: ProfitGrowth < 0 ({pg:.1f}%)")
 
-    # VETO_12: Thiếu dữ liệu tài chính
-    if fund_data.get('roe') is None or fund_data.get('pe') is None or fund_data.get('pb') is None:
+    # VETO_12: Thiếu dữ liệu tài chính (chỉ veto khi hoàn toàn không có dữ liệu tài chính nào)
+    has_pe = fund_data.get('pe') is not None
+    has_pb = fund_data.get('pb') is not None
+    has_roe = fund_data.get('roe') is not None
+    if not (has_pe or has_pb or has_roe):
         veto_reasons.append("VETO_12: Thiếu dữ liệu tài chính")
 
     # ===== NHÓM 4: THỊ TRƯỜNG =====
@@ -2587,10 +2061,14 @@ def compute_core_logic(
     sector = get_sector_category(industry)
     sector_group = get_sector_group(industry, sector)
 
-    # Avg volume value (used by VETO)
+    # Avg volume value (used by VETO) - Giá trị giao dịch trung bình 20 phiên (tỷ đồng)
     avg_volume_value = 0.0
-    if df is not None and 'volume' in df.columns and price_val > 0:
-        avg_volume_value = round(volume_ratio_val * price_val * df['volume'].tail(20).mean() / 1e9, 1)
+    actual_price = price_val * 1000 if (0 < price_val < 1000) else price_val
+    if df is not None and 'volume' in df.columns and len(df) > 0 and actual_price > 0:
+        mean_vol20 = float(df['volume'].tail(20).mean())
+        avg_volume_value = round((actual_price * mean_vol20) / 1e9, 2)
+    elif actual_price > 0 and tech.get('volume', 0) > 0:
+        avg_volume_value = round((actual_price * tech.get('volume', 0)) / 1e9, 2)
 
     # ============================================================
     # LAYER 1: THE GATEKEEPERS (VETO)
@@ -2612,9 +2090,9 @@ def compute_core_logic(
         scan_mode=scan_mode
     )
 
-    if health_result["is_vetoed"]:
-        is_vetoed = True
-        veto_reason = health_result["veto_reason"]
+    is_vetoed = bool(health_result.get("is_vetoed", False))
+    veto_reason = health_result.get("veto_reason", "")
+    if is_vetoed:
         support_price = sma_50_val if sma_50_val > 0 else entry * 0.97
 
     # ============================================================
@@ -3148,7 +2626,6 @@ def compute_core_logic(
     if annual_plan and current_ytd and annual_plan > 0:
         plan_completion_pct = (current_ytd / annual_plan) * 100
 
-        from datetime import datetime
         now = datetime.now()
         current_month = now.month
         current_quarter = (current_month - 1) // 3 + 1
@@ -3222,17 +2699,89 @@ def compute_core_logic(
         take_profit = round(take_profit * market_tp_scale, 2)
     elif market_regime == "FREEZE":
         signal = "WAIT"
-        master_score = min(master_score, 45)
         take_profit = round(take_profit * market_tp_scale, 2)
 
     # Recalculate target yield after market-adjusted TP
     target_yield_pct = round((take_profit - entry) / entry * 100, 2) if entry > 0 else 0
+
+    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY (spec: -10..+15) ==========
+    rs_bonus = 0
+    rs_label = "NEUTRAL"
+
+    if industry_perf > 5:
+        rs_bonus = 15
+        rs_label = "LEADER"
+    elif industry_perf > 0:
+        rs_bonus = 8
+        rs_label = "OUTPERFORM"
+    elif industry_perf < 0:
+        rs_bonus = -10
+        rs_label = "LAGGARD"
 
     rs_info = {
         'bonus': rs_bonus,
         'label': rs_label,
         'industry_performance': industry_perf
     }
+
+    # ========== MARKET WEIGHT (spec: -25..+20) ==========
+    market_weight = 0
+    if market_rsi < 25:
+        market_weight = 20
+    elif market_rsi > 80:
+        market_weight = -20
+    elif market_rsi > 70:
+        market_weight = -10
+
+    # ========== FOREIGN FLOW MODIFIER (spec: -25..+30) ==========
+    fmm_latest_net = fund_data.get('latest_net_val', 0.0)
+    fmm_streak = fund_data.get('foreign_buy_streak', 0)
+    absorption = fund_data.get('foreign_absorption_ratio', 0.0)
+    foreign_accumulated_trend = fund_data.get('foreign_accumulated_trend', 'NEUTRAL')
+
+    foreign_master_modifier = 0
+
+    if foreign_accumulated_trend == 'ACCUMULATING':
+        if fmm_latest_net > 0:
+            if absorption > 20:
+                foreign_master_modifier = 25
+            elif 10 <= absorption <= 20:
+                foreign_master_modifier = 15
+    elif foreign_accumulated_trend == 'DISTRIBUTING':
+        if fmm_latest_net < 0 and absorption > 20:
+            foreign_master_modifier = -25
+
+    if fmm_streak >= 5:
+        foreign_master_modifier += 5
+
+    if foreign_accumulated_trend == 'NEUTRAL':
+        if fmm_streak >= 5:
+            foreign_master_modifier = 8
+        elif fmm_streak >= 3:
+            foreign_master_modifier = 4
+        elif fmm_streak == 0 and fmm_latest_net < 0:
+            foreign_master_modifier = -8
+
+    foreign_master_modifier = max(-25, min(30, foreign_master_modifier))
+
+    # Clamp scores
+    tech_score = max(0, min(100, tech_score))
+    fund_score = max(0, min(100, fund_score))
+
+    # ========== MASTER SCORE ==========
+    base_master_score = int(round(tech_score * 0.7 + fund_score * 0.3))
+    final_master_score = (
+        base_master_score
+        + market_weight
+        + rs_bonus
+        + plan_penalty
+        + foreign_master_modifier
+    )
+    master_score = max(0, min(100, final_master_score))
+
+    # ========== FREEZE OVERRIDE (uses master_score) ==========
+    if market_regime == "FREEZE":
+        master_score = min(master_score, 45)
 
     # ========== TREND ==========
     if sma_20_val > 0 and sma_50_val > 0:
@@ -3299,75 +2848,6 @@ def compute_core_logic(
     if (fv_daily > 0 and price_val > fv_daily * 1.15) or rsi_val > 80:
         signal = "WAIT"
         recommendation_label = "WAIT (OVERVALUED)"
-
-    # ========== MARKET WEIGHT (spec: -25..+20) ==========
-    market_weight = 0
-    if market_rsi < 25:
-        market_weight = 20
-    elif market_rsi > 80:
-        market_weight = -20
-    elif market_rsi > 70:
-        market_weight = -10
-
-    # ========== RELATIVE STRENGTH (RS) BONUS/PENALTY (spec: -10..+15) ==========
-    rs_bonus = 0
-    rs_label = "NEUTRAL"
-
-    if industry_perf > 5:
-        rs_bonus = 15
-        rs_label = "LEADER"
-    elif industry_perf > 0:
-        rs_bonus = 8
-        rs_label = "OUTPERFORM"
-    elif industry_perf < 0:
-        rs_bonus = -10
-        rs_label = "LAGGARD"
-
-    # ========== FOREIGN FLOW MODIFIER (spec: -25..+30) ==========
-    fmm_latest_net = fund_data.get('latest_net_val', 0.0)
-    fmm_streak = fund_data.get('foreign_buy_streak', 0)
-    absorption = fund_data.get('foreign_absorption_ratio', 0.0)
-    foreign_accumulated_trend = fund_data.get('foreign_accumulated_trend', 'NEUTRAL')
-
-    foreign_master_modifier = 0
-
-    if foreign_accumulated_trend == 'ACCUMULATING':
-        if fmm_latest_net > 0:
-            if absorption > 20:
-                foreign_master_modifier = 25
-            elif 10 <= absorption <= 20:
-                foreign_master_modifier = 15
-    elif foreign_accumulated_trend == 'DISTRIBUTING':
-        if fmm_latest_net < 0 and absorption > 20:
-            foreign_master_modifier = -25
-
-    if fmm_streak >= 5:
-        foreign_master_modifier += 5
-
-    if foreign_accumulated_trend == 'NEUTRAL':
-        if fmm_streak >= 5:
-            foreign_master_modifier = 8
-        elif fmm_streak >= 3:
-            foreign_master_modifier = 4
-        elif fmm_streak == 0 and fmm_latest_net < 0:
-            foreign_master_modifier = -8
-
-    foreign_master_modifier = max(-25, min(30, foreign_master_modifier))
-
-    # Clamp scores
-    tech_score = max(0, min(100, tech_score))
-    fund_score = max(0, min(100, fund_score))
-
-    # ========== MASTER SCORE ==========
-    base_master_score = int(round(tech_score * 0.7 + fund_score * 0.3))
-    final_master_score = (
-        base_master_score
-        + market_weight
-        + rs_bonus
-        + plan_penalty
-        + foreign_master_modifier
-    )
-    master_score = max(0, min(100, final_master_score))
 
     # ========== RETURN ==========
     return {
@@ -3527,7 +3007,7 @@ def compute_core_logic(
 
 def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
     """
-    Calculate technical indicators using vnstock_ta
+    Calculate technical indicators using manual Pandas and TradingView API
     Includes: RSI, MACD, ADX, CMF, Bollinger, SMA, VWAP, Ichimoku, SuperTrend, MFI
     """
     result = {
@@ -3585,118 +3065,64 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
         if avg_vol > 0:
             result["volume_ratio"] = round(float(volume.iloc[-1]) / avg_vol, 2)
 
-        # Try vnstock_ta
-        try:
-            from vnstock_ta import Indicator  # pyright: ignore[reportMissingImports]
-            ind = Indicator(data=df)
-
-            # RSI
+        # Dùng TradingView API cho các chỉ báo cơ bản
+        symbol_name = df.attrs.get("symbol")
+        if symbol_name:
             try:
-                rsi_series = ind.rsi(length=14)
-                if rsi_series is not None and len(rsi_series) > 0:
-                    result["rsi"] = round(float(rsi_series.iloc[-1]), 1)
-            except Exception:
-                pass
+                from dashboard.tv_client import get_multiple_indicators
+                tv_inds = get_multiple_indicators(
+                    symbol=symbol_name,
+                    indicators=["STD;RSI", "STD;MACD", "STD;Bollinger_Bands", "STD;DMI", "STD;Supertrend"]
+                )
+                if tv_inds:
+                    for item in tv_inds:
+                        ind_name = item.get("indicator")
+                        data = item.get("data")
+                        if not data or len(data) == 0:
+                            continue
+                        last_val = data[-1]
+                        
+                        if ind_name == "STD;RSI" and "RSI" in last_val:
+                            result["rsi"] = round(float(last_val["RSI"]), 1)
+                        
+                        elif ind_name == "STD;MACD" and "MACD" in last_val and "Signal_line" in last_val:
+                            result["macd"] = round(float(last_val["MACD"]), 2)
+                            result["macd_signal"] = round(float(last_val["Signal_line"]), 2)
+                            
+                        elif ind_name == "STD;Bollinger_Bands" and "Upper" in last_val and "Lower" in last_val and "Basis" in last_val:
+                            result["bb_upper"] = round(float(last_val["Upper"]), 2)
+                            result["bb_middle"] = round(float(last_val["Basis"]), 2)
+                            result["bb_lower"] = round(float(last_val["Lower"]), 2)
+                            if result["bb_upper"] > result["bb_lower"]:
+                                result["bb_percent"] = round((result["price"] - result["bb_lower"]) / (result["bb_upper"] - result["bb_lower"]) * 100, 1)
+                                
+                        elif ind_name == "STD;DMI" and "ADX" in last_val and "DI" in last_val and "DI_2" in last_val:
+                            result["adx"] = round(float(last_val["ADX"]), 1)
+                            # Note: TradingView DI / DI_2 maps to +DI / -DI depending on formula.
+                            # Normally DI is +DI, DI_2 is -DI.
+                            result["plus_di"] = round(float(last_val["DI"]), 1)
+                            result["minus_di"] = round(float(last_val["DI_2"]), 1)
+                            
+                        elif ind_name == "STD;Supertrend" and "Trend_Change" in last_val:
+                            # Down_Trend contains value when bearish, Up_Trend when bullish.
+                            if last_val.get("Up_Trend") and last_val["Up_Trend"] < 1e50:
+                                result["supertrend"] = round(float(last_val["Up_Trend"]), 2)
+                                result["supertrend_signal"] = "bullish"
+                            elif last_val.get("Down_Trend") and last_val["Down_Trend"] < 1e50:
+                                result["supertrend"] = round(float(last_val["Down_Trend"]), 2)
+                                result["supertrend_signal"] = "bearish"
+            except Exception as e:
+                print(f"[Sync] TV API Fallback error: {e}")
 
-            # ADX
-            try:
-                adx_df = ind.adx(length=14)
-                if adx_df is not None and len(adx_df) > 0 and hasattr(adx_df, 'columns'):
-                    for col in adx_df.columns:
-                        col_str = str(col).upper()
-                        if 'ADX' in col_str and 'DMP' not in col_str and 'DMN' not in col_str:
-                            result["adx"] = round(float(adx_df[col].iloc[-1]), 1)
-                            break
-                    for col in adx_df.columns:
-                        col_str = str(col).upper()
-                        if 'DMP' in col_str or 'PLUS' in col_str:
-                            result["plus_di"] = round(float(adx_df[col].iloc[-1]), 1)
-                            break
-                    for col in adx_df.columns:
-                        col_str = str(col).upper()
-                        if 'DMN' in col_str or 'MINUS' in col_str:
-                            result["minus_di"] = round(float(adx_df[col].iloc[-1]), 1)
-                            break
-            except Exception:
-                pass
-
-            # MACD
-            try:
-                macd_df = ind.macd(fast=12, slow=26, signal=9)
-                if macd_df is not None and len(macd_df) > 0 and hasattr(macd_df, 'columns'):
-                    cols = list(macd_df.columns)
-                    if len(cols) >= 1:
-                        result["macd"] = round(float(macd_df[cols[0]].iloc[-1]), 2)
-                    if len(cols) >= 2:
-                        result["macd_signal"] = round(float(macd_df[cols[1]].iloc[-1]), 2)
-            except Exception:
-                pass
-
-            # SMA
-            try:
-                sma_20_series = ind.sma(length=20)
-                if sma_20_series is not None and len(sma_20_series) > 0:
-                    result["sma_20"] = round(float(sma_20_series.iloc[-1]), 2)
-            except Exception:
-                pass
-
-            try:
-                sma_10_series = ind.sma(length=10)
-                if sma_10_series is not None and len(sma_10_series) > 0:
-                    result["sma_10"] = round(float(sma_10_series.iloc[-1]), 2)
-            except Exception:
-                pass
-
-            try:
-                sma_50_series = ind.sma(length=50)
-                if sma_50_series is not None and len(sma_50_series) > 0:
-                    result["sma_50"] = round(float(sma_50_series.iloc[-1]), 2)
-            except Exception:
-                pass
-
-            try:
-                sma_200_series = ind.sma(length=200)
-                if sma_200_series is not None and len(sma_200_series) > 0:
-                    result["sma_200"] = round(float(sma_200_series.iloc[-1]), 2)
-            except Exception:
-                pass
-
-            # Bollinger
-            try:
-                bb_df = ind.bbands(length=20, std=2)
-                if bb_df is not None and len(bb_df) > 0 and hasattr(bb_df, 'columns'):
-                    cols = list(bb_df.columns)
-                    for col in cols:
-                        if 'BBL' in col.upper():
-                            result["bb_lower"] = round(float(bb_df[col].iloc[-1]), 2)
-                        elif 'BBM' in col.upper():
-                            result["bb_middle"] = round(float(bb_df[col].iloc[-1]), 2)
-                        elif 'BBU' in col.upper():
-                            result["bb_upper"] = round(float(bb_df[col].iloc[-1]), 2)
-
-                    if result["bb_upper"] > result["bb_lower"]:
-                        result["bb_percent"] = round((result["price"] - result["bb_lower"]) / (result["bb_upper"] - result["bb_lower"]) * 100, 1)
-            except Exception:
-                pass
-
-            # CMF
-            try:
-                cmf_series = ind.cmf(length=20)
-                if cmf_series is not None and len(cmf_series) > 0:
-                    result["cmf"] = round(float(cmf_series.iloc[-1]), 3)
-            except Exception:
-                pass
-
-            # ATR
-            try:
-                atr_series = ind.atr(length=14)
-                if atr_series is not None and len(atr_series) > 0:
-                    result["atr"] = round(float(atr_series.iloc[-1]), 2)
-            except Exception:
-                pass
-
-        except ImportError:
-            pass
+        # Tự tính SMA bằng pandas (Chính xác 100% và cực nhanh)
+        if len(close) >= 200:
+            result["sma_200"] = round(float(close.rolling(200).mean().iloc[-1]), 2)
+        if len(close) >= 50:
+            result["sma_50"] = round(float(close.rolling(50).mean().iloc[-1]), 2)
+        if len(close) >= 20:
+            result["sma_20"] = round(float(close.rolling(20).mean().iloc[-1]), 2)
+        if len(close) >= 10:
+            result["sma_10"] = round(float(close.rolling(10).mean().iloc[-1]), 2)
 
         # Manual ATR fallback
         if result["atr"] <= 0 and len(df) >= 15:
@@ -3723,6 +3149,41 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
                 rs = gain / loss
                 rsi = 100 - (100 / (1 + rs))
                 result["rsi"] = round(float(rsi.iloc[-1]), 1) if not pd.isna(rsi.iloc[-1]) else 50
+            except Exception:
+                pass
+
+        # Manual Bollinger Bands fallback (SMA 20, 2 STD)
+        if (result["bb_middle"] <= 0 or result["bb_upper"] <= 0) and len(close) >= 20:
+            try:
+                sma_20 = close.rolling(20).mean()
+                std_20 = close.rolling(20).std()
+                bb_upper = sma_20 + (2.0 * std_20)
+                bb_lower = sma_20 - (2.0 * std_20)
+                last_price = float(close.iloc[-1])
+                last_mid = float(sma_20.iloc[-1])
+                last_up = float(bb_upper.iloc[-1])
+                last_low = float(bb_lower.iloc[-1])
+                result["bb_middle"] = round(last_mid, 2)
+                result["bb_upper"] = round(last_up, 2)
+                result["bb_lower"] = round(last_low, 2)
+                if last_up > last_low:
+                    result["bb_percent"] = round((last_price - last_low) / (last_up - last_low) * 100, 1)
+                else:
+                    result["bb_percent"] = 50.0
+            except Exception:
+                pass
+
+        # Manual MACD fallback (12, 26, 9 EMA)
+        if result["macd"] == 0.0 and result["macd_signal"] == 0.0 and len(close) >= 26:
+            try:
+                exp1 = close.ewm(span=12, adjust=False).mean()
+                exp2 = close.ewm(span=26, adjust=False).mean()
+                macd_line = exp1 - exp2
+                signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                histogram = macd_line - signal_line
+                result["macd"] = round(float(macd_line.iloc[-1]), 2)
+                result["macd_signal"] = round(float(signal_line.iloc[-1]), 2)
+                result["macd_histogram"] = round(float(histogram.iloc[-1]), 2)
             except Exception:
                 pass
 
@@ -3754,11 +3215,15 @@ def calculate_technical_indicators(df: pd.DataFrame) -> Dict[str, Any]:
         try:
             typical_price = (high + low + close) / 3
             cum_vol = volume.cumsum()
-            vwap_value = (typical_price * volume).cumsum() / cum_vol
-            result["vwap"] = round(float(vwap_value.iloc[-1]), 2)
+            vwap_series = (typical_price * volume).cumsum() / cum_vol
+            last_vwap = vwap_series.iloc[-1]
+            if pd.isna(last_vwap) or math.isnan(float(last_vwap)) or math.isinf(float(last_vwap)):
+                result["vwap"] = float(result["price"])
+            else:
+                result["vwap"] = round(float(last_vwap), 2)
             result["vwap_status"] = "above" if result["price"] > result["vwap"] else "below"
         except Exception:
-            result["vwap"] = result["price"]
+            result["vwap"] = float(result.get("price", 0.0))
             result["vwap_status"] = "neutral"
 
         # Ichimoku
@@ -3815,51 +3280,22 @@ def analyze_stock(symbol: str, market_rsi: float = 50.0, fast_mode: bool = False
         # Get Company Name (skip in fast mode)
         company_name = get_company_name(symbol) if not fast_mode else symbol
 
-        # Get Fundamental Data (ROE, P/E, P/B, F-Score)
-        fund_data = get_fundamental_data(symbol, fast_mode=fast_mode, vnindex_df=vnindex_df)
-
-        # Get Price Data - try vnstock_data first (sponsored users)
-        df = None
-        price_multiplier = 1  # Will be set based on which API returns data
-        try:
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.equity(symbol).ohlcv(
-                start=(datetime.now() - pd.Timedelta(days=250)).strftime("%Y-%m-%d"),
-                end=datetime.now().strftime("%Y-%m-%d")
-            )
-            if df is not None and len(df) > 0:
-                # vnstock_data returns price divided by 1000, multiply back
-                price_multiplier = 1000
-                for col in ['open', 'high', 'low', 'close']:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce') * 1000
-                if 'time' in df.columns:
-                    df.set_index('time', inplace=True)
-        except:
-            pass
-
-        # Fallback to vnstock if vnstock_data fails
-        if df is None:
-            try:
-                from vnstock import Quote
-                q = Quote(symbol=symbol, source="kbs")
-                df = q.history(
-                    start=(datetime.now() - pd.Timedelta(days=250)).strftime("%Y-%m-%d"),
-                    end=datetime.now().strftime("%Y-%m-%d"),
-                    interval="1D"
-                )
-                if df is not None and len(df) > 0:
-                    # vnstock (KBS) returns price already divided by 1000, multiply back
-                    price_multiplier = 1000
-                    for col in ['open', 'high', 'low', 'close']:
-                        if col in df.columns:
-                            df[col] = pd.to_numeric(df[col], errors='coerce') * 1000
-            except:
-                return None
-
-        if df is None or len(df) < 20:
+        # Get Price Data - try TradingView API first (via microservice)
+        from dashboard.tv_client import get_ohlcv_with_fallback
+        df = get_ohlcv_with_fallback(symbol, exchange='HOSE', count=250)
+        
+        if df is None or len(df) < 50:
+            print(f"[Sync] Insufficient price data for {symbol}")
             return None
+
+        # Get Fundamental Data (ROE, P/E, P/B, F-Score, Foreign, RS)
+        fund_data = get_fundamental_data(symbol, fast_mode=fast_mode, vnindex_df=vnindex_df, df=df)
+            
+        # Lưu symbol vào df attrs để calculate_technical_indicators có thể gọi TV API
+        df.attrs["symbol"] = symbol
+            
+        # TradingView trả giá trị thật (VD: 20150.0), không cần nhân 1000 như vnstock
+        price_multiplier = 1
 
         # Get Market Group for Veto check
         market_group = "UNKNOWN"
@@ -3922,7 +3358,7 @@ def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bo
             break
             
         if attempt > 0:
-            print(f"[Sync] 🔄 Retry attempt {attempt}/{MAX_RETRIES} for {len(failed_symbols)} failed symbols...")
+            print(f"[Sync] 🔄 Thử lại lần {attempt}/{MAX_RETRIES} cho {len(failed_symbols)} mã lỗi...", flush=True)
             sleep(2)  # Chờ 2s trước khi retry
         
         batch_results = []
@@ -3941,24 +3377,31 @@ def sync_stock_batch(symbols: List[str], market_rsi: float = 50.0, fast_mode: bo
                         result = future.result(timeout=SYMBOL_TIMEOUT)
                         if result:
                             batch_results.append(result)
+                            score = result.get('master_score', 0)
+                            f_score = result.get('f_score', 0)
+                            is_veto = result.get('is_vetoed', False)
+                            veto_reason = result.get('veto_reason', '')
+                            tag = f"VETO ({veto_reason})" if is_veto else f"PASS (Score: {score})"
+                            print(f"[Sync]   -> {symbol:4s} | F: {f_score} | {tag}", flush=True)
                         else:
                             still_failed.append(symbol)
+                            print(f"[Sync]   -> {symbol:4s} | ⚠️ Không có dữ liệu", flush=True)
                     except TimeoutError:
-                        print(f"[Sync] ⏱️ Timeout analyzing {symbol}")
+                        print(f"[Sync]   -> {symbol:4s} | ⏱️ Hết thời gian chờ (Timeout)", flush=True)
                         still_failed.append(symbol)
                     except Exception as e:
-                        print(f"[Sync] Error processing {symbol}: {e}")
+                        print(f"[Sync]   -> {symbol:4s} | ❌ Lỗi: {e}", flush=True)
                         still_failed.append(symbol)
             except TimeoutError:
                 # Timeout toàn bộ batch
-                print(f"[Sync] ⚠️ Batch timeout after {total_timeout}s")
+                print(f"[Sync] ⚠️ Batch timeout sau {total_timeout}s", flush=True)
                 still_failed = list(futures.values())
         
         results.extend(batch_results)
         failed_symbols = still_failed
     
     if failed_symbols:
-        print(f"[Sync] ⚠️ {len(failed_symbols)} symbols failed after {MAX_RETRIES} retries: {failed_symbols}")
+        print(f"[Sync] ⚠️ {len(failed_symbols)} mã không phân tích được sau {MAX_RETRIES} lần thử: {failed_symbols}", flush=True)
     
     return {"results": results, "count": len(results), "failed": failed_symbols}
 
@@ -3972,10 +3415,10 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
     # Lấy danh sách symbols TRƯỚC để biết total_symbols chính xác
     if mode == "analyze":
         symbols = list(StockData.objects.values_list('symbol', flat=True))
-        print(f"[Sync] Analyze mode: Re-analyzing {len(symbols)} existing symbols")
+        print(f"[Sync] Chế độ Phân tích lại (Analyze mode): {len(symbols)} mã có sẵn trong DB", flush=True)
     else:
-        symbols = _get_top_100_by_liquidity()  # Sử dụng hàm động
-        print(f"[Sync] Đã lấy {len(symbols)} mã thanh khoản cao nhất")
+        symbols = _get_top_100_by_liquidity()  # Sử dụng danh sách tuyển chọn chuẩn
+        print(f"[Sync] Đã sẵn sàng danh sách {len(symbols)} mã cần đồng bộ", flush=True)
 
     # Tạo SyncStatus với đúng số lượng symbols
     sync_record, created = SyncStatus.objects.get_or_create(
@@ -3993,78 +3436,110 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
     sync_record.processed_symbols = 0
     sync_record.save()
 
-    mode_desc = "FULL" if not fast_mode else "FAST"
-    print(f"[Sync] Starting sync in '{mode}' mode ({mode_desc})...")
+    mode_desc = "ĐẦY ĐỦ (FULL)" if not fast_mode else "NHANH (FAST)"
+    print(f"\n[Sync] ==================================================", flush=True)
+    print(f"[Sync] BẮT ĐẦU ĐỒNG BỘ: mode='{mode}' ({mode_desc}) | {len(symbols)} mã", flush=True)
+    print(f"[Sync] ==================================================", flush=True)
 
     # Lấy Market RSI
     market_rsi = get_market_rsi()
-    print(f"[Sync] Market RSI: {market_rsi:.2f}")
+    print(f"[Sync] Market RSI VNINDEX: {market_rsi:.2f}", flush=True)
 
-    # Prefetch VNINDEX history TRƯỚC khi chia thread (tránh cache congestion giữa 8 workers)
+    # Prefetch VNINDEX history TRƯỚC khi chia thread từ TradingView
     vnindex_df = None
     try:
-        from vnstock import Quote
-        quote_vn = Quote(symbol='VNINDEX')
-        vnindex_df = quote_vn.history(symbol='VNINDEX', length='30D', interval='1D')
+        from dashboard.tv_client import get_ohlcv, ensure_tv_service
+        ensure_tv_service()
+        vnindex_df = get_ohlcv('VNINDEX', count=250)
         if vnindex_df is not None and len(vnindex_df) > 0:
-            print(f"[Sync] VNINDEX prefetched: {len(vnindex_df)} rows, cache warm")
+            print(f"[Sync] VNINDEX prefetch hoàn tất: {len(vnindex_df)} phiên nến từ TradingView", flush=True)
         else:
             vnindex_df = None
     except Exception as e:
-        print(f"[Sync] VNINDEX prefetch failed: {e}, will fallback to per-thread fetch")
+        print(f"[Sync] VNINDEX prefetch cảnh báo: {e}", flush=True)
+
+    # 🌐 Đồng bộ nhanh dòng tiền khối ngoại cho toàn bộ Universe từ VCI price_board (0.5 - 1s)
+    try:
+        print("[Sync] 🌐 Bắt đầu đồng bộ dòng tiền khối ngoại từ VCI price_board...", flush=True)
+        sync_foreign_flow_from_vci(symbols)
+        print("[Sync] ✅ Đã cập nhật dòng tiền khối ngoại thành công!", flush=True)
+    except Exception as fe:
+        print(f"[Sync] Cảnh báo lỗi đồng bộ khối ngoại: {fe}", flush=True)
 
     # Process in batches
     batch_size = 20
     all_results = []
     total_failed = 0
     failed_symbols_list = []
+    saved_count = 0
 
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i+batch_size]
-        batch_num = i // batch_size + 1
+    try:
         total_batches = (len(symbols) + batch_size - 1) // batch_size
-        print(f"[Sync] Batch {batch_num}/{total_batches}: {batch[:3]}...")
-        print(f"[Sync] Progress: {min(i + batch_size, len(symbols))}/{len(symbols)} symbols ({(min(i + batch_size, len(symbols)) / len(symbols) * 100):.0f}%)")
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            print(f"\n[Sync] >>> Batch {batch_num}/{total_batches} ({len(batch)} mã): {', '.join(batch[:4])}...", flush=True)
+            print(f"[Sync] Tiến độ hiện tại: {i}/{len(symbols)} mã ({(i / len(symbols) * 100):.0f}%)", flush=True)
 
-        batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode, vnindex_df=vnindex_df)
-        all_results.extend(batch_result["results"])
-        
-        if batch_result.get("failed"):
-            total_failed += len(batch_result["failed"])
-            failed_symbols_list.extend(batch_result["failed"])
+            try:
+                batch_result = sync_stock_batch(batch, market_rsi, fast_mode=fast_mode, vnindex_df=vnindex_df)
+                if batch_result and "results" in batch_result:
+                    all_results.extend(batch_result["results"])
+                
+                if batch_result and batch_result.get("failed"):
+                    total_failed += len(batch_result["failed"])
+                    failed_symbols_list.extend(batch_result["failed"])
+            except Exception as batch_err:
+                print(f"[Sync] ❌ Lỗi khi xử lý batch {batch_num}: {batch_err}", flush=True)
+                total_failed += len(batch)
+                failed_symbols_list.extend(batch)
 
-        # Update progress percentage
-        progress = int(min(i + batch_size, len(symbols)) / len(symbols) * 100)
-        sync_record.processed_symbols = min(i + batch_size, len(symbols))
+            # Update progress percentage
+            sync_record.processed_symbols = min(i + batch_size, len(symbols))
+            sync_record.save()
+            print(f"[Sync] Đã xong Batch {batch_num}/{total_batches}. Tổng đã quét thành công: {len(all_results)} mã.", flush=True)
+
+        # Save to Database
+        failed_msg = f" ({total_failed} mã lỗi)" if total_failed > 0 else ""
+        print(f"\n[Sync] Đã phân tích xong {len(all_results)}/{len(symbols)} mã thành công{failed_msg}", flush=True)
+        if all_results:
+            print(f"[Sync] Đang lưu {len(all_results)} mã vào cơ sở dữ liệu...", flush=True)
+            saved_count = save_results_to_db(all_results)
+            print(f"[Sync] ✅ Đã lưu thành công {saved_count} bản ghi vào Database!", flush=True)
+
+        # Validation: Top 5 by F-Score
+        if all_results:
+            valid_fscore = [r for r in all_results if r.get('f_score', 0) > 0]
+            if valid_fscore:
+                top_fscore = sorted(valid_fscore, key=lambda x: x.get('f_score') or 0, reverse=True)[:5]
+                print(f"[Sync] Top 5 theo F-Score cao nhất:", flush=True)
+                for r in top_fscore:
+                    print(f"  {r['symbol']}: F={r.get('f_score')}, ROE={r.get('roe')}, PE={r.get('pe')}, PB={r.get('pb')}", flush=True)
+
+            # Top 5 by Volume Ratio (for FAST picks)
+            non_vetoed = [r for r in all_results if not r.get('is_vetoed')]
+            if non_vetoed:
+                top_vol = sorted(non_vetoed, key=lambda x: x.get('volume_ratio') or 0, reverse=True)[:5]
+                print(f"[Sync] Top 5 theo Volume Ratio (Ứng viên FAST):", flush=True)
+                for r in top_vol:
+                    print(f"  {r['symbol']}: VolRatio={r.get('volume_ratio')}, Score={r.get('master_score')}", flush=True)
+
+    except Exception as e:
+        print(f"[Sync] ❌ Lỗi không mong muốn trong pipeline: {e}", flush=True)
+        if all_results and saved_count == 0:
+            try:
+                saved_count = save_results_to_db(all_results)
+            except Exception as save_err:
+                print(f"[Sync] Lưu dự phòng thất bại: {save_err}", flush=True)
+    finally:
+        # LUÔN LUÔN ghi nhận hoàn thành để UI không bị kẹt ở trạng thái 'running'
+        sync_record.processed_symbols = len(symbols)
+        sync_record.status = "completed"
+        sync_record.completed_at = timezone.now()
         sync_record.save()
-
-    # Save to Database
-    failed_msg = f" ({total_failed} failed)" if total_failed > 0 else ""
-    print(f"[Sync] Đã xử lý {len(all_results)}/{len(symbols)} mã thành công{failed_msg}")
-    saved_count = save_results_to_db(all_results)
-
-    # Validation: Top 5 by F-Score
-    if all_results:
-        valid_fscore = [r for r in all_results if r.get('f_score', 0) > 0]
-        if valid_fscore:
-            top_fscore = sorted(valid_fscore, key=lambda x: x.get('f_score') or 0, reverse=True)[:5]
-            print(f"[Sync] Top 5 by F-Score:")
-            for r in top_fscore:
-                print(f"  {r['symbol']}: F={r.get('f_score')}, ROE={r.get('roe')}, PE={r.get('pe')}, PB={r.get('pb')}")
-
-        # Top 5 by Volume Ratio (for FAST picks)
-        non_vetoed = [r for r in all_results if not r.get('is_vetoed')]
-        if non_vetoed:
-            top_vol = sorted(non_vetoed, key=lambda x: x.get('volume_ratio') or 0, reverse=True)[:5]
-            print(f"[Sync] Top 5 by Volume Ratio:")
-            for r in top_vol:
-                print(f"  {r['symbol']}: VolRatio={r.get('volume_ratio')}, Score={r.get('master_score')}")
+        print(f"[Sync] 🎉 ĐỒNG BỘ HOÀN TẤT 100%! Trạng thái: completed.\n", flush=True)
 
     elapsed = (datetime.now() - start_time).total_seconds()
-
-    sync_record.status = "completed"
-    sync_record.completed_at = timezone.now()
-    sync_record.save()
 
     result = {
         "status": "success",
@@ -4079,17 +3554,42 @@ def sync_market_data(mode: str = "full", fast_mode: bool = False) -> Dict[str, A
     return result
 
 
+def _clean_float(val, default: float = 0.0) -> float:
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if (math.isnan(f) or math.isinf(f)) else f
+    except (ValueError, TypeError):
+        return default
+
+
+def _clean_int(val, default: int = 0) -> int:
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if (math.isnan(f) or math.isinf(f)) else int(f)
+    except (ValueError, TypeError):
+        return default
+
+
+def _clean_opt_float(val) -> Optional[float]:
+    if val is None or pd.isna(val):
+        return None
+    try:
+        f = float(val)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    except (ValueError, TypeError):
+        return None
+
+
 def save_results_to_db(results: List[Dict[str, Any]]) -> int:
-    """Lưu kết quả vào Database"""
+    """Lưu kết quả vào Database với kiểm tra chuẩn hóa kiểu dữ liệu"""
     saved = 0
 
     # Get VN30 list
-    try:
-        from vnstock_data import Reference
-        ref = Reference()
-        vn30_list = list(ref.equity.list_by_group(group="VN30")['symbol'].str.upper())
-    except:
-        vn30_list = list(VN30_SYMBOLS)
+    vn30_list = list(VN30_SYMBOLS)
 
     for data in results:
         try:
@@ -4097,137 +3597,174 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
             industry = data.get("industry", "Other")
             if not industry or industry == "Default":
                 industry = "Other"
-            market_group = "VN30" if symbol in vn30_list else ("MIDCAP" if data.get("avg_volume_value", 0) >= 5 else "SMALL")
+            avg_vol_val = _clean_float(data.get("avg_volume_value", 0))
+            market_group = "VN30" if symbol in vn30_list else ("MIDCAP" if avg_vol_val >= 5 else "SMALL")
 
             # Save StockData
             stock, _ = StockData.objects.update_or_create(
                 symbol=symbol,
                 defaults={
-                    "company_name": data.get("company_name", symbol),
+                    "company_name": data.get("company_name", symbol) or symbol,
                     "industry": industry,
                     "market_group": market_group,
-                    "price": data["price"],
-                    "change_percent": data["change_percent"],
-                    "volume": data["volume"],
-                    "avg_volume_value": data.get("avg_volume_value", 0),
-                    "rsi": data["rsi"],
-                    "adx": data["adx"],
-                    "plus_di": data["plus_di"],
-                    "minus_di": data["minus_di"],
-                    "cmf": data["cmf"],
-                    "atr": data["atr"],
-                    "sma_10": data["sma_10"],
-                    "sma_20": data["sma_20"],
-                    "sma_50": data["sma_50"],
-                    "bb_upper": data["bb_upper"],
-                    "bb_middle": data["bb_middle"],
-                    "bb_lower": data["bb_lower"],
-                    "bb_percent": data["bb_percent"],
-                    "macd": data["macd"],
-                    "macd_signal": data["macd_signal"],
-                    "volume_ratio": data["volume_ratio"],
+                    "price": _clean_float(data.get("price")),
+                    "change_percent": _clean_float(data.get("change_percent")),
+                    "volume": _clean_int(data.get("volume")),
+                    "avg_volume_value": avg_vol_val,
+                    "rsi": _clean_float(data.get("rsi"), 50.0),
+                    "adx": _clean_float(data.get("adx"), 25.0),
+                    "plus_di": _clean_float(data.get("plus_di")),
+                    "minus_di": _clean_float(data.get("minus_di")),
+                    "cmf": _clean_float(data.get("cmf")),
+                    "atr": _clean_float(data.get("atr")),
+                    "sma_10": _clean_float(data.get("sma_10")),
+                    "sma_20": _clean_float(data.get("sma_20")),
+                    "sma_50": _clean_float(data.get("sma_50")),
+                    "bb_upper": _clean_float(data.get("bb_upper")),
+                    "bb_middle": _clean_float(data.get("bb_middle")),
+                    "bb_lower": _clean_float(data.get("bb_lower")),
+                    "bb_percent": _clean_float(data.get("bb_percent"), 50.0),
+                    "macd": _clean_float(data.get("macd")),
+                    "macd_signal": _clean_float(data.get("macd_signal")),
+                    "volume_ratio": _clean_float(data.get("volume_ratio"), 1.0),
                     # Advanced TA
-                    "mfi": data.get("mfi", 50),
-                    "vwap": data.get("vwap", 0),
-                    "vwap_status": data.get("vwap_status", "neutral"),
-                    "ichimoku_tenkan": data.get("ichimoku_tenkan", 0),
-                    "ichimoku_kijun": data.get("ichimoku_kijun", 0),
-                    "ichimoku_status": data.get("ichimoku_status", "neutral"),
-                    "supertrend": data.get("supertrend", 0),
-                    "supertrend_signal": data.get("supertrend_signal", "neutral"),
+                    "mfi": _clean_float(data.get("mfi"), 50.0),
+                    "vwap": _clean_float(data.get("vwap"), _clean_float(data.get("price"))),
+                    "vwap_status": data.get("vwap_status", "neutral") or "neutral",
+                    "ichimoku_tenkan": _clean_float(data.get("ichimoku_tenkan")),
+                    "ichimoku_kijun": _clean_float(data.get("ichimoku_kijun")),
+                    "ichimoku_status": data.get("ichimoku_status", "neutral") or "neutral",
+                    "supertrend": _clean_float(data.get("supertrend")),
+                    "supertrend_signal": data.get("supertrend_signal", "neutral") or "neutral",
                     # Fundamental
-                    "pe": data.get("pe"),
-                    "pb": data.get("pb"),
-                    "roe": data.get("roe"),
-                    "f_score": data.get("f_score", 0),
-                    "profit_growth": data.get("profit_growth"),  # NEW
+                    "pe": _clean_opt_float(data.get("pe")),
+                    "pb": _clean_opt_float(data.get("pb")),
+                    "roe": _clean_opt_float(data.get("roe")),
+                    "f_score": _clean_int(data.get("f_score")),
+                    "profit_growth": _clean_opt_float(data.get("profit_growth")),
                 }
             )
 
-            # Save StockAnalysis
+            # Save StockAnalysis with foreign metrics preservation
+            existing_sa = StockAnalysis.objects.filter(symbol=stock).first()
+
+            f_buy_streak = _clean_int(data.get("foreign_buy_streak"))
+            if f_buy_streak == 0 and existing_sa and existing_sa.foreign_buy_streak:
+                f_buy_streak = existing_sa.foreign_buy_streak
+
+            f_net_val = _clean_float(data.get("latest_net_val"))
+            if f_net_val == 0.0 and existing_sa and existing_sa.latest_net_val:
+                f_net_val = existing_sa.latest_net_val
+
+            f_net_val_2 = _clean_float(data.get("latest_net_val_2"))
+            if f_net_val_2 == 0.0 and existing_sa and existing_sa.latest_net_val_2:
+                f_net_val_2 = existing_sa.latest_net_val_2
+
+            f_buy_val = _clean_float(data.get("foreign_buy_val"))
+            if f_buy_val == 0.0 and existing_sa and existing_sa.foreign_buy_val:
+                f_buy_val = existing_sa.foreign_buy_val
+
+            f_sell_val = _clean_float(data.get("foreign_sell_val"))
+            if f_sell_val == 0.0 and existing_sa and existing_sa.foreign_sell_val:
+                f_sell_val = existing_sa.foreign_sell_val
+
+            f_absorption = _clean_float(data.get("foreign_absorption_ratio"))
+            if f_absorption == 0.0 and existing_sa and existing_sa.foreign_absorption_ratio:
+                f_absorption = existing_sa.foreign_absorption_ratio
+
+            f_share = _clean_float(data.get("foreign_trading_share"))
+            if f_share == 0.0 and existing_sa and existing_sa.foreign_trading_share:
+                f_share = existing_sa.foreign_trading_share
+
+            f_trend = data.get("foreign_accumulated_trend") or (existing_sa.foreign_accumulated_trend if existing_sa else "NEUTRAL") or "NEUTRAL"
+            if f_trend == "NEUTRAL" and existing_sa and existing_sa.foreign_accumulated_trend and existing_sa.foreign_accumulated_trend != "NEUTRAL":
+                f_trend = existing_sa.foreign_accumulated_trend
+
+            f_slope = _clean_float(data.get("foreign_accumulated_slope"))
+            if f_slope == 0.0 and existing_sa and existing_sa.foreign_accumulated_slope:
+                f_slope = existing_sa.foreign_accumulated_slope
+
             StockAnalysis.objects.update_or_create(
                 symbol=stock,
                 defaults={
-                    "master_score": data["master_score"],
-                    "base_master_score": data.get("base_master_score", data["master_score"]),
-                    "market_weight": data.get("market_weight", 0),
-                    "technical_score": data["technical_score"],
-                    "fundamental_score": data["fundamental_score"],
-                    "signal": data["signal"],
-                    "entry_price": data["entry_price"],
-                    "stop_loss": data["stop_loss"],
-                    "trailing_sl": data.get("trailing_sl", 0),
-                    "take_profit": data["take_profit"],
-                    "risk_reward_ratio": data["risk_reward_ratio"],
-                    "rr_quality": data.get("rr_quality", ""),
-                    "rr_quality_detail": data.get("rr_quality_detail", ""),
-                    "rr_warning": data.get("rr_warning", ""),
-                    "is_vetoed": data["is_vetoed"],
-                    "veto_reason": data["veto_reason"],
-                    "is_fast_pick": data["is_fast_pick"],
-                    "is_short_term_qualified": data["is_short_term_qualified"],
-                    "is_slow_mode": data["is_slow_mode"],
-                    "is_high_risk": data["is_high_risk"],
-                    "is_market_high_risk": data.get("is_market_high_risk", False),
-                    "stock_risk_level": data.get("stock_risk_level", "Medium"),
-                    "stock_risk_reason": data.get("stock_risk_reason", ""),
-                    "has_inverted_sl": data["has_inverted_sl"],
-                    # Note: is_inverted_risk is a local variable in compute_core_logic, not a DB field
-                    # New fields
-                    "is_safe_entry": data.get("is_safe_entry", False),
-                    "has_high_resistance": data.get("has_high_resistance", False),
-                    "avg_volume_value": data.get("avg_volume_value", 0),
-                    "trend_factor": data.get("trend_factor", 0.6),
+                    "master_score": _clean_int(data.get("master_score"), 50),
+                    "base_master_score": _clean_int(data.get("base_master_score", data.get("master_score")), 50),
+                    "market_weight": _clean_int(data.get("market_weight")),
+                    "technical_score": _clean_int(data.get("technical_score"), 50),
+                    "fundamental_score": _clean_int(data.get("fundamental_score"), 50),
+                    "signal": data.get("signal", "WAIT") or "WAIT",
+                    "entry_price": _clean_float(data.get("entry_price")),
+                    "stop_loss": _clean_float(data.get("stop_loss")),
+                    "trailing_sl": _clean_float(data.get("trailing_sl")),
+                    "take_profit": _clean_float(data.get("take_profit")),
+                    "risk_reward_ratio": _clean_float(data.get("risk_reward_ratio")),
+                    "rr_quality": data.get("rr_quality", "") or "",
+                    "rr_quality_detail": data.get("rr_quality_detail", "") or "",
+                    "rr_warning": data.get("rr_warning", "") or "",
+                    "is_vetoed": bool(data.get("is_vetoed", False)),
+                    "veto_reason": data.get("veto_reason", "") or "",
+                    "is_fast_pick": bool(data.get("is_fast_pick", False)),
+                    "is_short_term_qualified": bool(data.get("is_short_term_qualified", False)),
+                    "is_slow_mode": bool(data.get("is_slow_mode", False)),
+                    "is_high_risk": bool(data.get("is_high_risk", False)),
+                    "is_market_high_risk": bool(data.get("is_market_high_risk", False)),
+                    "stock_risk_level": data.get("stock_risk_level", "Medium") or "Medium",
+                    "stock_risk_reason": data.get("stock_risk_reason", "") or "",
+                    "has_inverted_sl": bool(data.get("has_inverted_sl", False)),
+                    "is_safe_entry": bool(data.get("is_safe_entry", False)),
+                    "has_high_resistance": bool(data.get("has_high_resistance", False)),
+                    "avg_volume_value": avg_vol_val,
+                    "trend_factor": _clean_float(data.get("trend_factor"), 0.6),
                     # Smart Money & Industry
-                    "foreign_buy_streak": data.get("foreign_buy_streak", 0),
-                    "foreign_bonus": data.get("foreign_bonus", 0),
-                    "foreign_master_modifier": data.get("foreign_master_modifier", 0),
-                    "latest_net_val": data.get("latest_net_val", 0.0),
-                    "foreign_absorption_ratio": data.get("foreign_absorption_ratio", 0.0),
-                    "latest_net_val_2": data.get("latest_net_val_2", 0.0),
-                    "foreign_buy_val": data.get("foreign_buy_val", 0.0),
-                    "foreign_sell_val": data.get("foreign_sell_val", 0.0),
-                    "foreign_trading_share": data.get("foreign_trading_share", 0.0),
-                    "foreign_accumulated_trend": data.get("foreign_accumulated_trend", "NEUTRAL"),
-                    "foreign_accumulated_slope": data.get("foreign_accumulated_slope", 0.0),
-                    "industry_performance": data.get("industry_performance", 0),
-                    "is_industry_leader": data.get("is_industry_leader", True),
+                    "foreign_buy_streak": f_buy_streak,
+                    "foreign_bonus": _clean_int(data.get("foreign_bonus")),
+                    "foreign_master_modifier": _clean_int(data.get("foreign_master_modifier")),
+                    "latest_net_val": f_net_val,
+                    "foreign_absorption_ratio": f_absorption,
+                    "latest_net_val_2": f_net_val_2,
+                    "foreign_buy_val": f_buy_val,
+                    "foreign_sell_val": f_sell_val,
+                    "foreign_trading_share": f_share,
+                    "foreign_accumulated_trend": f_trend,
+                    "foreign_accumulated_slope": f_slope,
+                    "industry_performance": _clean_float(data.get("industry_performance")),
+                    "is_industry_leader": bool(data.get("is_industry_leader", True)),
                     # Real R:R
-                    "hard_risk_pct": data.get("hard_risk_pct", 0),
-                    "support_price": data.get("support_price", 0),
+                    "hard_risk_pct": _clean_float(data.get("hard_risk_pct")),
+                    "support_price": _clean_float(data.get("support_price")),
                     # P/E Industry & Early Exit
-                    "pe_industry_avg": data.get("pe_industry_avg", 0),
-                    "early_exit_trigger_pct": data.get("early_exit_trigger_pct", 2.0),
-                    "early_exit_drop_pct": data.get("early_exit_drop_pct", 0.7),
-                    "optimal_position_size": data.get("optimal_position_size", 0),
-                    "account_balance": data.get("account_balance", 100_000_000),
-                    "risk_tolerance_pct": data.get("risk_tolerance_pct", 2.0),
-                    "estimated_days_to_target": data["estimated_days_to_target"],
-                    "timeframe_label": data.get("timeframe_label", ""),
-                    "timeframe_color": data.get("timeframe_color", ""),
-                    "expected_profit_per_day": data.get("expected_profit_per_day", 0),
-                    "upside_per_day": data.get("upside_per_day", 0),
-                    "target_yield_pct": data.get("target_yield_pct", 0),
-                    "criteria_met": data["criteria_met"],
-                    "criteria_list": data["criteria_list"],
-                    "recommendation_label": data.get("recommendation_label", ""),
+                    "pe_industry_avg": _clean_float(data.get("pe_industry_avg")),
+                    "early_exit_trigger_pct": _clean_float(data.get("early_exit_trigger_pct"), 2.0),
+                    "early_exit_drop_pct": _clean_float(data.get("early_exit_drop_pct"), 0.7),
+                    "optimal_position_size": _clean_float(data.get("optimal_position_size")),
+                    "account_balance": _clean_float(data.get("account_balance"), 100_000_000),
+                    "risk_tolerance_pct": _clean_float(data.get("risk_tolerance_pct"), 2.0),
+                    "estimated_days_to_target": _clean_float(data.get("estimated_days_to_target")),
+                    "timeframe_label": data.get("timeframe_label", "") or "",
+                    "timeframe_color": data.get("timeframe_color", "") or "",
+                    "expected_profit_per_day": _clean_float(data.get("expected_profit_per_day")),
+                    "upside_per_day": _clean_float(data.get("upside_per_day")),
+                    "target_yield_pct": _clean_float(data.get("target_yield_pct")),
+                    "criteria_met": _clean_int(data.get("criteria_met")),
+                    "criteria_list": data.get("criteria_list") if isinstance(data.get("criteria_list"), list) else [],
+                    "recommendation_label": data.get("recommendation_label", "") or "",
                     # Fair Value
-                    "fv_daily": data.get("fv_daily", 0),
-                    "valuation_status": data.get("valuation_status", "N/A"),
-                    "intrinsic_value": data.get("intrinsic_value", 0),
-                    "sector_median_pe": data.get("sector_median_pe") or 0,
-                    "valuation_source": data.get("valuation_source", "static"),
-                    "valuation_cap_applied": data.get("valuation_cap_applied", False),
+                    "fv_daily": _clean_float(data.get("fv_daily")),
+                    "valuation_status": data.get("valuation_status", "N/A") or "N/A",
+                    "intrinsic_value": _clean_float(data.get("intrinsic_value")),
+                    "sector_median_pe": _clean_float(data.get("sector_median_pe")),
+                    "valuation_source": data.get("valuation_source", "static") or "static",
+                    "valuation_cap_applied": bool(data.get("valuation_cap_applied", False)),
                     # Relative Strength (RS) - FIX v2
-                    "rs_label": data.get("rs_label", "NEUTRAL"),
-                    "rs_bonus": data.get("rs_bonus", 0),
-                    "trend": data.get("trend", "SIDEWAYS"),
-                    "breakout_status": data.get("breakout_status", ""),
-                    "market_rsi": data["market_rsi"],
+                    "rs_label": data.get("rs_label", "NEUTRAL") or "NEUTRAL",
+                    "rs_bonus": _clean_int(data.get("rs_bonus")),
+                    "trend": data.get("trend", "SIDEWAYS") or "SIDEWAYS",
+                    "breakout_status": data.get("breakout_status", "") or "",
+                    "market_rsi": _clean_float(data.get("market_rsi"), 50.0),
                     # Entry Quality & Scan Mode
-                    "scan_mode": data.get("scan_mode", "EARLY_TREND"),
-                    "entry_quality": data.get("entry_quality", "GOOD"),
-                    "entry_quality_reason": data.get("entry_quality_reason", ""),
+                    "scan_mode": data.get("scan_mode", "EARLY_TREND") or "EARLY_TREND",
+                    "entry_quality": data.get("entry_quality", "GOOD") or "GOOD",
+                    "entry_quality_reason": data.get("entry_quality_reason", "") or "",
                 }
             )
             saved += 1
@@ -4238,33 +3775,43 @@ def save_results_to_db(results: List[Dict[str, Any]]) -> int:
     return saved
 
 
-def get_top_picks_from_db(limit: int = 5) -> List[Dict[str, Any]]:
+def get_top_picks_from_db(limit: int = 5, include_vetoed: bool = False):
     """Lấy top picks từ Database - SECTOR DIVERSIFIED for Portfolio Shield
     
     Logic:
-    1. Fetch a larger pool (limit * 3) of non-vetoed stocks
-    2. Apply sector cap: max 3 stocks per industry
+    1. Fetch a larger pool of stocks (non-vetoed for top picks, all for leaderboard)
+    2. Apply sector cap: max 3 stocks per industry (for diversified picks)
     3. Calculate portfolio_health for concentration warning
     4. Return both picks and portfolio metadata
     """
     from django.db.models import F, ExpressionWrapper, FloatField  # pyright: ignore[reportMissingImports]
     
     # Portfolio Shield: Max stocks per sector
-    MAX_STOCKS_PER_SECTOR = 3
+    MAX_STOCKS_PER_SECTOR = 3 if not include_vetoed else 100
     
-    # Step A: Fetch broader pool (3x the limit)
-    analyses = StockAnalysis.objects.select_related("symbol").filter(
-        is_vetoed=False,
-        estimated_days_to_target__gt=0
-    ).annotate(
-        profit_per_day_calc=ExpressionWrapper(
-            F('take_profit') - F('entry_price'),
-            output_field=FloatField()
-        )
-    ).order_by(
-        '-profit_per_day_calc',
-        '-master_score'
-    )[:limit * 3]
+    # Step A: Fetch pool
+    if include_vetoed:
+        base_qs = StockAnalysis.objects.select_related("symbol").all()
+    else:
+        base_qs = StockAnalysis.objects.select_related("symbol").filter(is_vetoed=False)
+        if not base_qs.exists():
+            # Fallback khi chưa có mã nào vượt qua VETO hoàn toàn
+            base_qs = StockAnalysis.objects.select_related("symbol").all()
+
+    if base_qs.filter(estimated_days_to_target__gt=0).exists() and not include_vetoed:
+        analyses = base_qs.filter(
+            estimated_days_to_target__gt=0
+        ).annotate(
+            profit_per_day_calc=ExpressionWrapper(
+                F('take_profit') - F('entry_price'),
+                output_field=FloatField()
+            )
+        ).order_by(
+            '-profit_per_day_calc',
+            '-master_score'
+        )[:limit * 3]
+    else:
+        analyses = base_qs.order_by('-master_score')[:limit * 3]
     
     # Step B: Build diversified picks with sector cap
     diversified_picks = []
@@ -4694,3 +4241,521 @@ def diagnose_stock(symbol: str) -> Dict[str, Any]:
         traceback.print_exc()
     
     return result
+
+
+# ============== DEEP FUNDAMENTAL SYNC (PHASE 2 - TOP 30) ==============
+
+def update_deep_sync_progress(
+    step: str,
+    message: str,
+    progress: int = -1,
+    symbol: str = "",
+    processed: int = 0,
+    total: int = 0,
+    status: str = "running",
+    error: str = ""
+) -> None:
+    """Ghi nhận tiến độ đồng bộ chuyên sâu vào file sync_progress.json và SyncStatus DB."""
+    import json
+    from django.conf import settings
+    files_to_update = [
+        os.path.join(os.path.dirname(__file__), "sync_progress.json"),
+        os.path.join(getattr(settings, "BASE_DIR", os.path.dirname(os.path.dirname(__file__))), "sync_progress.json"),
+    ]
+    data = {
+        "status": status,
+        "step": step,
+        "message": message,
+        "progress": progress,
+        "symbol": symbol,
+        "processed": processed,
+        "total": total,
+        "error": error,
+        "timestamp": timezone.now().isoformat()
+    }
+    for pf in files_to_update:
+        try:
+            with open(pf, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+        except Exception as e:
+            pass
+
+    try:
+        sync_obj, _ = SyncStatus.objects.get_or_create(id=1)
+        sync_obj.status = status
+        sync_obj.total_symbols = total if total > 0 else sync_obj.total_symbols
+        sync_obj.processed_symbols = processed
+        if status == "running" and not sync_obj.started_at:
+            sync_obj.started_at = timezone.now()
+        elif status == "completed":
+            sync_obj.completed_at = timezone.now()
+        if error:
+            sync_obj.error_message = error
+        sync_obj.save()
+    except Exception as e:
+        print(f"[Deep Sync] Không thể lưu SyncStatus DB: {e}", flush=True)
+
+
+def calculate_piotroski_f_score_from_df(df_quarters: pd.DataFrame, is_bank: bool = False) -> tuple[int, dict]:
+    """
+    Tính điểm Piotroski F-Score (0-9) chuẩn mực từ DataFrame tỷ số tài chính 4 quý.
+    
+    9 Tiêu chí:
+    1. ROA > 0 (Khả năng sinh lời)
+    2. CFO / Dòng tiền thuần > 0
+    3. Delta ROA > 0 (ROA cải thiện so với kỳ trước)
+    4. Accrual: CFO > ROA (Chất lượng lợi nhuận)
+    5. Delta Leverage <= 0 (Đòn bẩy nợ giảm hoặc duy trì ở mức an toàn)
+    6. Delta Liquidity >= 0 (Khả năng thanh toán hiện thời cải thiện)
+    7. Shares Dilution = 0 (Không phát hành pha loãng cổ phiếu)
+    8. Delta Margin >= 0 (Biên lợi nhuận gộp/thuần tăng)
+    9. Delta Turnover >= 0 (Vòng quay tài sản tăng)
+    """
+    if df_quarters is None or df_quarters.empty:
+        return 0, {}
+
+    try:
+        # Sắp xếp các quý theo thứ tự tăng dần thời gian (cũ -> mới)
+        df_sorted = df_quarters.sort_index(ascending=True)
+        if len(df_sorted) < 1:
+            return 0, {}
+
+        q0 = df_sorted.iloc[-1]  # Quý gần nhất
+        q1 = df_sorted.iloc[-2] if len(df_sorted) >= 2 else None  # Quý liền kề trước đó
+
+        def _val(row, *col_names, default=0.0):
+            if row is None:
+                return default
+            for name in col_names:
+                if name in row and pd.notna(row[name]):
+                    try:
+                        return float(row[name])
+                    except (ValueError, TypeError):
+                        pass
+            return default
+
+        breakdown = {}
+
+        # 1. ROA > 0
+        roa_q0 = _val(q0, 'ROA (%)', 'ROA', 'roa', default=0.0)
+        breakdown['f1_roa_positive'] = 1 if roa_q0 > 0 else 0
+
+        # 2. Cash Flow / Margin > 0
+        p_cf = _val(q0, 'Price/Cash Flow', 'P/Cashflow', default=0.0)
+        net_margin_q0 = _val(q0, 'After-tax Profit Margin (%)', 'Biên lợi nhuận thuần (%)', default=0.0)
+        breakdown['f2_cfo_positive'] = 1 if (p_cf > 0 or net_margin_q0 > 0) else 0
+
+        # 3. Delta ROA > 0 (So với quý trước)
+        if q1 is not None:
+            roa_q1 = _val(q1, 'ROA (%)', 'ROA', 'roa', default=0.0)
+            breakdown['f3_delta_roa'] = 1 if roa_q0 >= roa_q1 else 0
+        else:
+            breakdown['f3_delta_roa'] = 1 if roa_q0 > 1.5 else 0
+
+        # 4. Accrual: Chất lượng lợi nhuận
+        breakdown['f4_accrual'] = 1 if (net_margin_q0 >= roa_q0 or p_cf > 0) else 0
+
+        # 5. Delta Leverage: Tỷ lệ nợ/VCSH không tăng đột biến
+        de_q0 = _val(q0, 'Debt/Equity', 'Tỷ lệ nợ/Vốn CSH', default=0.0)
+        if q1 is not None:
+            de_q1 = _val(q1, 'Debt/Equity', 'Tỷ lệ nợ/Vốn CSH', default=0.0)
+            breakdown['f5_delta_leverage'] = 1 if (de_q0 <= de_q1 or de_q0 < 1.2) else 0
+        else:
+            breakdown['f5_delta_leverage'] = 1 if de_q0 < 1.5 else 0
+
+        # 6. Delta Liquidity: Tỷ lệ thanh toán hiện thời
+        if is_bank:
+            car = _val(q0, 'CAR', default=0.0)
+            ldr = _val(q0, 'LDR (%)', default=80.0)
+            breakdown['f6_liquidity'] = 1 if (car >= 8.0 or ldr <= 85.0) else 0
+        else:
+            cr_q0 = _val(q0, 'Current Ratio', 'Tỷ lệ thanh toán hiện thời', default=1.0)
+            if q1 is not None:
+                cr_q1 = _val(q1, 'Current Ratio', 'Tỷ lệ thanh toán hiện thời', default=1.0)
+                breakdown['f6_liquidity'] = 1 if (cr_q0 >= cr_q1 or cr_q0 >= 1.2) else 0
+            else:
+                breakdown['f6_liquidity'] = 1 if cr_q0 >= 1.1 else 0
+
+        # 7. Shares Dilution: Không bị pha loãng vốn
+        sh_q0 = _val(q0, 'Outstanding Shares (mil)', default=0.0)
+        if q1 is not None:
+            sh_q1 = _val(q1, 'Outstanding Shares (mil)', default=0.0)
+            breakdown['f7_no_dilution'] = 1 if (sh_q1 == 0 or sh_q0 <= sh_q1 * 1.02) else 0
+        else:
+            breakdown['f7_no_dilution'] = 1
+
+        # 8. Delta Margin: Biên lợi nhuận cải thiện
+        if is_bank:
+            nim_q0 = _val(q0, 'Net Interest Margin', default=0.0)
+            if q1 is not None:
+                nim_q1 = _val(q1, 'Net Interest Margin', default=0.0)
+                breakdown['f8_delta_margin'] = 1 if nim_q0 >= nim_q1 else 0
+            else:
+                breakdown['f8_delta_margin'] = 1 if nim_q0 >= 3.0 else 0
+        else:
+            gm_q0 = _val(q0, 'Gross Margin (%)', 'Biên lợi nhuận gộp (%)', default=0.0)
+            if q1 is not None:
+                gm_q1 = _val(q1, 'Gross Margin (%)', 'Biên lợi nhuận gộp (%)', default=0.0)
+                breakdown['f8_delta_margin'] = 1 if (gm_q0 >= gm_q1 or gm_q0 >= 20.0) else 0
+            else:
+                breakdown['f8_delta_margin'] = 1 if gm_q0 >= 15.0 else 0
+
+        # 9. Delta Turnover: Vòng quay tài sản cải thiện
+        to_q0 = _val(q0, 'Asset Turnover', 'Vòng quay tài sản', default=0.0)
+        if q1 is not None:
+            to_q1 = _val(q1, 'Asset Turnover', 'Vòng quay tài sản', default=0.0)
+            breakdown['f9_delta_turnover'] = 1 if to_q0 >= to_q1 else 0
+        else:
+            breakdown['f9_delta_turnover'] = 1 if to_q0 >= 0.4 else 0
+
+        total_f_score = sum(breakdown.values())
+        return total_f_score, breakdown
+
+    except Exception as e:
+        print(f"[calculate_piotroski_f_score_from_df] Lỗi tính F-Score: {e}", flush=True)
+        return 0, {}
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Làm sạch các giá trị NaN/Inf, NumPy types thành chuẩn JSON hợp lệ cho SQLite JSONField."""
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(x) for x in obj]
+    elif obj is None or pd.isna(obj):
+        return None
+    elif isinstance(obj, (np.floating, float)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, (np.integer, int)):
+        return int(obj)
+    elif hasattr(obj, 'isoformat') and callable(getattr(obj, 'isoformat', None)):
+        return obj.isoformat()
+    return obj
+
+def sync_top30_deep_fundamentals(target_symbols: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Tiến trình đồng bộ chuyên sâu BCTC (Giai đoạn 2) chỉ dành cho Top 30 cổ phiếu được chọn lọc.
+    
+    Đặc điểm kỹ thuật:
+    - Trích xuất 4 quý BCTC từ vnstock_data (VCI ratio) gồm 56 chỉ số tài chính.
+    - Token Bucket & Anti-Ban Rate Limiter: Pacing sleep 2.5 - 3.8s ngẫu nhiên, Cooldown 5s mỗi batch 5 mã.
+    - Exponential Backoff Retry (10s, 20s, 40s) khi gặp lỗi mạng/quá tải.
+    - Tính toán Piotroski F-Score (0-9) chuẩn xác 9 tiêu chí.
+    - Cập nhật tăng trưởng lợi nhuận QoQ/YoY.
+    - Lưu trữ chuẩn hóa vào QuarterlyFinancial, StockData, StockAnalysis.
+    - Đánh giá lại VETO Rule Nhóm 3 (Sức khỏe tài chính).
+    - Cập nhật tiến độ realtime cho UI polling.
+    """
+    import random
+    import time
+    from django import db
+    from dashboard.models import QuarterlyFinancial, StockData, StockAnalysis
+
+    print(f"\n{'='*75}", flush=True)
+    print(f"🚀 [DEEP FUNDAMENTAL SYNC] BẮT ĐẦU ĐỒNG BỘ CHUYÊN SÂU BCTC TOP 30 CỔ PHIẾU", flush=True)
+    print(f"{'='*75}\n", flush=True)
+
+    # 1. Xác định danh sách 30 mã mục tiêu
+    if not target_symbols:
+        # Ưu tiên lấy từ StockAnalysis các mã không bị VETO xếp theo master_score
+        selected = list(
+            StockAnalysis.objects.filter(is_vetoed=False)
+            .order_by('-master_score')
+            .values_list('symbol__symbol', flat=True)[:30]
+        )
+        if len(selected) < 30:
+            # Bổ sung các mã còn lại xếp theo master_score
+            more = list(
+                StockAnalysis.objects.exclude(symbol__symbol__in=selected)
+                .order_by('-master_score')
+                .values_list('symbol__symbol', flat=True)[:(30 - len(selected))]
+            )
+            selected.extend(more)
+
+        # Nếu DB trống, dùng danh sách 30 mã cốt lõi thị trường
+        if len(selected) < 10:
+            core_30 = [
+                "VCB", "BID", "CTG", "TCB", "MBB", "ACB", "VPB", "HDB", "STB", "TPB",
+                "FPT", "HPG", "VNM", "MSN", "MWG", "PNJ", "GAS", "PLX", "VHM", "VIC",
+                "VRE", "SSI", "VCI", "VND", "DGC", "GEX", "REE", "KDH", "NLG", "PVD"
+            ]
+            selected = core_30
+        target_symbols = selected[:30]
+
+    total_symbols = len(target_symbols)
+    update_deep_sync_progress(
+        step="starting",
+        message=f"Bắt đầu đồng bộ chuyên sâu BCTC 4 quý cho {total_symbols} mã hàng đầu...",
+        progress=0,
+        symbol="",
+        processed=0,
+        total=total_symbols,
+        status="running"
+    )
+
+    success_count = 0
+    failed_count = 0
+    results_detail = []
+
+    # Import thư viện vnstock_data
+    try:
+        from vnstock_data import Finance
+    except ImportError as e:
+        err_msg = f"Không tìm thấy thư viện vnstock_data: {e}"
+        print(f"[Deep Sync] ❌ {err_msg}", flush=True)
+        update_deep_sync_progress("error", err_msg, 0, status="failed", error=err_msg)
+        return {"status": "error", "message": err_msg}
+
+    # Đóng kết nối cũ để an toàn luồng
+    db.close_old_connections()
+
+    for idx, symbol in enumerate(target_symbols, 1):
+        symbol = symbol.strip().upper()
+        print(f"\n[Deep Sync {idx}/{total_symbols}] >>> Đang xử lý: {symbol}...", flush=True)
+
+        update_deep_sync_progress(
+            step="fetching",
+            message=f"[{idx}/{total_symbols}] Đang tải BCTC 4 quý từ VCI cho {symbol}...",
+            progress=int(((idx - 1) / total_symbols) * 100),
+            symbol=symbol,
+            processed=idx - 1,
+            total=total_symbols,
+            status="running"
+        )
+
+        # 2. Token Bucket Rate-Limiting & Jitter Sleep
+        # Tránh gửi dồn dập, tuân thủ quota 60 req/phút của Community Tier
+        jitter_sleep = random.uniform(2.5, 3.8)
+        time.sleep(jitter_sleep)
+
+        # Cooldown bổ sung mỗi 5 mã
+        if idx > 1 and idx % 5 == 1:
+            print(f"[Deep Sync] ⏱️ Cooldown 5s sau 5 request để giải phóng kết nối...", flush=True)
+            time.sleep(5.0)
+
+        # 3. Request với Exponential Backoff Retry (Max 3 lần)
+        max_retries = 3
+        df_ratio = None
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                f_client = Finance(source='VCI', symbol=symbol)
+                # Lấy 8 quý để có đủ dữ liệu so sánh YoY và tính toán F-Score
+                df_ratio = f_client.ratio(period='quarter', limit=8)
+                if df_ratio is not None and not df_ratio.empty:
+                    break
+            except Exception as e:
+                last_error = e
+                wait_time = 10 * (2 ** attempt)
+                print(f"[Deep Sync] ⚠️ {symbol} gặp lỗi ở lần thử {attempt + 1}: {e}. Chờ {wait_time}s retry...", flush=True)
+                time.sleep(wait_time)
+
+        if df_ratio is None or df_ratio.empty:
+            failed_count += 1
+            print(f"[Deep Sync] ❌ Thất bại khi lấy BCTC cho {symbol}: {last_error}", flush=True)
+            results_detail.append({"symbol": symbol, "status": "failed", "error": str(last_error)})
+            continue
+
+        # 4. Trích xuất và chuẩn hóa dữ liệu 4 quý gần nhất
+        try:
+            # Lấy 4 quý mới nhất (tail(4))
+            recent_quarters_df = df_ratio.tail(4)
+            is_bank = (symbol in ['VCB', 'BID', 'CTG', 'TCB', 'MBB', 'ACB', 'VPB', 'HDB', 'STB', 'TPB', 'SHB', 'LPB', 'MSB', 'VIB', 'OCB'])
+
+            # Tính Piotroski F-Score từ 4 quý
+            f_score, f_score_breakdown = calculate_piotroski_f_score_from_df(recent_quarters_df, is_bank=is_bank)
+
+            latest_quarter_key = recent_quarters_df.index[-1]
+            latest_row = recent_quarters_df.iloc[-1]
+
+            def _get_f(row, *col_names, default=None):
+                for col in col_names:
+                    if col in row and pd.notna(row[col]):
+                        try:
+                            return float(row[col])
+                        except:
+                            pass
+                return default
+
+            latest_roe = _get_f(latest_row, 'ROE (%)', 'ROE', 'roe')
+            if latest_roe is not None and abs(latest_roe) < 1.0:
+                latest_roe = latest_roe * 100.0
+
+            latest_roa = _get_f(latest_row, 'ROA (%)', 'ROA', 'roa')
+            if latest_roa is not None and abs(latest_roa) < 1.0:
+                latest_roa = latest_roa * 100.0
+
+            latest_pe = _get_f(latest_row, 'P/E', 'pe')
+            latest_pb = _get_f(latest_row, 'P/B', 'pb')
+            latest_de = _get_f(latest_row, 'Debt to Equity', 'Debt/Equity', 'Tỷ lệ nợ/Vốn CSH', default=0.0)
+
+            # Tính tăng trưởng lợi nhuận QoQ
+            profit_growth = None
+            if len(recent_quarters_df) >= 2:
+                prev_row = recent_quarters_df.iloc[-2]
+                current_margin = _get_f(latest_row, 'After-tax Profit Margin (%)', 'Biên lợi nhuận thuần (%)', default=0.0)
+                prev_margin = _get_f(prev_row, 'After-tax Profit Margin (%)', 'Biên lợi nhuận thuần (%)', default=0.0)
+                if prev_margin != 0:
+                    profit_growth = round(((current_margin - prev_margin) / abs(prev_margin)) * 100, 2)
+
+            # Lưu từng quý vào bảng QuarterlyFinancial
+            for period_str in recent_quarters_df.index:
+                q_row = recent_quarters_df.loc[period_str]
+                period_str_clean = str(period_str).strip()
+
+                # Xác định ngày kết thúc quý
+                q_date = None
+                try:
+                    year_part = period_str_clean[:4]
+                    if 'Q1' in period_str_clean: q_date = f"{year_part}-03-31"
+                    elif 'Q2' in period_str_clean: q_date = f"{year_part}-06-30"
+                    elif 'Q3' in period_str_clean: q_date = f"{year_part}-09-30"
+                    elif 'Q4' in period_str_clean: q_date = f"{year_part}-12-31"
+                    else: q_date = f"{year_part}-12-31"
+                except:
+                    q_date = timezone.now().strftime("%Y-%m-%d")
+
+                q_roe = _get_f(q_row, 'ROE (%)', 'ROE', 'roe')
+                if q_roe is not None and abs(q_roe) < 1.0:
+                    q_roe = q_roe * 100.0
+
+                q_roa = _get_f(q_row, 'ROA (%)', 'ROA', 'roa')
+                if q_roa is not None and abs(q_roa) < 1.0:
+                    q_roa = q_roa * 100.0
+
+                q_pe = _get_f(q_row, 'P/E', 'pe')
+                q_pb = _get_f(q_row, 'P/B', 'pb')
+
+                QuarterlyFinancial.objects.update_or_create(
+                    symbol=symbol,
+                    quarter=period_str_clean,
+                    defaults={
+                        'quarter_date': q_date,
+                        'roe': q_roe,
+                        'roa': q_roa,
+                        'pe': q_pe,
+                        'pb': q_pb,
+                        'f_score': f_score,
+                        'profit_growth': profit_growth,
+                        'is_vetoed': (q_roe is not None and q_roe < 10),
+                        'veto_reason': "ROE < 10%" if (q_roe is not None and q_roe < 10) else "",
+                        'vci_data': _sanitize_for_json(q_row.to_dict()) if hasattr(q_row, 'to_dict') else {}
+                    }
+                )
+
+            # 5. Cập nhật vào StockData
+            stock_data_obj = StockData.objects.filter(symbol=symbol).first()
+            if stock_data_obj:
+                if latest_roe is not None:
+                    stock_data_obj.roe = round(latest_roe, 2)
+                if latest_pe is not None:
+                    stock_data_obj.pe = round(latest_pe, 2)
+                if latest_pb is not None:
+                    stock_data_obj.pb = round(latest_pb, 2)
+                stock_data_obj.f_score = f_score
+                if profit_growth is not None:
+                    stock_data_obj.profit_growth = profit_growth
+                    stock_data_obj.profit_growth_note = "QoQ"
+                stock_data_obj.save()
+
+            # 6. Đánh giá lại VETO và cập nhật StockAnalysis
+            analysis_obj = StockAnalysis.objects.filter(symbol__symbol=symbol).first()
+            if analysis_obj and stock_data_obj:
+                fund_dict = {
+                    "roe": latest_roe,
+                    "roa": latest_roa,
+                    "pe": latest_pe,
+                    "pb": latest_pb,
+                    "f_score": f_score,
+                    "profit_growth": profit_growth,
+                    "debt_equity": latest_de,
+                    "is_new_listing": stock_data_obj.is_new_listing
+                }
+                tech_dict = {
+                    "price": stock_data_obj.price,
+                    "cmf": stock_data_obj.cmf,
+                    "rsi": stock_data_obj.rsi,
+                    "adx": stock_data_obj.adx,
+                    "sma_50": stock_data_obj.sma_50,
+                    "sma_200": 0,
+                    "bb_percent": stock_data_obj.bb_percent,
+                    "volume_ratio": stock_data_obj.volume_ratio,
+                    "volume": stock_data_obj.volume
+                }
+                veto_res = check_health_veto(
+                    tech=tech_dict,
+                    fund_data=fund_dict,
+                    market_rsi=analysis_obj.market_rsi or 50.0,
+                    avg_volume_value=stock_data_obj.avg_volume_value,
+                    industry=stock_data_obj.industry or ""
+                )
+
+                analysis_obj.f_score = f_score
+                analysis_obj.roe = latest_roe
+                analysis_obj.profit_growth = profit_growth
+                analysis_obj.is_vetoed = veto_res.get('is_vetoed', False)
+                analysis_obj.veto_reason = veto_res.get('veto_reason', "")
+                analysis_obj.veto_reasons = veto_res.get('veto_reasons', [])
+                analysis_obj.save()
+
+            success_count += 1
+            print(f"[Deep Sync] ✅ Đã lưu BCTC cho {symbol}: ROE={latest_roe}%, F-Score={f_score}/9, P/E={latest_pe}, P/B={latest_pb}", flush=True)
+
+            results_detail.append({
+                "symbol": symbol,
+                "status": "success",
+                "roe": latest_roe,
+                "f_score": f_score,
+                "pe": latest_pe,
+                "pb": latest_pb,
+                "profit_growth": profit_growth
+            })
+
+            update_deep_sync_progress(
+                step="progress",
+                message=f"[{idx}/{total_symbols}] Đã đồng bộ BCTC cho {symbol} (ROE: {latest_roe or 0:.1f}%, F-Score: {f_score}/9)",
+                progress=int((idx / total_symbols) * 100),
+                symbol=symbol,
+                processed=idx,
+                total=total_symbols,
+                status="running"
+            )
+
+        except Exception as e:
+            failed_count += 1
+            print(f"[Deep Sync] ❌ Lỗi xử lý dữ liệu cho {symbol}: {e}", flush=True)
+            results_detail.append({"symbol": symbol, "status": "failed", "error": str(e)})
+
+    # 7. Cập nhật lại sector median benchmarks sau khi có BCTC mới
+    try:
+        sync_sector_benchmarks()
+    except Exception as e:
+        print(f"[Deep Sync] Không thể sync sector benchmarks: {e}", flush=True)
+
+    # 8. Hoàn tất toàn bộ tiến trình
+    final_message = f"✅ Hoàn tất đồng bộ chuyên sâu BCTC Top 30: Thành công {success_count}/{total_symbols} mã!"
+    print(f"\n{'='*75}", flush=True)
+    print(f"[DEEP FUNDAMENTAL SYNC] {final_message}", flush=True)
+    print(f"{'='*75}\n", flush=True)
+
+    update_deep_sync_progress(
+        step="done",
+        message=final_message,
+        progress=100,
+        symbol="",
+        processed=total_symbols,
+        total=total_symbols,
+        status="completed"
+    )
+
+    return {
+        "status": "success",
+        "processed_count": total_symbols,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "details": results_detail
+    }

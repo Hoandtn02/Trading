@@ -79,51 +79,8 @@ class CryptoAnalyzer:
         return names.get(symbol, symbol)
     
     def _get_crypto_data(self, data: CryptoData):
-        """Get crypto data from Yahoo Finance"""
-        try:
-            import requests
-            
-            # Map symbol to Yahoo Finance format
-            yf_map = {
-                "BTCUSDT": "BTC-USD",
-                "ETHUSDT": "ETH-USD",
-                "BNBUSDT": "BNB-USD",
-                "SOLUSDT": "SOL-USD",
-                "XRPUSDT": "XRP-USD",
-                "ADAUSDT": "ADA-USD",
-            }
-            yf_symbol = yf_map.get(data.symbol, f"{data.symbol.replace('USDT', '-USD')}")
-            
-            # Get current quote
-            import time
-            time.sleep(0.3)
-            end = int(pd.Timestamp.now().timestamp())
-            start = end - 86400
-            
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_symbol}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            resp = requests.get(url, params={"period1": start, "period2": end, "interval": "1d"}, headers=headers, timeout=10)
-            
-            if resp.status_code == 200:
-                result = resp.json().get("chart", {}).get("result", [])
-                if result:
-                    meta = result[0].get("meta", {})
-                    data.current_price = float(meta.get("regularMarketPrice", 0))
-                    data.high_24h = float(meta.get("regularMarketDayHigh", 0))
-                    data.low_24h = float(meta.get("regularMarketDayLow", 0))
-                    data.open_price = float(meta.get("regularMarketOpen", 0))
-                    data.volume_24h = float(meta.get("regularMarketVolume", 0))
-                    data.market_cap = float(meta.get("marketCap", 0))
-                    
-                    # Calculate change
-                    prev_close = float(meta.get("chartPreviousClose", data.current_price))
-                    if prev_close > 0:
-                        data.change_24h = data.current_price - prev_close
-                        data.change_percent_24h = round((data.current_price - prev_close) / prev_close * 100, 2)
-                            
-        except Exception as e:
-            print(f"[CryptoAnalyzer] Error: {e}")
-            self._get_crypto_data_vnstock(data)
+        """Get crypto data is now merged with _get_historical_data via TV API"""
+        pass
     
     def _get_crypto_data_vnstock(self, data: CryptoData):
         """Fallback using vnstock"""
@@ -143,114 +100,81 @@ class CryptoAnalyzer:
             print(f"[CryptoAnalyzer] VNStock error: {e}")
     
     def _get_historical_data(self, data: CryptoData):
-        """Get historical data for technical analysis"""
+        """Get historical data and current quote for technical analysis via TradingView"""
         try:
-            import requests
+            from dashboard.tv_client import get_ohlcv_with_fallback
             
-            yf_map = {
-                "BTCUSDT": "BTC-USD",
-                "ETHUSDT": "ETH-USD",
-                "BNBUSDT": "BNB-USD",
-                "SOLUSDT": "SOL-USD",
-            }
-            yf_symbol = yf_map.get(data.symbol, f"{data.symbol.replace('USDT', '-USD')}")
+            # Dùng Binance cho Crypto
+            df = get_ohlcv_with_fallback(data.symbol, exchange='BINANCE', timeframe='1D', count=max(self.period_ta, 100))
             
-            import time
-            time.sleep(0.3)
-            end = int(pd.Timestamp.now().timestamp())
-            start = end - (self.period_ta + 30) * 86400
-            
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_symbol}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            resp = requests.get(url, params={"period1": start, "period2": end, "interval": "1d"}, headers=headers, timeout=10)
-            
-            if resp.status_code == 200:
-                result = resp.json().get("chart", {}).get("result", [])
-                if result:
-                    ohlc = result[0]["indicators"]["quote"][0]
-                    timestamps = result[0]["timestamp"]
-                    
-                    df = pd.DataFrame({
-                        "time": pd.to_datetime(timestamps, unit="s"),
-                        "open": ohlc["open"],
-                        "high": ohlc["high"],
-                        "low": ohlc["low"],
-                        "close": ohlc["close"],
-                        "volume": ohlc["volume"]
-                    })
-                    df = df.dropna()
-                    
-                    if len(df) > 50:
-                        data.ohlcv_data = df
-                            
+            if df is not None and len(df) > 20:
+                data.ohlcv_data = df
+                # Cập nhật thông tin giá hiện tại (thay thế yfinance)
+                data.current_price = float(df['close'].iloc[-1])
+                prev_close = float(df['close'].iloc[-2]) if len(df) > 1 else data.current_price
+                data.change_24h = data.current_price - prev_close
+                if prev_close > 0:
+                    data.change_percent_24h = round(data.change_24h / prev_close * 100, 2)
+                data.high_24h = float(df['high'].iloc[-1])
+                data.low_24h = float(df['low'].iloc[-1])
+                data.volume_24h = float(df['volume'].iloc[-1])
+                data.open_price = float(df['open'].iloc[-1])
+                data.market_cap = 0  # TradingView OHLCV doesn't provide market cap directly
         except Exception as e:
             print(f"[CryptoAnalyzer] Historical data error: {e}")
+            self._get_crypto_data_vnstock(data)
     
     def _calculate_technical(self, data: CryptoData):
-        """Calculate technical indicators"""
+        """Calculate technical indicators via TradingView API and Pandas"""
         if not hasattr(data, 'ohlcv_data') or data.ohlcv_data is None:
             return
         
         try:
-            from vnstock_ta import Indicator
+            from dashboard.tv_client import get_multiple_indicators
             
             df = data.ohlcv_data
             prices = df['close'].dropna()
             
             if len(prices) < 20:
                 return
+                
+            # TV API
+            tv_inds = get_multiple_indicators(
+                symbol=data.symbol,
+                exchange="BINANCE",
+                indicators=["STD;RSI", "STD;MACD", "STD;Bollinger_Bands", "STD;DMI", "STD;VWAP"]
+            )
             
-            indicator = Indicator(close=prices)
+            if tv_inds:
+                for item in tv_inds:
+                    ind_name = item.get("indicator")
+                    res_data = item.get("data")
+                    if not res_data or len(res_data) == 0:
+                        continue
+                    last_val = res_data[-1]
+                    
+                    if ind_name == "STD;RSI" and "RSI" in last_val:
+                        data.rsi = float(last_val["RSI"])
+                    elif ind_name == "STD;MACD" and "MACD" in last_val:
+                        data.macd = float(last_val["MACD"])
+                    elif ind_name == "STD;Bollinger_Bands" and "Basis" in last_val:
+                        data.bollinger_upper = float(last_val["Upper"])
+                        data.bollinger_middle = float(last_val["Basis"])
+                        data.bollinger_lower = float(last_val["Lower"])
+                    elif ind_name == "STD;DMI" and "ADX" in last_val:
+                        data.adx = float(last_val["ADX"])
+                    elif ind_name == "STD;VWAP" and "VWAP" in last_val:
+                        data.vwap = float(last_val["VWAP"])
+                        
+            # CMF (Manual fallback if needed, but not heavily requested for TV Crypto, let's keep Pandas CMF logic if available or zero)
             
-            # RSI
-            rsi = indicator.rsi(period=14)
-            if hasattr(rsi, 'iloc'):
-                data.rsi = float(rsi.iloc[-1])
-            
-            # MACD
-            macd = indicator.macd()
-            if macd is not None and hasattr(macd, 'iloc'):
-                data.macd = float(macd.iloc[-1])
-            
-            # CMF
-            cmf = indicator.cmf(period=20)
-            if hasattr(cmf, 'iloc'):
-                data.cmf = float(cmf.iloc[-1])
-            
-            # SMA
-            sma20 = indicator.sma(period=20)
-            if sma20 is not None and hasattr(sma20, 'iloc'):
-                data.sma_20 = float(sma20.iloc[-1])
-            
-            sma50 = indicator.sma(period=50)
-            if sma50 is not None and hasattr(sma50, 'iloc'):
-                data.sma_50 = float(sma50.iloc[-1])
-            
-            sma200 = indicator.sma(period=200)
-            if sma200 is not None and hasattr(sma200, 'iloc'):
-                data.sma_200 = float(sma200.iloc[-1])
-            
-            # ADX
-            adx = indicator.adx(period=14)
-            if adx is not None and hasattr(adx, 'iloc'):
-                data.adx = float(adx.iloc[-1])
-            
-            # Bollinger
-            bb_df = indicator.bbands(length=20, std=2)
-            if bb_df is not None and hasattr(bb_df, 'columns'):
-                cols = list(bb_df.columns)
-                for col in cols:
-                    if 'BBL' in col.upper():
-                        data.bollinger_lower = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
-                    elif 'BBM' in col.upper():
-                        data.bollinger_middle = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
-                    elif 'BBU' in col.upper():
-                        data.bollinger_upper = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
-            
-            # VWAP
-            if len(df) > 0:
-                typical = (df['high'] + df['low'] + df['close']) / 3
-                data.vwap = float((typical * df['volume']).sum() / df['volume'].sum())
+            # SMA (Pandas)
+            if len(prices) >= 20:
+                data.sma_20 = float(prices.rolling(20).mean().iloc[-1])
+            if len(prices) >= 50:
+                data.sma_50 = float(prices.rolling(50).mean().iloc[-1])
+            if len(prices) >= 200:
+                data.sma_200 = float(prices.rolling(200).mean().iloc[-1])
                         
         except Exception as e:
             print(f"[CryptoAnalyzer] Technical error: {e}")
@@ -359,7 +283,7 @@ class CryptoAnalyzer:
 │  Volume 24h: {volume_str}                                             │
 │  Market Cap: {market_cap_str} │ Dominance: {data.dominance:.1f}%                        │
 ├──────────────────────────────────────────────────────────────────┤
-│  📊 PHÂN TÍCH KỸ THUẬT (vnstock_ta)                          │
+│  📊 PHÂN TÍCH KỸ THUẬT (TradingView)                         │
 │  ────────────────────────────────────────────────────────────    │
 │  📈 ĐỘNG LƯỢNG                                                  │
 │     RSI(14): {data.rsi:.0f} {rsi_bar} Zone: {rsi_zone}          │

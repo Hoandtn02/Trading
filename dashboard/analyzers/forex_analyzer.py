@@ -107,26 +107,16 @@ class ForexAnalyzer:
     def _get_single_pair(self, symbol: str) -> Optional[dict]:
         """Get single forex pair data"""
         try:
-            from vnstock_data import Market
+            from dashboard.tv_client import get_ohlcv
             
-            mkt = Market()
-            df = mkt.forex(symbol).ohlcv(interval="1D", length=self.period_ta + 1)
+            df = get_ohlcv(symbol, exchange='FX', timeframe='D', count=5)
             
             if df is not None and len(df) > 1:
                 last = df.iloc[-1]
                 prev = df.iloc[-2]
                 
-                close_col = None
-                for col in ['close', 'Close', 'ClosePrice', 'price']:
-                    if col in df.columns:
-                        close_col = col
-                        break
-                
-                if close_col is None:
-                    close_col = df.columns[-1]
-                
-                current = float(last.get(close_col, 0))
-                prev_close = float(prev.get(close_col, current))
+                current = float(last.get('close', 0))
+                prev_close = float(prev.get('close', current))
                 
                 change = current - prev_close
                 change_pct = round(change / prev_close * 100, 4) if prev_close > 0 else 0
@@ -165,43 +155,32 @@ class ForexAnalyzer:
         return None
     
     def _get_forex_data(self, data: ForexData):
-        """Get forex OHLCV data"""
+        """Get forex OHLCV data via TradingView"""
         # For USDVND, use specialized handling
         if data.symbol == "USDVND":
             data.unit = "VND/USD"
             
             try:
-                from vnstock_data import Market
-                mkt = Market()
-                df = mkt.forex("USDVND").ohlcv(interval="1D", length=self.period_ta + 1)
+                from dashboard.tv_client import get_ohlcv
+                df = get_ohlcv("USDVND", exchange='FX', timeframe='D', count=self.period_ta + 1)
                 
                 if df is not None and len(df) > 0:
                     last = df.iloc[-1]
                     prev = df.iloc[-2] if len(df) > 1 else df.iloc[-1]
                     
-                    close_col = None
-                    for col in ['close', 'Close', 'ClosePrice', 'price']:
-                        if col in df.columns:
-                            close_col = col
-                            break
+                    data.current_rate = float(last.get('close', 0))
+                    data.open_price = float(last.get('open', data.current_rate))
+                    data.high = float(last.get('high', data.current_rate))
+                    data.low = float(last.get('low', data.current_rate))
                     
-                    if close_col is None:
-                        close_col = df.columns[-1]
-                    
-                    data.current_rate = float(last.get(close_col, 0))
-                    data.open_price = float(last.get('open', last.get('Open', data.current_rate)))
-                    data.high = float(last.get('high', last.get('High', data.current_rate)))
-                    data.low = float(last.get('low', last.get('Low', data.current_rate)))
-                    
-                    prev_close = float(prev.get(close_col, data.current_rate))
+                    prev_close = float(prev.get('close', data.current_rate))
                     if prev_close > 0:
                         data.change_value = data.current_rate - prev_close
                         data.change_percent = round(data.change_value / prev_close * 100, 4)
-                
-            except ImportError:
-                self._get_forex_data_fallback(data)
+                else:
+                    self._get_forex_data_fallback(data)
             except Exception as e:
-                print(f"[ForexAnalyzer] Error: {e}")
+                print(f"[ForexAnalyzer] TV FX error: {e}")
                 self._get_forex_data_fallback(data)
         else:
             pair_data = self._get_single_pair(data.symbol)
@@ -269,74 +248,53 @@ class ForexAnalyzer:
         data.trade_balance = 30  # +$30B thặng dư
     
     def _calculate_technical(self, data: ForexData):
-        """Calculate technical indicators"""
+        """Calculate technical indicators via TradingView"""
         try:
-            from vnstock_ta import Indicator
+            from dashboard.tv_client import get_ohlcv, get_multiple_indicators
             
-            from vnstock_data import Market
-            mkt = Market()
-            df = mkt.forex(data.symbol).ohlcv(interval="1D", length=self.period_ta + 30)
+            df = get_ohlcv(data.symbol, exchange='FX', timeframe='D', count=self.period_ta + 30)
             
             if df is not None and len(df) > 20:
-                close_col = None
-                for col in ['close', 'Close', 'ClosePrice', 'price']:
-                    if col in df.columns:
-                        close_col = col
-                        break
+                prices = df['close'].dropna()
                 
-                if close_col is None:
-                    close_col = df.columns[-1]
+                # Fetch TA from TV API
+                tv_inds = get_multiple_indicators(
+                    symbol=data.symbol,
+                    exchange="FX",
+                    indicators=["STD;RSI", "STD;MACD", "STD;Bollinger_Bands", "STD;DMI"]
+                )
                 
-                prices = df[close_col].dropna()
+                if tv_inds:
+                    for item in tv_inds:
+                        ind_name = item.get("indicator")
+                        res_data = item.get("data")
+                        if not res_data or len(res_data) == 0:
+                            continue
+                        last_val = res_data[-1]
+                        
+                        if ind_name == "STD;RSI" and "RSI" in last_val:
+                            data.rsi = float(last_val["RSI"])
+                        elif ind_name == "STD;MACD" and "MACD" in last_val:
+                            data.macd = float(last_val["MACD"])
+                        elif ind_name == "STD;Bollinger_Bands" and "Upper" in last_val:
+                            data.bollinger_upper = float(last_val["Upper"])
+                            data.bollinger_lower = float(last_val["Lower"])
+                        elif ind_name == "STD;DMI" and "ADX" in last_val:
+                            data.adx = float(last_val["ADX"])
                 
-                if len(prices) > 20:
-                    indicator = Indicator(close=prices)
-                    
-                    # RSI
-                    rsi = indicator.rsi(period=14)
-                    if hasattr(rsi, 'iloc'):
-                        data.rsi = float(rsi.iloc[-1])
-                    
-                    # MACD
-                    macd = indicator.macd()
-                    if macd is not None and hasattr(macd, 'iloc'):
-                        data.macd = float(macd.iloc[-1])
-                    
-                    # CMF
-                    cmf = indicator.cmf(period=20)
-                    if hasattr(cmf, 'iloc'):
-                        data.cmf = float(cmf.iloc[-1])
-                    
-                    # SMA
-                    sma20 = indicator.sma(period=20)
-                    if sma20 is not None and hasattr(sma20, 'iloc'):
-                        data.sma_20 = float(sma20.iloc[-1])
-                    
-                    sma50 = indicator.sma(period=50)
-                    if sma50 is not None and hasattr(sma50, 'iloc'):
-                        data.sma_50 = float(sma50.iloc[-1])
-                    
-                    # ADX
-                    adx = indicator.adx(period=14)
-                    if adx is not None and hasattr(adx, 'iloc'):
-                        data.adx = float(adx.iloc[-1])
-                    
-                    # ATR
-                    atr = indicator.atr(period=14)
-                    if hasattr(atr, 'iloc'):
-                        data.atr = float(atr.iloc[-1])
-                    
-                    # Bollinger
-                    bb_df = indicator.bbands(length=20, std=2)
-                    if bb_df is not None and hasattr(bb_df, 'columns'):
-                        cols = list(bb_df.columns)
-                        for col in cols:
-                            if 'BBL' in col.upper():
-                                data.bollinger_lower = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
-                            elif 'BBU' in col.upper():
-                                data.bollinger_upper = float(bb_df[col].iloc[-1]) if not pd.isna(bb_df[col].iloc[-1]) else 0
-                            elif 'BBM' in col.upper():
-                                pass  # Middle band not stored in ForexData
+                # ATR from Pandas
+                if len(prices) >= 14:
+                    tr1 = df['high'] - df['low']
+                    tr2 = abs(df['high'] - df['close'].shift(1))
+                    tr3 = abs(df['low'] - df['close'].shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    data.atr = float(tr.rolling(14).mean().iloc[-1])
+                
+                # SMA from Pandas
+                if len(prices) >= 20:
+                    data.sma_20 = float(prices.rolling(20).mean().iloc[-1])
+                if len(prices) >= 50:
+                    data.sma_50 = float(prices.rolling(50).mean().iloc[-1])
                             
         except Exception as e:
             print(f"[ForexAnalyzer] Technical error: {e}")
@@ -434,7 +392,7 @@ class ForexAnalyzer:
 │  Bid: {data.bid:,.0f} │ Ask: {data.ask:,.0f}                                    │
 │  Spread: {data.spread:,.0f} VND ({data.spread/data.current_rate*100:.2f}%)                                        │
 │  ────────────────────────────────────────────────────────────    │
-│  📈 PHÂN TÍCH KỸ THUẬT (vnstock_ta)                          │
+│  📈 PHÂN TÍCH KỸ THUẬT (TradingView)                         │
 │  ────────────────────────────────────────────────────────────    │
 │  📊 DÒNG TIỀN                                                  │
 │     CMF(20): {data.cmf:+.2f} {cmf_bar} {cmf_status}    │

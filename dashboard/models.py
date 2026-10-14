@@ -218,6 +218,10 @@ class StockAnalysis(models.Model):
     
     # Smart Money & Industry
     foreign_buy_streak = models.IntegerField(default=0)  # Số phiên khối ngoại mua ròng liên tiếp
+    foreign_sell_streak = models.IntegerField(default=0)  # Số phiên khối ngoại bán ròng liên tiếp
+    foreign_buy_streak_start = models.DateField(null=True, blank=True)  # Ngày bắt đầu streak mua ròng
+    foreign_sell_streak_start = models.DateField(null=True, blank=True)  # Ngày bắt đầu streak bán ròng
+    foreign_ranking_date = models.DateField(null=True, blank=True)  # Ngày dữ liệu ranking từ Insights API
     foreign_bonus = models.IntegerField(default=0)  # Điểm cộng từ Smart Money
     foreign_master_modifier = models.IntegerField(default=0)  # Điểm thưởng/phạt trực tiếp từ khối ngoại (X2)
     latest_net_val = models.FloatField(default=0.0)  # Giá trị mua bán ròng phiên gần nhất (VND)

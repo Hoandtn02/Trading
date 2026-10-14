@@ -230,20 +230,21 @@ def top_picks(request: HttpRequest) -> HttpResponse:
     - Sync Engine: ThreadPoolExecutor để đồng bộ song song
     - Status Indicator: Hiển thị thời gian cập nhật
     """
+    from .models import StockAnalysis
     # Lấy sync status
     sync_status = get_sync_status()
-    is_data_available = sync_status and sync_status.get("completed_at")
+    has_analysis_data = StockAnalysis.objects.exists()
+    is_data_available = has_analysis_data or bool(sync_status and sync_status.get("completed_at"))
 
     if is_data_available:
         # Đọc từ Database - CỰC NHANH
-        raw_picks, top_picks_health = get_top_picks_from_db(limit=15)
-        all_stocks, all_stocks_health = get_top_picks_from_db(limit=30)
+        raw_picks, top_picks_health = get_top_picks_from_db(limit=15, include_vetoed=False)
+        all_stocks, all_stocks_health = get_top_picks_from_db(limit=30, include_vetoed=True)
 
         fast_picks = [p for p in raw_picks if (p.get('estimated_days_to_target') or 0) <= 10]
         slow_picks = [p for p in raw_picks if (p.get('estimated_days_to_target') or 0) > 10]
 
         # Thống kê
-        from .models import StockAnalysis
         total = StockAnalysis.objects.count()
         vetoed = StockAnalysis.objects.filter(is_vetoed=True).count()
         fast = StockAnalysis.objects.filter(is_fast_pick=True, is_vetoed=False).count()
@@ -251,13 +252,22 @@ def top_picks(request: HttpRequest) -> HttpResponse:
         # Market RSI từ record đầu tiên
         market_rsi = (fast_picks or raw_picks)[0]["market_rsi"] if (fast_picks or raw_picks) else 50
 
+        # Scan time lấy từ completed_at hoặc bản ghi phân tích mới nhất
+        latest_sa = StockAnalysis.objects.order_by('-updated_at').first()
+        if sync_status and sync_status.get("completed_at"):
+            scan_time = str(sync_status.get("completed_at"))[:19]
+        elif latest_sa and latest_sa.updated_at:
+            scan_time = latest_sa.updated_at.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            scan_time = "Chưa đồng bộ"
+
         context = {
             "fast_picks": fast_picks,
             "slow_picks": slow_picks,
             "top_picks_health": top_picks_health,
             "all_stocks": all_stocks,
             "all_stocks_health": all_stocks_health,
-            "scan_time": sync_status.get("completed_at", "")[:19] if sync_status.get("completed_at") else "N/A",  # pyright: ignore[reportOptionalMemberAccess]
+            "scan_time": scan_time,
             "market_rsi": market_rsi,
             "market_status": "SELL ZONE" if market_rsi > 70 else "NEUTRAL",
             "bullish_count": StockAnalysis.objects.filter(signal__in=["BUY", "STRONG_BUY"]).count(),
@@ -265,8 +275,8 @@ def top_picks(request: HttpRequest) -> HttpResponse:
             "fast_count": fast,
             "total_scanned": total,
             "high_risk_count": StockAnalysis.objects.filter(is_high_risk=True).count(),
-            "is_syncing": sync_status.get("is_running", False),  # pyright: ignore[reportOptionalMemberAccess]
-            "sync_progress": sync_status.get("progress_percent", 0),  # pyright: ignore[reportOptionalMemberAccess]
+            "is_syncing": bool(sync_status and sync_status.get("is_running", False)),
+            "sync_progress": sync_status.get("progress_percent", 0) if sync_status else 0,
             "has_market_warning": market_rsi > 70,
             "market_warning_message": f"⚠️ SELL ZONE - VNIndex RSI: {market_rsi:.0f}" if market_rsi > 70 else "",
             "has_hot_pick": any(p["master_score"] >= 80 for p in raw_picks),
@@ -277,6 +287,8 @@ def top_picks(request: HttpRequest) -> HttpResponse:
         # Không có dữ liệu
         context = {
             "top_picks": [],
+            "fast_picks": [],
+            "slow_picks": [],
             "all_stocks": [],
             "scan_time": "Chưa đồng bộ",
             "market_rsi": 50,
@@ -286,8 +298,8 @@ def top_picks(request: HttpRequest) -> HttpResponse:
             "fast_count": 0,
             "total_scanned": 0,
             "high_risk_count": 0,
-            "is_syncing": False,
-            "sync_progress": 0,
+            "is_syncing": bool(sync_status and sync_status.get("is_running", False)),
+            "sync_progress": sync_status.get("progress_percent", 0) if sync_status else 0,
             "has_market_warning": False,
             "market_warning_message": "",
             "has_hot_pick": False,
@@ -314,16 +326,53 @@ def scan_vn30_api(request: HttpRequest) -> HttpResponse:
             mode = "full"
 
         # Validate mode
-        if mode not in ["full", "data_only", "analyze"]:
+        if mode not in ["full", "data_only", "analyze", "deep_fundamental"]:
             mode = "full"
+
+        # Cập nhật SyncStatus ngay lập tức để tránh race condition khi frontend polling
+        from django.utils import timezone
+        from .models import SyncStatus
+        from django import db
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"[API SERVER] >>> NHẬN YÊU CẦU ĐỒNG BỘ: mode='{mode}'", flush=True)
+        print(f"[API SERVER] >>> Khởi động background worker thread...", flush=True)
+        print(f"{'='*70}\n", flush=True)
+
+        try:
+            sync_rec, _ = SyncStatus.objects.get_or_create(id=1)
+            sync_rec.status = "running"
+            sync_rec.processed_symbols = 0
+            sync_rec.total_symbols = 30 if mode == "deep_fundamental" else 100
+            sync_rec.started_at = timezone.now()
+            sync_rec.completed_at = None
+            sync_rec.save()
+        except Exception as e:
+            print(f"[scan_vn30_api] Error initializing SyncStatus: {e}", flush=True)
 
         # Trigger sync in background
         import threading
 
         def run_sync():
-            # Full sync = fast_mode=False (đầy đủ), Data only = fast_mode=True (nhanh)
-            fast_mode = (mode == "data_only")
-            sync_market_data(mode=mode, fast_mode=fast_mode)
+            try:
+                db.close_old_connections()
+                if mode == "deep_fundamental":
+                    from .sync_service import sync_top30_deep_fundamentals
+                    print(f"[Sync Worker] Bắt đầu thực thi sync_top30_deep_fundamentals()...", flush=True)
+                    res = sync_top30_deep_fundamentals()
+                    print(f"[Sync Worker] Hoàn tất đồng bộ BCTC chuyên sâu! Kết quả: {res.get('status')}", flush=True)
+                else:
+                    # Full sync = fast_mode=False (đầy đủ), Data only = fast_mode=True (nhanh)
+                    fast_mode = (mode == "data_only")
+                    print(f"[Sync Worker] Bắt đầu thực thi sync_market_data(mode='{mode}', fast_mode={fast_mode})...", flush=True)
+                    res = sync_market_data(mode=mode, fast_mode=fast_mode)
+                    print(f"[Sync Worker] Hoàn tất đồng bộ thành công! Kết quả: {res}", flush=True)
+            except Exception as e:
+                print(f"[Sync Worker] ❌ Lỗi đồng bộ: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+            finally:
+                db.close_old_connections()
 
         thread = threading.Thread(target=run_sync)
         thread.daemon = True
@@ -332,7 +381,8 @@ def scan_vn30_api(request: HttpRequest) -> HttpResponse:
         mode_labels = {
             "full": "Đồng bộ + Phân tích",
             "data_only": "Chỉ lấy dữ liệu",
-            "analyze": "Chỉ phân tích lại"
+            "analyze": "Chỉ phân tích lại",
+            "deep_fundamental": "Đồng bộ chuyên sâu BCTC Top 30"
         }
 
         return JsonResponse({
@@ -622,7 +672,7 @@ def run_backtest(symbol: str, start_date: str, end_date: str, strategy: str, cap
 
 
 def stock_list(request: HttpRequest) -> HttpResponse:
-    """Trang xem tất cả cổ phiếu với thông tin phân tích chi tiết"""
+    """Trang xem tất cả cổ phiếu với thông tin phân tích chi tiết - Updated"""
     from .models import StockData, StockAnalysis
 
     # ===== PIPELINE 6 BƯỚC (Server-side filtering) =====
@@ -801,6 +851,12 @@ def stock_list(request: HttpRequest) -> HttpResponse:
             "criteria_list": a.criteria_list,
             "recommendation_label": getattr(a, 'recommendation_label', ''),
             "risk_reward_ratio": a.risk_reward_ratio,
+            "rr_quality": getattr(a, 'rr_quality', '') or '',
+            "scan_mode": getattr(a, 'scan_mode', 'EARLY_TREND') or 'EARLY_TREND',
+            "annual_profit_plan": getattr(a, 'annual_profit_plan', None),
+            "current_ytd_profit": getattr(a, 'current_ytd_profit', None),
+            "profit_plan_completion": getattr(a, 'profit_plan_completion', None),
+            "profit_plan_status": getattr(a, 'profit_plan_status', ''),
             # Target Yield
             "target_yield_pct": getattr(a, 'target_yield_pct', None) or round((a.take_profit - (a.entry_price or s.price)) / (a.entry_price or s.price) * 100, 2) if a.take_profit and (a.entry_price or s.price) > 0 else 0,
             # Score breakdown
@@ -1459,11 +1515,14 @@ def api_backtest(request: HttpRequest) -> JsonResponse:
         data_start = backtest_date - timedelta(days=lookback_days)
         
         # Get historical price data
-        df = get_stock_data_from_vnstock(
+        from dashboard.tv_client import get_ohlcv_with_fallback
+        df = get_ohlcv_with_fallback(
             symbol,
-            start=data_start.strftime("%Y-%m-%d"),
-            end=backtest_date.strftime("%Y-%m-%d")
+            exchange='HOSE',
+            count=lookback_days
         )
+        if df is not None:
+             df.reset_index(inplace=True)
         
         if df is None or len(df) < 50:
             return JsonResponse({"error": f"Insufficient historical data for {symbol}"}, status=404)
@@ -1490,11 +1549,13 @@ def api_backtest(request: HttpRequest) -> JsonResponse:
         
         # Get forward data to check results
         forward_end = backtest_date + timedelta(days=forward_days)
-        df_forward = get_stock_data_from_vnstock(
+        df_forward = get_ohlcv_with_fallback(
             symbol,
-            start=backtest_date.strftime("%Y-%m-%d"),
-            end=forward_end.strftime("%Y-%m-%d")
+            exchange='HOSE',
+            count=forward_days
         )
+        if df_forward is not None:
+             df_forward.reset_index(inplace=True)
         
         results = {
             "symbol": symbol,
@@ -2162,3 +2223,239 @@ def fetch_quarterly_financial(request):
     except Exception as e:
         import traceback
         return JsonResponse({'error': str(e), 'trace': traceback.format_exc()}, status=500)
+
+
+def foreign_ranking(request: HttpRequest) -> HttpResponse:
+    """Trang xếp hạng khối ngoại - đọc từ DB đã sync sẵn, không tự động load"""
+    from dashboard.models import StockData, StockAnalysis
+    from datetime import datetime
+    
+    # Đọc từ DB
+    analyses = StockAnalysis.objects.select_related('symbol').all()
+    
+    buy_list = []
+    sell_list = []
+    data_date = ""
+    
+    for a in analyses:
+        symbol = a.symbol.symbol
+        net_val = a.latest_net_val
+
+        # Determine streak info
+        if net_val >= 0:
+            streak = a.foreign_buy_streak
+            streak_start = a.foreign_buy_streak_start
+        else:
+            streak = a.foreign_sell_streak
+            streak_start = a.foreign_sell_streak_start
+
+        item = {
+            'ticker': symbol,
+            'net_val': abs(net_val) / 1e9,
+            'date': streak_start.strftime('%d/%m/%Y') if streak_start else '',
+            'streak': streak,
+            'streak_start': streak_start.strftime('%d/%m/%Y') if streak_start else '',
+            'trading_share': a.foreign_trading_share,
+            'ranking_date': a.foreign_ranking_date.strftime('%d/%m/%Y') if a.foreign_ranking_date else '',
+        }
+        
+        if net_val > 0:
+            buy_list.append(item)
+        elif net_val < 0:
+            sell_list.append(item)
+    
+    # Sắp xếp theo giá trị
+    buy_list = sorted(buy_list, key=lambda x: x['net_val'], reverse=True)[:50]
+    sell_list = sorted(sell_list, key=lambda x: x['net_val'], reverse=True)[:50]
+    
+    has_data = len(buy_list) > 0 or len(sell_list) > 0
+    
+    # Lấy ngày dữ liệu từ ranking đầu tiên (Insights API trả về ngày trading gần nhất)
+    if buy_list and buy_list[0].get('ranking_date'):
+        data_date = buy_list[0]['ranking_date']
+    elif sell_list and sell_list[0].get('ranking_date'):
+        data_date = sell_list[0]['ranking_date']
+    else:
+        data_date = datetime.now().strftime('%d/%m/%Y')
+    
+    return render(request, 'dashboard/foreign_ranking.html', {
+        'rankings': buy_list + sell_list,
+        'buy_list': buy_list,
+        'sell_list': sell_list,
+        'buy_count': len(buy_list),
+        'sell_count': len(sell_list),
+        'has_data': has_data,
+        'data_date': data_date,
+        'sponsor_active': True,
+    })
+
+
+def sync_foreign_ranking_api(request):
+    """API endpoint để sync foreign ranking - gọi từ nút Sync trong template"""
+    import subprocess
+    import os
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    progress_file = os.path.join(project_root, 'sync_progress.json')
+    script_file = os.path.join(project_root, 'sync_foreign_ranking.py')
+    venv_python = r"C:\Users\lantr\.venv\Scripts\python.exe"
+    
+    try:
+        # Báo bắt đầu
+        with open(progress_file, 'w') as f:
+            json.dump({'status': 'running', 'step': 'starting', 'message': '🚀 Bắt đầu sync...', 'progress': 0}, f)
+        
+        # Verify script exists
+        if not os.path.exists(script_file):
+            raise FileNotFoundError(f"Script not found: {script_file}")
+        
+        if not os.path.exists(venv_python):
+            raise FileNotFoundError(f"Python venv not found: {venv_python}")
+        
+        logger.info(f"Starting sync with Python: {venv_python}")
+        
+        # Chạy với -W ignore để suppress warnings, dùng DEVNULL để tránh blocking
+        process = subprocess.Popen(
+            [venv_python, '-W', 'ignore', script_file],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=project_root
+        )
+        
+        logger.info(f"Sync process started with PID: {process.pid}")
+        
+        return JsonResponse({'success': True, 'message': 'Sync started', 'pid': process.pid})
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Sync API error: {error_msg}")
+        with open(progress_file, 'w') as f:
+            json.dump({'status': 'error', 'message': error_msg, 'progress': 0}, f)
+        return JsonResponse({'success': False, 'error': error_msg})
+
+
+def sync_foreign_ranking_progress(request):
+    """AJAX endpoint để lấy progress realtime (polling)"""
+    import os
+    import json
+    
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    progress_file = os.path.join(project_root, 'sync_progress.json')
+    
+    try:
+        if os.path.exists(progress_file):
+            with open(progress_file) as f:
+                data = json.load(f)
+            return JsonResponse(data)
+        else:
+            return JsonResponse({'status': 'waiting', 'message': 'Chờ...', 'progress': 0})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+@csrf_exempt
+def sync_deep_fundamentals_api(request: HttpRequest) -> HttpResponse:
+    """
+    API chuyên biệt kích hoạt tiến trình Đồng bộ BCTC chuyên sâu 4 quý cho Top 30 cổ phiếu (Giai đoạn 2).
+    POST: Khởi chạy background worker với rate limiting, random jitter và retry chống ban IP.
+    GET: Trả về trạng thái tiến độ hiện tại từ sync_progress.json và SyncStatus DB.
+    """
+    import json
+    import threading
+    from django import db
+    from django.utils import timezone
+    from .models import SyncStatus
+    from .sync_service import sync_top30_deep_fundamentals
+
+    if request.method == "POST":
+        try:
+            body = json.loads(request.body) if request.body else {}
+            symbols = body.get("symbols", None)
+        except Exception:
+            symbols = None
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"[API SERVER] >>> NHẬN YÊU CẦU: sync_deep_fundamentals_api (symbols={symbols})", flush=True)
+        print(f"{'='*70}\n", flush=True)
+
+        try:
+            sync_rec, _ = SyncStatus.objects.get_or_create(id=1)
+            sync_rec.status = "running"
+            sync_rec.processed_symbols = 0
+            sync_rec.total_symbols = len(symbols) if symbols else 30
+            sync_rec.started_at = timezone.now()
+            sync_rec.completed_at = None
+            sync_rec.save()
+        except Exception as e:
+            print(f"[sync_deep_fundamentals_api] Lỗi khởi tạo SyncStatus: {e}", flush=True)
+
+        def _bg_deep_sync():
+            try:
+                db.close_old_connections()
+                res = sync_top30_deep_fundamentals(target_symbols=symbols)
+                print(f"[Deep Sync Worker] Kết quả đồng bộ: {res.get('status')}", flush=True)
+            except Exception as e:
+                print(f"[Deep Sync Worker] ❌ Lỗi: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+            finally:
+                db.close_old_connections()
+
+        worker_thread = threading.Thread(target=_bg_deep_sync)
+        worker_thread.daemon = True
+        worker_thread.start()
+
+        return JsonResponse({
+            "status": "started",
+            "message": "Đã khởi động tiến trình đồng bộ BCTC chuyên sâu 4 quý cho Top 30 cổ phiếu.",
+            "total_symbols": len(symbols) if symbols else 30
+        })
+
+    # GET: Trả về trạng thái hiện tại
+    return sync_deep_progress_api(request)
+
+
+def sync_deep_progress_api(request: HttpRequest) -> JsonResponse:
+    """AJAX endpoint trả về tiến trình đồng bộ realtime (tiến độ %, mã đang chạy, thông báo)."""
+    import os
+    import json
+    from django.conf import settings
+    from .models import SyncStatus
+
+    candidate_files = [
+        os.path.join(os.path.dirname(__file__), "sync_progress.json"),
+        os.path.join(getattr(settings, "BASE_DIR", os.path.dirname(os.path.dirname(__file__))), "sync_progress.json"),
+    ]
+
+    progress_data = None
+    for pf in candidate_files:
+        if os.path.exists(pf):
+            try:
+                with open(pf, "r", encoding="utf-8") as f:
+                    progress_data = json.load(f)
+                break
+            except Exception:
+                pass
+
+    if progress_data:
+        return JsonResponse(progress_data)
+
+    try:
+        sync_obj = SyncStatus.objects.get(id=1)
+        return JsonResponse({
+            "status": sync_obj.status,
+            "progress": sync_obj.progress_percent,
+            "message": sync_obj.error_message or f"Đang xử lý {sync_obj.processed_symbols}/{sync_obj.total_symbols} mã...",
+            "processed": sync_obj.processed_symbols,
+            "total": sync_obj.total_symbols
+        })
+    except Exception:
+        return JsonResponse({
+            "status": "idle",
+            "progress": 0,
+            "message": "Chưa có tiến trình đồng bộ nào đang chạy.",
+            "processed": 0,
+            "total": 0
+        })
